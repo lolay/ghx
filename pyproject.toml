@@ -1,0 +1,21 @@
+[project]
+name = "gh-export"
+version = "1"
+description = "Export and sync all GitHub repos for an organization"
+readme = "README.md"
+authors = [
+    { name = "Gary Rudolph", email = "GaryRudolph@mac.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "click>=8.3.1",
+    "pygithub>=2.8.1",
+    "rich>=14.3.3",
+]
+
+[project.scripts]
+gh-export = "gh_export.cli:cli"
+
+[build-system]
+requires = ["uv_build>=0.10.2,<0.11.0"]
+build-backend = "uv_build"
