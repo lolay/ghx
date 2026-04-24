@@ -2,26 +2,58 @@
 
 Export and sync all GitHub repositories for an organization.
 
+This is the Go port of the original Python tool. During the comparison
+period the binary is named `ghx-go` so it can coexist with the existing
+Python `ghx` on your PATH. When you're happy with the Go version, rename
+`cmd/ghx-go/` to `cmd/ghx/` and the binary will ship as `ghx`.
+
 ## Setup
 
-Requires [uv](https://docs.astral.sh/uv/) and Git.
+Requires Go 1.22+ and Git.
 
-### Run directly (no install)
+### Build from source
 
 ```bash
-uv run ghx --help
+go build -o ghx-go ./cmd/ghx-go
+./ghx-go --help
 ```
 
 ### Install globally
 
-Install `ghx` as a standalone command on your PATH:
-
 ```bash
-uv tool install .
-ghx --help
+go install github.com/garyrudolph/ghx/cmd/ghx-go@latest
+ghx-go --help
 ```
 
-After this, all examples below work without the `uv run` prefix.
+By default this drops a `ghx-go` binary in `$GOBIN`, or if `GOBIN` is unset,
+`$(go env GOPATH)/bin` (typically `~/go/bin`). Make sure that directory is on
+your `PATH`:
+
+```bash
+export PATH="$(go env GOPATH)/bin:$PATH"   # add to ~/.zshrc or ~/.bashrc
+```
+
+#### Installing to ~/.local/bin instead
+
+If you prefer the XDG-style `~/.local/bin` (alongside tools installed with
+`pipx`, `uv tool install`, etc.), set `GOBIN` before running `go install`:
+
+```bash
+mkdir -p ~/.local/bin
+GOBIN=$HOME/.local/bin go install github.com/garyrudolph/ghx/cmd/ghx-go@latest
+```
+
+To make that the default for every `go install`, export `GOBIN` in your shell
+startup file:
+
+```bash
+# ~/.zshrc or ~/.bashrc
+export GOBIN="$HOME/.local/bin"
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+After that, `go install github.com/garyrudolph/ghx/cmd/ghx-go@latest` will
+drop the binary straight into `~/.local/bin/ghx-go`.
 
 ## Authentication
 
@@ -103,13 +135,13 @@ order (highest precedence first):
 3. `<path>/.ghx.toml`
 4. `~/.ghx.toml`
 
-Before any API calls, `ghx` prints the resolved settings (with an obfuscated
+Before any API calls, `ghx-go` prints the resolved settings (with an obfuscated
 token) so you can verify what values are in effect.
 
 ## Usage
 
 ```bash
-ghx <ORG> <PATH> [OPTIONS]
+ghx-go <ORG> <PATH> [OPTIONS]
 ```
 
 `ORG` is the GitHub organization name. `PATH` is the output directory (created
@@ -122,22 +154,22 @@ pull the latest changes, clone any new repos, and handle removed or archived rep
 
 ```bash
 # Clone all repos for an org into ./acme
-ghx acme ./acme
+ghx-go acme ./acme
 
 # Dry-run to preview what would happen
-ghx acme ./acme --dry-run
+ghx-go acme ./acme --dry-run
 
 # Only private repos, exclude names matching a pattern
-ghx acme ./acme --type private --exclude "^test-"
+ghx-go acme ./acme --type private --exclude "^test-"
 
 # Also clone wikis, use SSH transport
-ghx acme ./acme --clone-wiki --ssh
+ghx-go acme ./acme --clone-wiki --ssh
 
 # Permanently delete removed/archived repos instead of moving them
-ghx acme ./acme --delete
+ghx-go acme ./acme --delete
 
 # Custom directory names for moved repos
-ghx acme ./acme --deleted-dir removed --archived-dir inactive
+ghx-go acme ./acme --deleted-dir removed --archived-dir inactive
 ```
 
 ### How it works
@@ -155,7 +187,7 @@ ghx acme ./acme --deleted-dir removed --archived-dir inactive
 ## CLI Reference
 
 ```
-ghx <ORG> <PATH> [OPTIONS]
+ghx-go <ORG> <PATH> [OPTIONS]
 
 Arguments:
   ORG                        GitHub organization name
@@ -164,7 +196,7 @@ Arguments:
 Options:
   --token, -t TEXT           GitHub PAT
   --type TEXT                Repo type: all|public|private|forks|sources
-  --concurrency, -c INT     Parallel workers (default: 4)
+  --concurrency, -c INT      Parallel workers (default: 4)
   --dry-run                  Preview changes without doing anything
   --clone-wiki               Also clone associated wikis
   --include TEXT             Regex to include matching repo names

@@ -1,6 +1,7 @@
-.venv/
-__pycache__/
-*.pyc
-dist/
-*.egg-info/
+/ghx-go
+/ghx
+*.test
+*.out
+coverage.out
+
 .cursor/rules/personal-*.mdc
