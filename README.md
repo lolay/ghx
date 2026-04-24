@@ -1,4 +1,4 @@
-# gh-export
+# ghx
 
 Export and sync all GitHub repositories for an organization.
 
@@ -9,16 +9,16 @@ Requires [uv](https://docs.astral.sh/uv/) and Git.
 ### Run directly (no install)
 
 ```bash
-uv run gh-export --help
+uv run ghx --help
 ```
 
 ### Install globally
 
-Install `gh-export` as a standalone command on your PATH:
+Install `ghx` as a standalone command on your PATH:
 
 ```bash
 uv tool install .
-gh-export --help
+ghx --help
 ```
 
 After this, all examples below work without the `uv run` prefix.
@@ -51,8 +51,12 @@ override any value:
 
 | File | Purpose |
 |------|---------|
-| `~/.gh-export.toml` | Global defaults (token, protocol, identity, etc.) |
-| `<path>/.gh-export.toml` | Per-organization overrides (same keys, takes precedence) |
+| `~/.ghx.toml` | Global defaults (token, protocol, identity, etc.) |
+| `<path>/.ghx.toml` | Per-organization overrides (same keys, takes precedence) |
+
+> Legacy `.gh-export.toml` and `.gh-export.json` files are automatically
+> renamed to `.ghx.toml` / `.ghx.json` in place on first run, with an
+> informational message.
 
 All CLI options can be set as config keys (hyphenated to match CLI style):
 
@@ -75,7 +79,7 @@ max-size = 500
 For example, you might keep your token and default protocol in the global config:
 
 ```toml
-# ~/.gh-export.toml
+# ~/.ghx.toml
 token = "ghp_xxxxx"
 protocol = "ssh"
 ```
@@ -83,29 +87,29 @@ protocol = "ssh"
 And set a per-organization git identity in the output directory:
 
 ```toml
-# ./acme/.gh-export.toml
+# ./acme/.ghx.toml
 git-email = "gary@acme.org"
 ```
 
 When syncing the `acme` directory, the effective config is the global file with the
 directory-level values merged on top -- so the token and protocol come from
-`~/.gh-export.toml` while `git-email` comes from `./acme/.gh-export.toml`.
+`~/.ghx.toml` while `git-email` comes from `./acme/.ghx.toml`.
 
 Command-line options always override configuration file values. The full resolution
 order (highest precedence first):
 
 1. Command-line flags (e.g. `--protocol ssh`, `--git-email`)
 2. `GITHUB_TOKEN` environment variable _(token only)_
-3. `<path>/.gh-export.toml`
-4. `~/.gh-export.toml`
+3. `<path>/.ghx.toml`
+4. `~/.ghx.toml`
 
-Before any API calls, `gh-export` prints the resolved settings (with an obfuscated
+Before any API calls, `ghx` prints the resolved settings (with an obfuscated
 token) so you can verify what values are in effect.
 
 ## Usage
 
 ```bash
-gh-export <ORG> <PATH> [OPTIONS]
+ghx <ORG> <PATH> [OPTIONS]
 ```
 
 `ORG` is the GitHub organization name. `PATH` is the output directory (created
@@ -118,22 +122,22 @@ pull the latest changes, clone any new repos, and handle removed or archived rep
 
 ```bash
 # Clone all repos for an org into ./acme
-gh-export acme ./acme
+ghx acme ./acme
 
 # Dry-run to preview what would happen
-gh-export acme ./acme --dry-run
+ghx acme ./acme --dry-run
 
 # Only private repos, exclude names matching a pattern
-gh-export acme ./acme --type private --exclude "^test-"
+ghx acme ./acme --type private --exclude "^test-"
 
 # Also clone wikis, use SSH transport
-gh-export acme ./acme --clone-wiki --ssh
+ghx acme ./acme --clone-wiki --ssh
 
 # Permanently delete removed/archived repos instead of moving them
-gh-export acme ./acme --delete
+ghx acme ./acme --delete
 
 # Custom directory names for moved repos
-gh-export acme ./acme --deleted-dir removed --archived-dir inactive
+ghx acme ./acme --deleted-dir removed --archived-dir inactive
 ```
 
 ### How it works
@@ -144,14 +148,14 @@ gh-export acme ./acme --deleted-dir removed --archived-dir inactive
   are local changes.
 - **Removed repos:** moved to `DELETED/` (or permanently deleted with `--delete`).
 - **Archived repos:** moved to `ARCHIVED/` (or permanently deleted with `--delete`).
-- Writes a `.gh-export.json` manifest to the output directory after each run to
+- Writes a `.ghx.json` manifest to the output directory after each run to
   track which repos were synced (used for detecting removed/archived repos on
   subsequent runs).
 
 ## CLI Reference
 
 ```
-gh-export <ORG> <PATH> [OPTIONS]
+ghx <ORG> <PATH> [OPTIONS]
 
 Arguments:
   ORG                        GitHub organization name

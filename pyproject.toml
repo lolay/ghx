@@ -1,5 +1,5 @@
 [project]
-name = "gh-export"
+name = "ghx"
 version = "1"
 description = "Export and sync all GitHub repos for an organization"
 readme = "README.md"
@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-gh-export = "gh_export.cli:cli"
+ghx = "ghx.cli:cli"
 
 [build-system]
 requires = ["uv_build>=0.10.2,<0.11.0"]

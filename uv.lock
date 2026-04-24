@@ -144,7 +144,7 @@ wheels = [
 ]
 
 [[package]]
-name = "gh-export"
+name = "ghx"
 version = "1"
 source = { editable = "." }
 dependencies = [

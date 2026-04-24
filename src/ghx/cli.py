@@ -10,7 +10,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from gh_export.cloner import (
+from ghx.cloner import (
     Action,
     RepoResult,
     SyncSummary,
@@ -18,17 +18,42 @@ from gh_export.cloner import (
     delete_repo,
     move_repo,
 )
-from gh_export.github_api import (
+from ghx.github_api import (
     RepoInfo,
     filter_repos,
     list_org_repos,
     validate_token,
 )
 
-MANIFEST_FILENAME = ".gh-export.json"
-CONFIG_FILENAME = ".gh-export.toml"
+MANIFEST_FILENAME = ".ghx.json"
+CONFIG_FILENAME = ".ghx.toml"
+
+LEGACY_MANIFEST_FILENAME = ".gh-export.json"
+LEGACY_CONFIG_FILENAME = ".gh-export.toml"
 
 console = Console()
+
+
+def _migrate_legacy_file(directory: Path, legacy_name: str, new_name: str) -> None:
+    """Rename a legacy config/manifest file in-place and inform the user.
+
+    If both the legacy and new files exist, the legacy file is left alone
+    so the user can resolve the conflict manually.
+    """
+    legacy_path = directory / legacy_name
+    new_path = directory / new_name
+    if not legacy_path.exists():
+        return
+    if new_path.exists():
+        console.print(
+            f"[yellow]Found legacy {legacy_path} but {new_path} already exists;"
+            f" leaving legacy file in place.[/yellow]"
+        )
+        return
+    legacy_path.rename(new_path)
+    console.print(
+        f"[dim]Renamed legacy {legacy_path} -> {new_path}[/dim]"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -49,12 +74,15 @@ def _load_config(
     home: dict = {}
     local: dict = {}
 
-    home_path = Path.home() / CONFIG_FILENAME
+    home_dir = Path.home()
+    _migrate_legacy_file(home_dir, LEGACY_CONFIG_FILENAME, CONFIG_FILENAME)
+    home_path = home_dir / CONFIG_FILENAME
     if home_path.exists():
         with open(home_path, "rb") as f:
             home = _normalize(tomllib.load(f))
 
     if local_dir is not None:
+        _migrate_legacy_file(local_dir, LEGACY_CONFIG_FILENAME, CONFIG_FILENAME)
         local_path = local_dir / CONFIG_FILENAME
         if local_path.exists():
             with open(local_path, "rb") as f:
@@ -173,6 +201,7 @@ def _write_manifest(
 
 
 def _read_manifest(export_dir: Path) -> dict | None:
+    _migrate_legacy_file(export_dir, LEGACY_MANIFEST_FILENAME, MANIFEST_FILENAME)
     path = export_dir / MANIFEST_FILENAME
     if not path.exists():
         return None
