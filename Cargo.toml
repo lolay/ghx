@@ -1,0 +1,29 @@
+[package]
+name = "ghx-rust"
+version = "0.1.0"
+edition = "2021"
+description = "Export and sync all GitHub repos for an organization (Rust port of ghx)"
+license = "Apache-2.0"
+authors = ["Gary Rudolph <GaryRudolph@mac.com>"]
+readme = "README.md"
+
+[[bin]]
+name = "ghx-rust"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.102"
+chrono = { version = "0.4.44", features = ["serde"] }
+clap = { version = "4.6.1", features = ["derive"] }
+comfy-table = "7.2.2"
+dirs = "6.0.0"
+futures = "0.3.32"
+indicatif = "0.18.4"
+octocrab = "0.49.7"
+owo-colors = "4.3.0"
+regex = "1.12.3"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+thiserror = "2.0.18"
+tokio = { version = "1.52.1", features = ["full"] }
+toml = "1.1.2"

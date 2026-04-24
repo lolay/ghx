@@ -4,24 +4,21 @@ Export and sync all GitHub repositories for an organization.
 
 ## Setup
 
-Requires [uv](https://docs.astral.sh/uv/) and Git.
+Requires Git and a Rust toolchain ([rustup.rs](https://rustup.rs)).
 
-### Run directly (no install)
-
-```bash
-uv run ghx --help
-```
-
-### Install globally
-
-Install `ghx` as a standalone command on your PATH:
+Install as a standalone command on your PATH:
 
 ```bash
-uv tool install .
-ghx --help
+cargo install --path .
+ghx-rust --help
 ```
 
-After this, all examples below work without the `uv run` prefix.
+Or build manually and copy the binary:
+
+```bash
+cargo build --release
+cp target/release/ghx-rust ~/.local/bin/
+```
 
 ## Authentication
 
@@ -103,13 +100,13 @@ order (highest precedence first):
 3. `<path>/.ghx.toml`
 4. `~/.ghx.toml`
 
-Before any API calls, `ghx` prints the resolved settings (with an obfuscated
+Before any API calls, `ghx-rust` prints the resolved settings (with an obfuscated
 token) so you can verify what values are in effect.
 
 ## Usage
 
 ```bash
-ghx <ORG> <PATH> [OPTIONS]
+ghx-rust <ORG> <PATH> [OPTIONS]
 ```
 
 `ORG` is the GitHub organization name. `PATH` is the output directory (created
@@ -122,22 +119,22 @@ pull the latest changes, clone any new repos, and handle removed or archived rep
 
 ```bash
 # Clone all repos for an org into ./acme
-ghx acme ./acme
+ghx-rust acme ./acme
 
 # Dry-run to preview what would happen
-ghx acme ./acme --dry-run
+ghx-rust acme ./acme --dry-run
 
 # Only private repos, exclude names matching a pattern
-ghx acme ./acme --type private --exclude "^test-"
+ghx-rust acme ./acme --type private --exclude "^test-"
 
 # Also clone wikis, use SSH transport
-ghx acme ./acme --clone-wiki --ssh
+ghx-rust acme ./acme --clone-wiki --ssh
 
 # Permanently delete removed/archived repos instead of moving them
-ghx acme ./acme --delete
+ghx-rust acme ./acme --delete
 
 # Custom directory names for moved repos
-ghx acme ./acme --deleted-dir removed --archived-dir inactive
+ghx-rust acme ./acme --deleted-dir removed --archived-dir inactive
 ```
 
 ### How it works
@@ -155,7 +152,7 @@ ghx acme ./acme --deleted-dir removed --archived-dir inactive
 ## CLI Reference
 
 ```
-ghx <ORG> <PATH> [OPTIONS]
+ghx-rust <ORG> <PATH> [OPTIONS]
 
 Arguments:
   ORG                        GitHub organization name
