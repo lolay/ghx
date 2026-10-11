@@ -77,13 +77,16 @@ unchanged; update it by copying the template again, not by editing it here.
 `GORELEASER` (default `goreleaser`) names the command, so a machine without the
 tool can pass the `go run` form:
 `make snapshot GORELEASER="go run github.com/goreleaser/goreleaser/v2@v2.18.3"`.
+CI's `release-check` job and the Publish workflow set `GORELEASER` that way in
+their environment, each with the same pinned version; bump both together.
 
 ### Danger
 
 These change something outside the working tree, so each refuses to run until
 its `CONFIRM_*` variable is set, and prints what to re-run with. Humans and
-agents hit the refusal; the Release workflow sets the variable inline. There is
-no `tag` target: tags come from the Release workflow.
+agents hit the refusal; the Publish workflow (`publish.yml`) sets the variable
+inline. There is no `tag` target: tags come from the Release workflow
+(`release.yml`).
 
 | Target | Confirm | Description |
 |--------|---------|-------------|
@@ -149,13 +152,14 @@ the pinned version; the CI install step must use the same value.
 [`.github/workflows/ci.yml`](./.github/workflows/ci.yml) runs on every push and
 on every pull request, one run per ref (a newer push cancels the run it
 supersedes), with read-only `contents` permission. It has three jobs, one per
-operating system, and each job name shows its OS.
+operating system, and each job name shows its OS, plus a `release-check` job.
 
 | Job | Runner | Runs |
 |-----|--------|------|
 | `build, lint, test, vuln (linux)` | `ubuntu-latest` | `go mod verify`, golangci-lint install, `make ci`, `make vuln` |
 | `build, lint, test (macos)` | `macos-latest` | golangci-lint install, `make ci` |
 | `build, vet, test (windows)` | `windows-latest` | `go build ./...`, `go vet ./...`, `go test ./...` under `shell: bash` |
+| `release-check (goreleaser check)` | `ubuntu-latest` | `make release-check`, with goreleaser run as `go run github.com/goreleaser/goreleaser/v2@<pin>` |
 
 Windows runs the Go commands directly rather than `make ci`: `make test` uses
 `-race`, and the race detector needs cgo, which the Windows runner lacks.

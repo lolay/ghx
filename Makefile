@@ -42,7 +42,7 @@ DIST_DIR := dist
 # `{{ .Env.SHA }}` and `{{ .Env.BUILD_CODE }}` into BUILDINFO_PKG, and
 # goreleaser runs only through Makefile targets whose recipes pass
 # `RELEASE="$(RELEASE)" SHA="$(SHA)" BUILD_CODE="$(BUILD_CODE)"` in its
-# environment; the Release workflow calls those targets after a full-history
+# environment; the Publish workflow calls those targets after a full-history
 # checkout. goreleaser's own `.Version` is the tag (a `-SNAPSHOT` suffix on
 # snapshots, which the standard forbids) and `.ShortCommit` is computed
 # separately, so neither is used. One computation means a local build and a
@@ -65,7 +65,7 @@ GORELEASER ?= goreleaser
 VERSION ?=
 
 # Remote-mutating targets sit under `##@ Danger` and refuse to run until their
-# CONFIRM_* variable is set; the Release workflow sets it inline, a human or an
+# CONFIRM_* variable is set; the Publish workflow sets it inline, a human or an
 # agent hits the refusal. Usage: $(call confirm,CONFIRM_NAME,what it does)
 confirm = @if [ -z "$($(1))" ]; then \
   printf 'Refusing to run "make %s": %s\nRe-run with %s=1.\n' "$@" "$(2)" "$(1)"; \
