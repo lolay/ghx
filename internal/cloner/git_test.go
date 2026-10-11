@@ -17,7 +17,7 @@ import (
 
 func TestFindGit(t *testing.T) {
 	t.Run("finds git on PATH", func(t *testing.T) {
-		path, err := cloner.FindGit()
+		path, err := cloner.FindGit(t.Context())
 		require.NoError(t, err)
 		assert.True(t, filepath.IsAbs(path), "an absolute path, not one relative to the working directory: %s", path)
 	})
@@ -25,7 +25,7 @@ func TestFindGit(t *testing.T) {
 	t.Run("a PATH without git is a clear error", func(t *testing.T) {
 		t.Setenv("PATH", t.TempDir())
 
-		_, err := cloner.FindGit()
+		_, err := cloner.FindGit(t.Context())
 
 		require.ErrorIs(t, err, cloner.ErrGitNotFound)
 		assert.Contains(t, err.Error(), "install Git")
@@ -41,7 +41,7 @@ func TestFindGit(t *testing.T) {
 		t.Chdir(dir)
 		t.Setenv("PATH", ".")
 
-		_, err := cloner.FindGit()
+		_, err := cloner.FindGit(t.Context())
 
 		require.ErrorIs(t, err, cloner.ErrGitNotFound)
 		assert.Contains(t, err.Error(), "current directory")
@@ -58,6 +58,39 @@ func TestFindGit(t *testing.T) {
 		assert.Empty(t, summary.Results)
 		assert.NoDirExists(t, filepath.Join(f.out, "app"))
 	})
+}
+
+func TestCheckGitVersion(t *testing.T) {
+	tests := []struct {
+		name    string
+		output  string
+		wantErr string // "" means accepted
+		tooOld  bool
+	}{
+		{"exactly 2.31", "git version 2.31.0\n", "", false},
+		{"a newer release", "git version 2.56.0\n", "", false},
+		{"Apple's git", "git version 2.39.3 (Apple Git-145)\n", "", false},
+		{"Git for Windows", "git version 2.45.1.windows.1\r\n", "", false},
+		{"a two-part version", "git version 2.40\n", "", false},
+		{"a future major", "git version 3.0.0\n", "", false},
+		{"2.30 is too old", "git version 2.30.9\n", "needs git 2.31 or later and found 2.30.9", true},
+		{"1.x is too old", "git version 1.9.5\n", "needs git 2.31 or later", true},
+		{"not git's output", "hello\n", "can't read git's version", false},
+		{"no minor version", "git version 2\n", "can't read git's version", false},
+		{"a version that isn't a number", "git version two.thirty\n", "can't read git's version", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := cloner.CheckGitVersion(tt.output)
+			if tt.wantErr == "" {
+				assert.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+			assert.Equal(t, tt.tooOld, errors.Is(err, cloner.ErrGitTooOld))
+		})
+	}
 }
 
 func TestHasChanges(t *testing.T) {

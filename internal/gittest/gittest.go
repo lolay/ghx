@@ -28,6 +28,22 @@ func Isolate(t *testing.T) {
 	t.Setenv("GIT_TERMINAL_PROMPT", "0")
 }
 
+// RewriteURL makes git fetch any URL that starts with prefix, such as
+// "https://github.com/acme/", from the directory dir instead, for the rest of
+// the test: "https://github.com/acme/app.git" becomes dir/app.git. It writes
+// url.<dir>/.insteadOf to a global config file of the test's own, so a test
+// can clone and pull a real HTTPS GitHub URL with no network, while the clone
+// records the HTTPS URL as its origin. Call it after Isolate, whose
+// GIT_CONFIG_GLOBAL it replaces.
+func RewriteURL(t *testing.T, prefix, dir string) {
+	t.Helper()
+	global := filepath.Join(t.TempDir(), "gitconfig")
+	// Forward slashes: Git for Windows reads C:/x/y as a path, and the key is
+	// split on its first and last dots, so dots inside the path are fine.
+	Git(t, "", "config", "--file", global, "url."+filepath.ToSlash(dir)+"/.insteadOf", prefix)
+	t.Setenv("GIT_CONFIG_GLOBAL", global)
+}
+
 // Git runs git in dir with args and returns its stdout. The command carries a
 // fixed identity and default branch (-c) and fails the test on a non-zero exit.
 func Git(t *testing.T, dir string, args ...string) string {

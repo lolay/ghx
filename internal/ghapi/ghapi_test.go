@@ -274,12 +274,39 @@ func TestFormatAPIError(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := ghapi.FormatAPIError("Prefix", tt.err)
+			got := ghapi.FormatAPIError("Prefix", tt.err, testToken)
 			assert.Equal(t, tt.want, got.Error())
 		})
 	}
 
 	t.Run("a wrapped plain error stays reachable", func(t *testing.T) {
-		assert.ErrorIs(t, ghapi.FormatAPIError("Prefix", plain), plain)
+		assert.ErrorIs(t, ghapi.FormatAPIError("Prefix", plain, testToken), plain)
 	})
+
+	t.Run("the token is masked wherever it appears", func(t *testing.T) {
+		echo := ghapi.FormatAPIError("Prefix", withStatus(401, "Bad credentials: "+testToken), testToken)
+		assert.Equal(t, "Prefix (401): Bad credentials: ***", echo.Error())
+
+		cause := fmt.Errorf("dial https://%s@proxy.example: refused", testToken)
+		plainEcho := ghapi.FormatAPIError("Prefix", cause, testToken)
+		assert.Equal(t, "Prefix: dial https://***@proxy.example: refused", plainEcho.Error())
+		assert.ErrorIs(t, plainEcho, cause)
+	})
+}
+
+func TestValidateToken_NeverEchoesTheToken(t *testing.T) {
+	// A server that quotes the credential back, as a misbehaving proxy might.
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = fmt.Fprintf(w, `{"message":"rejected %s"}`, strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+	}))
+	t.Cleanup(stub.Close)
+	ghapi.SetBaseURL(t, stub.URL)
+
+	_, err := ghapi.ValidateToken(t.Context(), testToken)
+
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), testToken)
+	assert.Contains(t, err.Error(), "rejected ***")
 }

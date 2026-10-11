@@ -78,3 +78,25 @@ func TestCloneRepos_SkipsWindowsDeviceNames(t *testing.T) {
 	assert.Equal(t, cloner.ActionSkippedName, summary.Results[0].Action)
 	assert.Contains(t, summary.Results[0].Detail, "reserved device name")
 }
+
+func TestFindGit_RefusesAGitOlderThan231(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "git.bat"), []byte("@echo git version 2.30.2.windows.1\r\n"), 0o755))
+	t.Setenv("PATH", dir)
+
+	_, err := cloner.FindGit(t.Context())
+
+	require.ErrorIs(t, err, cloner.ErrGitTooOld)
+	assert.Contains(t, err.Error(), "found 2.30.2")
+}
+
+func TestFindGit_ReportsAGitThatFails(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "git.bat"), []byte("@echo broken install 1>&2\r\n@exit /b 1\r\n"), 0o755))
+	t.Setenv("PATH", dir)
+
+	_, err := cloner.FindGit(t.Context())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "broken install")
+}

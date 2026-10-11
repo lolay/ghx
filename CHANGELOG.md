@@ -7,6 +7,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Security
+- Hardening: ghx no longer puts the token in HTTPS clone URLs. It gives `git`
+  the token through `git`'s environment for the length of each clone or pull
+  (an `http.extraheader` scoped to the clone URL's host), so the token is in no
+  command line, no clone URL and no `.git/config`, and never reaches a
+  credential helper. ghx never writes credentials to disk.
+- A sync cleans the origin URLs of clones made by older versions, which held the
+  token: in each repository it pulls, and in every clone directly under the
+  output directory, `DELETED/` and `ARCHIVED/`. Rotate a token that older
+  versions used, since copies of those clones may still hold it.
+- The token and its header value are masked in `git` failure messages and
+  GitHub API errors.
+
 ### Added
 - `Makefile` with the standard targets (`make help` lists them; `make ci` is
   the pre-push gate), documented in [`Makefile.md`](./Makefile.md).
@@ -37,8 +50,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `--deleted-dir` and `--archived-dir` must now be directories inside the output
   directory; `.` would have deleted each repo it moved.
 - `git` is looked up once, before anything is asked of GitHub, with a clear
-  error when it's missing. A `git` found only in the current directory is not
-  run.
+  error when it's missing or older than 2.31, the minimum ghx now needs. A
+  `git` found only in the current directory is not run.
 - A repository whose `git status` fails is reported as failed instead of being
   pulled.
 - On Windows, git commands run with `core.longpaths` on, and moves and deletes

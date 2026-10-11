@@ -38,8 +38,8 @@ ghx acme ./acme
 
 ## Install
 
-Requires [Git](https://git-scm.com/) and Go 1.26.2 or newer (the `go` line in
-[`go.mod`](./go.mod)). Development uses the version pinned in
+Requires [Git](https://git-scm.com/) 2.31 or newer, and Go 1.26.2 or newer
+(the `go` line in [`go.mod`](./go.mod)) to build it. Development uses the version pinned in
 [`.go-version`](./.go-version).
 
 From source, with the repository's Makefile:
@@ -102,7 +102,9 @@ The token is resolved in this order, highest precedence first:
 
 If none is set, `ghx` exits with an error that lists these options. Avoid
 `--token` on a shared machine: the value lands in your shell history and the
-process list. The environment variable or the config file is safer. See
+process list. The environment variable or the config file is safer. `ghx` hands
+the token to `git` through `git`'s environment, never in a clone URL, so no
+clone's `.git/config` holds it. See
 [`SECURITY.md`](./SECURITY.md) for how `ghx` handles the token.
 
 ## Configuration
@@ -230,9 +232,9 @@ token and network access.
 
 ## Platforms
 
-ghx runs on macOS, Linux and Windows. It needs `git` on your `PATH` (Git for
-Windows on Windows); a sync without it stops before contacting GitHub, while
-`--dry-run` works without it.
+ghx runs on macOS, Linux and Windows. It needs `git` 2.31 or newer on your
+`PATH` (Git for Windows on Windows); a sync without it, or with an older one,
+stops before contacting GitHub, while `--dry-run` works without it.
 
 - **Repository names.** A name that isn't a single directory name (such as
   `..`, which only an edited `.ghx.json` could hold) is skipped on every system

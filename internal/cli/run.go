@@ -104,7 +104,7 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 	// here stops a run without git before it asks GitHub for anything.
 	var gitPath string
 	if !dryRun {
-		if gitPath, err = cloner.FindGit(); err != nil {
+		if gitPath, err = cloner.FindGit(ctx); err != nil {
 			return err
 		}
 	}
@@ -215,12 +215,22 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 		ProgressOut: ui.ProgressOut(),
 	}
 
+	// Clones made by ghx before the token moved to git's environment hold it
+	// in their origin URL. CloneRepos cleans each repo it pulls; this pass
+	// reaches the ones no sync pulls any more.
+	cleanFailures, err := cloner.CleanOrigins(ctx, baseOpts,
+		outputDir, filepath.Join(outputDir, deletedDir), filepath.Join(outputDir, archivedDir))
+	if err != nil {
+		return err
+	}
+
 	activeOpts := baseOpts
 	activeOpts.OutputDir = outputDir
 	summary, err := cloner.CloneRepos(ctx, activeRepos, activeOpts)
 	if err != nil {
 		return err
 	}
+	summary.Results = append(summary.Results, cleanFailures...)
 
 	if len(archivedRepos) > 0 {
 		if shouldDelete {

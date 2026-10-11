@@ -1,6 +1,7 @@
 package cloner
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -18,6 +19,8 @@ import (
 
 // Options controls a single CloneRepos invocation.
 type Options struct {
+	// Token authenticates HTTPS clones and pulls. git gets it through its
+	// environment for each command (see credential), never in a URL.
 	Token       string
 	OutputDir   string
 	Concurrency int
@@ -46,13 +49,9 @@ func CloneRepos(ctx context.Context, repos []ghapi.RepoInfo, opts Options) (Sync
 		return summary, nil
 	}
 
-	git := gitRunner{path: opts.GitPath}
-	if git.path == "" {
-		path, err := FindGit()
-		if err != nil {
-			return summary, err
-		}
-		git.path = path
+	git, err := newGitRunner(ctx, opts)
+	if err != nil {
+		return summary, err
 	}
 
 	concurrency := opts.Concurrency
@@ -130,7 +129,7 @@ func processRepo(ctx context.Context, git gitRunner, repo ghapi.RepoInfo, opts O
 
 	var results []RepoResult
 	dest := filepath.Join(opts.OutputDir, repo.Name)
-	url := resolveURL(repo, opts.Token, opts.UseSSH)
+	url := resolveURL(repo, opts.UseSSH)
 
 	if hasGitDir(dest) {
 		git.setIdentity(ctx, dest, opts.GitAuthor, opts.GitEmail)
@@ -141,7 +140,14 @@ func processRepo(ctx context.Context, git gitRunner, repo ghapi.RepoInfo, opts O
 		case dirty:
 			results = append(results, RepoResult{Name: repo.Name, Action: ActionSkippedDirty})
 		default:
-			r := git.run(ctx, dest, "pull", "--ff-only")
+			if err := git.cleanOrigin(ctx, dest); err != nil {
+				results = append(results, RepoResult{Name: repo.Name, Action: ActionFailed, Detail: err.Error()})
+				break
+			}
+			// The header is scoped to the HTTPS clone URL's host even in SSH
+			// mode, so a clone first made over HTTPS keeps pulling; an SSH
+			// origin never sends it.
+			r := git.fetch(ctx, dest, repo.CloneURL, "pull", "--ff-only")
 			if r.Success() {
 				results = append(results, RepoResult{Name: repo.Name, Action: ActionPulled})
 			} else {
@@ -150,7 +156,7 @@ func processRepo(ctx context.Context, git gitRunner, repo ghapi.RepoInfo, opts O
 		}
 	} else {
 		args := slices.Concat([]string{"clone"}, platformCloneArgs, []string{"--branch", repo.DefaultBranch, url, dest})
-		r := git.run(ctx, "", args...)
+		r := git.fetch(ctx, "", url, args...)
 		if r.Success() {
 			git.setIdentity(ctx, dest, opts.GitAuthor, opts.GitEmail)
 			results = append(results, RepoResult{Name: repo.Name, Action: ActionCloned})
@@ -167,17 +173,21 @@ func processRepo(ctx context.Context, git gitRunner, repo ghapi.RepoInfo, opts O
 
 func processWiki(ctx context.Context, git gitRunner, repo ghapi.RepoInfo, opts Options) []RepoResult {
 	wikiDest := filepath.Join(opts.OutputDir, repo.Name+".wiki")
-	wikiURL := resolveWikiURL(repo, opts.Token, opts.UseSSH)
+	wikiURL := resolveWikiURL(repo, opts.UseSSH)
 
 	if hasGitDir(wikiDest) {
 		git.setIdentity(ctx, wikiDest, opts.GitAuthor, opts.GitEmail)
 		if dirty, status := git.status(ctx, wikiDest); status.Success() && !dirty {
-			git.run(ctx, wikiDest, "pull", "--ff-only")
+			// A wiki that can't be cleaned or pulled adds no result, as before;
+			// the next run tries again.
+			if git.cleanOrigin(ctx, wikiDest) == nil {
+				git.fetch(ctx, wikiDest, repo.CloneURL, "pull", "--ff-only")
+			}
 		}
 		return nil
 	}
 	args := slices.Concat([]string{"clone"}, platformCloneArgs, []string{wikiURL, wikiDest})
-	r := git.run(ctx, "", args...)
+	r := git.fetch(ctx, "", wikiURL, args...)
 	if r.Success() {
 		git.setIdentity(ctx, wikiDest, opts.GitAuthor, opts.GitEmail)
 		return []RepoResult{{Name: repo.Name, Action: ActionClonedWiki}}
@@ -190,14 +200,14 @@ func hasGitDir(repoDir string) bool {
 	return err == nil && info.IsDir()
 }
 
-func resolveURL(repo ghapi.RepoInfo, token string, useSSH bool) string {
+func resolveURL(repo ghapi.RepoInfo, useSSH bool) string {
 	if useSSH {
 		return repo.SSHURL
 	}
-	return authenticatedHTTPS(repo.CloneURL, token)
+	return repo.CloneURL
 }
 
-func resolveWikiURL(repo ghapi.RepoInfo, token string, useSSH bool) string {
+func resolveWikiURL(repo ghapi.RepoInfo, useSSH bool) string {
 	if useSSH {
 		ssh := repo.SSHURL
 		if strings.HasSuffix(ssh, ".git") {
@@ -209,15 +219,62 @@ func resolveWikiURL(repo ghapi.RepoInfo, token string, useSSH bool) string {
 	if !strings.HasSuffix(wikiURL, ".wiki.git") {
 		wikiURL += ".wiki.git"
 	}
-	return authenticatedHTTPS(wikiURL, token)
+	return wikiURL
 }
 
-func authenticatedHTTPS(url, token string) string {
-	const prefix = "https://"
-	if strings.HasPrefix(url, prefix) {
-		return prefix + token + "@" + strings.TrimPrefix(url, prefix)
+// newGitRunner finds git, unless opts already names it, and carries the token.
+func newGitRunner(ctx context.Context, opts Options) (gitRunner, error) {
+	path := opts.GitPath
+	if path == "" {
+		found, err := FindGit(ctx)
+		if err != nil {
+			return gitRunner{}, err
+		}
+		path = found
 	}
-	return url
+	return gitRunner{path: path, cred: newCredential(opts.Token)}, nil
+}
+
+// CleanOrigins removes the credential from the origin URL of every clone
+// directly under each of parents, as processRepo does before a pull. The run
+// flow calls it for the output directory, DELETED/ and ARCHIVED/, so clones
+// that no sync pulls any more (moved, excluded, or a removed repo's wiki) are
+// cleaned too. A clone's .git/config is read first and git is asked only when
+// it holds an "@", so the pass costs a file read per clone that is already
+// clean. Missing parents are skipped; each clone that can't be cleaned is a
+// failed result named by its path. opts supplies GitPath and Token (for
+// masking messages); with no GitPath it calls FindGit.
+func CleanOrigins(ctx context.Context, opts Options, parents ...string) ([]RepoResult, error) {
+	var git gitRunner
+	var results []RepoResult
+	for _, parent := range parents {
+		entries, err := os.ReadDir(parent)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			dir := filepath.Join(parent, e.Name())
+			if !e.IsDir() || !hasGitDir(dir) || !mayHoldUserInfo(dir) {
+				continue
+			}
+			if git.path == "" {
+				if git, err = newGitRunner(ctx, opts); err != nil {
+					return results, err
+				}
+			}
+			if err := git.cleanOrigin(ctx, dir); err != nil {
+				results = append(results, RepoResult{Name: dir, Action: ActionFailed, Detail: err.Error()})
+			}
+		}
+	}
+	return results, nil
+}
+
+// mayHoldUserInfo reports whether repoDir's .git/config could hold a URL with
+// user info. An unreadable file says yes, so git decides.
+func mayHoldUserInfo(repoDir string) bool {
+	data, err := os.ReadFile(filepath.Join(repoDir, ".git", "config"))
+	return err != nil || bytes.Contains(data, []byte("@"))
 }
 
 // MoveRepo moves a repo directory into targetDir (creating targetDir if

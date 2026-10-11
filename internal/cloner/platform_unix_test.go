@@ -46,3 +46,27 @@ func TestCloneRepos_ClonesWindowsDeviceNamesOnUnix(t *testing.T) {
 
 	assert.DirExists(t, filepath.Join(f.out, "CON", ".git"))
 }
+
+func TestFindGit_RefusesAGitOlderThan231(t *testing.T) {
+	dir := t.TempDir()
+	script := "#!/bin/sh\necho 'git version 2.30.2'\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o755))
+	t.Setenv("PATH", dir)
+
+	_, err := cloner.FindGit(t.Context())
+
+	require.ErrorIs(t, err, cloner.ErrGitTooOld)
+	assert.Contains(t, err.Error(), "found 2.30.2")
+}
+
+func TestFindGit_ReportsAGitThatFails(t *testing.T) {
+	dir := t.TempDir()
+	script := "#!/bin/sh\necho 'broken install' >&2\nexit 1\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o755))
+	t.Setenv("PATH", dir)
+
+	_, err := cloner.FindGit(t.Context())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "broken install")
+}
