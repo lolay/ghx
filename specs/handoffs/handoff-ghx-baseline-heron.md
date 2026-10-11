@@ -20,7 +20,7 @@ promoted to durable docs, before the PR merges.
   which ran waves 1 and 2.
 - Re-confirmed 2026-10-10 by Kickoff prompt in session
   `6517b573-c846-47e6-ac6e-39aa5313307e` (same tokens); this session
-  orchestrates wave 3.
+  orchestrated wave 3 and final completion.
 
 ## Waves
 
@@ -28,7 +28,7 @@ promoted to durable docs, before the PR merges.
 |---|---|---|---|
 | 1 | exec | m1.s1-s3 (s2 is `[fast]`, folded) | done, PASS, `3e99c74..92f4ee3` |
 | 2 | deep | m1.s4 | done, PASS, `cd6de0a..2797c2d` (gates 5 and 2 approved: "yes, continue wave 2") |
-| 3 | exec | m2.s1-s2 | launching (gates 4 and 5 approved: "yes, continue wave 3") |
+| 3 | exec | m2.s1-s2 | done, PASS, `8ef9623..ec72869` (gates 4 and 5 approved: "yes, continue wave 3") |
 
 ## Done
 
@@ -55,26 +55,40 @@ promoted to durable docs, before the PR merges.
   Review nit: the manifest comment omits the `ensure_ascii`/HTML-escape
   differences from Python.
 - Milestone handoff for m2 written: `specs/handoffs/handoff-m2-docs.md`.
+- Wave 3 (`ghx m2 s1-s2`), run `wf_56f9ca73-223`, the canary (the wave's
+  only group), commits `8a50cdc` m2.s1 (README, CHANGELOG) and `ec72869`
+  m2.s2 (CONTRIBUTING, SECURITY, CODEOWNERS, AGENTS). `check_wave.py`: ok.
+  Review: PASS (CLI reference identical to `--help`, 29 relative links
+  resolve, `make ci` passes). The worker found that HTTPS clones embed the
+  token in the origin URL; SECURITY.md documents it, code fix is a
+  follow-up.
+- Plan complete 2026-10-10; Completion summary at the bottom of the plan.
 
 ## Spend
 
-~$5.63 of ~$13 expected (API-equiv). Guard: 3x min $50, so stops past $50.
-Projected after wave 3: ~$6.8.
+~$8.13 of ~$13 expected (API-equiv; subagent lines are output estimates).
+Per wave: 1 ~$1.30, 2 ~$3.15, 3 ~$1.35, orchestrator ~$2.33.
 
 ## Next
 
-Wave 3 `[exec]` ghx m2 s1-s2 (README, CHANGELOG, contributor and agent
-docs), Sonnet high worker, Opus high reviewer, ~$1.2.
+The plan is complete. Pending: Gary's answer on the PR (below). Before
+merge, the last commit removes `specs/handoffs/` (this handoff, the plan,
+`handoff-m2-docs.md`) or promotes what's durable; the Completion summary's
+follow-ups (token in HTTPS origin URL, `ResolveInt`, old deps) would go to
+an issue or `specs/` first.
 
-## Pending question
+## Pending question (verbatim)
 
-None. Gate 4 (and this session's canary, gate 5) approved 2026-10-10:
-"yes, continue wave 3".
+> Plan complete: 3/3 groups, every review PASS, no fix-ups. Open a PR from
+> `feature/ghx-baseline-heron` to `main`? Before merge, a cleanup commit
+> removes `specs/handoffs/` (plan, session handoff, m2 handoff); tell me
+> whether to promote anything (the Completion summary's follow-ups) to
+> `specs/` or an issue first.
 
 ## Resume
 
-Paste the plan's Kickoff prompt into a new chat (Opus, effort high). If
-Status shows BLOCKED, the session re-posts that question.
+Nothing to dispatch. Answer the pending question; the PR and the cleanup
+commit need no orchestration.
 
 ## Deviations from plan
 
@@ -83,3 +97,7 @@ Status shows BLOCKED, the session re-posts that question.
 - m1.s1's acceptance grep matches the plan itself in `specs/handoffs/`;
   the dispatch excluded that folder.
 - m1.s3: `make format` also runs `golangci-lint fmt` (not in the spec).
+- m2.s1: `go install github.com/lolay/ghx/cmd/ghx@latest` fails until the
+  rename merges to `main`; the README says so.
+- Session `bf82fd5c` ended before writing its `orchestrator-wave-2` token
+  line; session `6517b573` tallied it from that transcript.

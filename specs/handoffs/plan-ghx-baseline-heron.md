@@ -1,7 +1,7 @@
 ```
---- KICKOFF: begin orchestration at [deep] ---
+--- KICKOFF: plan complete ---
 
-  Status: 2/3 groups done | last review: wave-2 PASS | current: ghx m2 s1-s2 [exec] | updated 2026-10-10
+  Status: 3/3 groups done | completed 2026-10-10
 
   mode: gated | proposed gated (harness=claude-code runner=none; Mac CLI workstation, dogfood run A) | guard 3x min $50 | fixups 2 | confirmed 2026-10-10 session 6517b573-c846-47e6-ac6e-39aa5313307e by Kickoff prompt: Run in gated mode.
 
@@ -28,13 +28,13 @@
 
 **Cost (API-equiv, Claude Code models)**
 
-| wave | expected tokens | expected $ |
-|---|---|---|
-| 1 [exec] ghx m1 s1-s3 | ~2.6M | ~$1.1 |
-| 2 [deep] ghx m1 s4 | ~6.1M | ~$3.2 |
-| 3 [exec] ghx m2 s1-s2 | ~3.0M | ~$1.2 |
-| orchestrator | ~7.5M | ~$7.3 |
-| **Total** | ~19M | ~$13 |
+| wave | expected tokens | expected $ | actual tokens | actual $ |
+|---|---|---|---|---|
+| 1 [exec] ghx m1 s1-s3 | ~2.6M | ~$1.1 | ~2.1M (output est.) | ~$1.30 (output est.) |
+| 2 [deep] ghx m1 s4 | ~6.1M | ~$3.2 | ~4.6M (output est.) | ~$3.15 (output est.) |
+| 3 [exec] ghx m2 s1-s2 | ~3.0M | ~$1.2 | ~2.0M (output est.) | ~$1.35 (output est.) |
+| orchestrator | ~7.5M | ~$7.3 | ~2.6M | ~$2.33 |
+| **Total** | ~19M | ~$13 | ~11M (output est.) | ~$8.13 (output est.) |
 
 Expected values are estimates, good to about 2-3× per wave.
 
@@ -95,13 +95,13 @@ Run A of the orchestrate phase 1 dogfood (`GaryRudolph/public` `specs/handoffs/d
 
 --- WAVE 3 [exec] ---
 
-#### s1 - [exec] README and CHANGELOG
+#### s1 - [exec] README and CHANGELOG (done)
 
 - README restructured on triage's: what ghx is, quick start, install (from source with `make build`, or `go install github.com/lolay/ghx/cmd/ghx@latest`; one line that Homebrew and Scoop come with the first release), authentication, configuration (config paths on each OS: `~/.ghx.toml`, `%USERPROFILE%\.ghx.toml` on Windows), usage, how it works, CLI reference matching `ghx --help` exactly, development (`make help`, `make ci`).
 - `CHANGELOG.md` in Keep a Changelog form with `## [Unreleased]`, listing this plan's user-visible changes (binary renamed to `ghx`, module path `github.com/lolay/ghx`).
 - **Accept when:** every command in the README runs as written on the Mac (or is a clearly marked placeholder for the release); the CLI reference matches `go run ./cmd/ghx --help`.
 
-#### s2 - [exec] Contributor and agent docs
+#### s2 - [exec] Contributor and agent docs (done)
 
 - `CONTRIBUTING.md` (from triage's: setup, the make loop, `.go-version`, commit style, PR flow), `SECURITY.md` (private reporting via GitHub security advisories; the token handling ghx does), `.github/CODEOWNERS` (`* @GaryRudolph`), and a short `AGENTS.md`: layout, `make ci` as the gate, where tests and specs live, the Go standards, and that `specs/handoffs/` holds plan scratch removed before merge.
 - **Accept when:** every relative link in the new docs resolves (`grep -o '](\./[^)]*)'` and check each path); `make ci` passes.
@@ -110,6 +110,7 @@ Run A of the orchestrate phase 1 dogfood (`GaryRudolph/public` `specs/handoffs/d
 
 review wave-1 (ghx m1 s1-s3) 3e99c74..92f4ee3: PASS - acceptance met; make ci/vuln/doctor pass; golangci-lint fell back to standard+misspell+errorlint (29 findings > ~25), exclusions listed in .golangci.yml header; `git check-ignore -q` with three paths is rejected by git, each path checked singly; README still says Go 1.22+ (not in s1 scope); govulncheck: 2 uncalled vulns in old deps - 2026-10-10
 review wave-2 (ghx m1 s4) cd6de0a..2797c2d: PASS - make ci passes; coverage config 95.3%, manifest 90.9%, ui 98.6%, ghapi 42.7% (FilterRepos 100%, gap listed in specs/testing.md); seams need no production change (HOME/USERPROFILE via t.Setenv); no behaviour bug found, manifest doc comment corrected in its own commit (exported_at differs from Python); pinned for later: ResolveInt truncates TOML floats, wrong-typed values fall through; doc nit: comment omits ensure_ascii/HTML-escape differences - 2026-10-10
+review wave-3 (ghx m2 s1-s2) 8ef9623..ec72869: PASS - make ci passes; README CLI reference identical to `go run ./cmd/ghx --help`; all 29 relative links resolve; README states Go floor 1.26.2; `go install ...@latest` marked as working only after the rename merges; nits: README says every option is a config key but `--ssh` has none (only `protocol`), CLI fence has no language tag, CHANGELOG names ghx-go/garyrudolph to describe the rename; follow-up: HTTPS clones embed the token in the origin URL (internal/cloner/cloner.go:192-195), now documented in SECURITY.md, code fix out of scope - 2026-10-10
 
 ## Token log
 
@@ -127,3 +128,26 @@ tokens review-wave-1 ghx-m1-s1-s3 (claude-opus-5-5): input ~24 / cache read ~320
 tokens orchestrator-wave-1 ghx-m1-s1-s3 (claude-opus-5-5): input ~16 / cache read ~670k / cache write ~0 5m + ~20k 1h / output ~8.3k | ~$0.46 API-equiv
 tokens wave-2 ghx-m1-s4 (claude-opus-5-5): input ~80 / cache read ~3.8M / cache write ~130k / output ~53k | ~$2.46 API-equiv (output est.) session bf82fd5c-3117-418c-934b-c0d47391532a
 tokens review-wave-2 ghx-m1-s4 (claude-opus-5-5): input ~30 / cache read ~550k / cache write ~54k / output ~16k | ~$0.69 API-equiv (output est.) session bf82fd5c-3117-418c-934b-c0d47391532a
+tokens orchestrator-wave-2 ghx-m1-s4 (claude-opus-5-5): input ~14 / cache read ~670k / cache write ~0 5m + ~16k 1h / output ~5.6k | ~$0.38 API-equiv
+tokens orchestrator-kickoff plan-ghx-baseline-heron (claude-opus-5-5): input ~16 / cache read ~580k / cache write ~0 5m + ~66k 1h / output ~6.5k | ~$0.77 API-equiv
+tokens wave-3 ghx-m2-s1-s2 (claude-sonnet-5-5): input ~40 / cache read ~1.5M / cache write ~96k / output ~23k | ~$0.76 API-equiv (output est.) session 6517b573-c846-47e6-ac6e-39aa5313307e
+tokens review-wave-3 ghx-m2-s1-s2 (claude-opus-5-5): input ~30 / cache read ~330k / cache write ~42k / output ~16k | ~$0.59 API-equiv (output est.) session 6517b573-c846-47e6-ac6e-39aa5313307e
+
+## Completion summary
+
+**Completed**: 2026-10-10
+**What shipped**: `lolay/ghx` now has triage's repo baseline. The module is `github.com/lolay/ghx` and the binary is `ghx` (`cmd/ghx`). The repo has `.gitignore`, `.gitattributes` and `.go-version` (1.27.2) hygiene, and `gofmt` is clean. The new leaf `Makefile` with `Makefile.md` has the Develop and GitHub sections (`help`, `init`, `doctor`, `build`, `lint`, `format`, `test`, `vuln`, `ci`, `pre-commit`, `clean`, `gh-runs-*`). It is backed by `triage.yaml`, `.golangci.yml` (v2, golangci-lint v2.14.0) and govulncheck as a `go.mod` tool. The first unit tests are table-driven testify tests for `config`, `ghapi.FilterRepos`, `manifest` (with a golden `.ghx.json`) and `ui`, and `specs/testing.md` records the test seams and coverage exemptions. Docs: README rebuilt on triage's layout (with the CLI reference verbatim from `--help`), `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md`, `.github/CODEOWNERS` and `AGENTS.md`. Three waves ran, each passing review the first time, with no fix-ups.
+**Deviations from plan**:
+- The plan's Context says `main` at `b2b9866`; the branch was cut from `7c394ba` (three later commits: `.gitignore`, `.claude/settings.json`, this plan).
+- m1.s1's acceptance grep also matches the plan itself in `specs/handoffs/`; the dispatch excluded that folder.
+- m1.s2: `git check-ignore -q` rejects three paths at once, so each path was checked on its own (all ignored).
+- m1.s3: golangci-lint reported 29 findings with triage's set, so `.golangci.yml` keeps standard + misspell + errorlint and lists the exclusions in its header. `make format` also runs `golangci-lint fmt` (not in the spec).
+- m2.s1: `go install github.com/lolay/ghx/cmd/ghx@latest` cannot work until the rename merges to `main`; the README says so.
+- Orchestration ran over three sessions (`4e8ee344` kickoff, `bf82fd5c` waves 1-2, `6517b573` wave 3). Session `bf82fd5c` ended before writing its `orchestrator-wave-2` line; this session tallied it from that transcript. Each wave was its session's canary (one group per wave), so no unattended checkpoints, automatic retries or fix-ups.
+- `(output est.)` lines from the ended session `bf82fd5c` stay as they are: its `cost-state` record also covers the parent rows.
+**Follow-ups**:
+- HTTPS clones embed the token in the origin URL (`internal/cloner/cloner.go:192-195`), so it lands in each clone's `.git/config` and the process list. It is documented in `SECURITY.md`; fix it in code (credential helper, or reset origin after clone).
+- `ResolveInt` truncates TOML floats, and wrong-typed config values fall through to the next source (pinned by tests, documented in the README); decide whether either should be an error.
+- govulncheck reports 2 uncalled vulns in old dependencies (e.g. `golang.org/x/text` 0.22.0); bump them.
+- README nits: "every option is a config key" isn't true for `--ssh` (only `protocol`); the CLI reference fence has no language tag. The manifest doc comment doesn't mention the `ensure_ascii`/HTML-escape differences from Python.
+- Before merge: remove `specs/handoffs/` (this plan, `handoff-ghx-baseline-heron.md`, `handoff-m2-docs.md`) or promote what's durable. Then plans B (`plan-ghx-platforms-lynx`) and C (`plan-ghx-release-finch`) start from `main`.
