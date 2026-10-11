@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/google/go-github/v67/github"
@@ -29,10 +30,24 @@ type RepoInfo struct {
 	PushedAt      string // RFC3339, empty when unset
 }
 
+// baseURL, when set, replaces GitHub's API endpoint. Only tests set it (see
+// export_test.go); nil means the public API, so users see no difference.
+var baseURL *url.URL
+
+// newClient builds the go-github client both ValidateToken and ListOrgRepos
+// use, so a test that points baseURL at an httptest server covers both.
+func newClient(token string) *github.Client {
+	client := github.NewClient(nil).WithAuthToken(token)
+	if baseURL != nil {
+		client.BaseURL = baseURL
+	}
+	return client
+}
+
 // ValidateToken calls GET /user to confirm the token is valid, returning
 // the authenticated login.
 func ValidateToken(ctx context.Context, token string) (string, error) {
-	client := github.NewClient(nil).WithAuthToken(token)
+	client := newClient(token)
 	user, _, err := client.Users.Get(ctx, "")
 	if err != nil {
 		return "", formatAPIError("Token validation failed", err)
@@ -47,7 +62,7 @@ func ValidateToken(ctx context.Context, token string) (string, error) {
 // returns them as RepoInfo values. Uses type=all to match the Python
 // behavior (subsequent --type filtering happens in FilterRepos).
 func ListOrgRepos(ctx context.Context, token, org string) ([]RepoInfo, error) {
-	client := github.NewClient(nil).WithAuthToken(token)
+	client := newClient(token)
 
 	opts := &github.RepositoryListByOrgOptions{
 		Type:        "all",
