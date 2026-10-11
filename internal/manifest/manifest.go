@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/garyrudolph/ghx/internal/config"
-	"github.com/garyrudolph/ghx/internal/ghapi"
+	"github.com/lolay/ghx/internal/config"
+	"github.com/lolay/ghx/internal/ghapi"
 )
 
 // Repo is one entry in the manifest's repos array.

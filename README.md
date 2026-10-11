@@ -2,10 +2,8 @@
 
 Export and sync all GitHub repositories for an organization.
 
-This is the Go port of the original Python tool. During the comparison
-period the binary is named `ghx-go` so it can coexist with the existing
-Python `ghx` on your PATH. When you're happy with the Go version, rename
-`cmd/ghx-go/` to `cmd/ghx/` and the binary will ship as `ghx`.
+This is the Go port of the original Python tool; the Python version lives on
+the `old/python` branch.
 
 ## Setup
 
@@ -14,18 +12,18 @@ Requires Go 1.22+ and Git.
 ### Build from source
 
 ```bash
-go build -o ghx-go ./cmd/ghx-go
-./ghx-go --help
+go build -o ghx ./cmd/ghx
+./ghx --help
 ```
 
 ### Install globally
 
 ```bash
-go install github.com/garyrudolph/ghx/cmd/ghx-go@latest
-ghx-go --help
+go install github.com/lolay/ghx/cmd/ghx@latest
+ghx --help
 ```
 
-By default this drops a `ghx-go` binary in `$GOBIN`, or if `GOBIN` is unset,
+By default this drops a `ghx` binary in `$GOBIN`, or if `GOBIN` is unset,
 `$(go env GOPATH)/bin` (typically `~/go/bin`). Make sure that directory is on
 your `PATH`:
 
@@ -40,7 +38,7 @@ If you prefer the XDG-style `~/.local/bin` (alongside tools installed with
 
 ```bash
 mkdir -p ~/.local/bin
-GOBIN=$HOME/.local/bin go install github.com/garyrudolph/ghx/cmd/ghx-go@latest
+GOBIN=$HOME/.local/bin go install github.com/lolay/ghx/cmd/ghx@latest
 ```
 
 To make that the default for every `go install`, export `GOBIN` in your shell
@@ -52,8 +50,8 @@ export GOBIN="$HOME/.local/bin"
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-After that, `go install github.com/garyrudolph/ghx/cmd/ghx-go@latest` will
-drop the binary straight into `~/.local/bin/ghx-go`.
+After that, `go install github.com/lolay/ghx/cmd/ghx@latest` will
+drop the binary straight into `~/.local/bin/ghx`.
 
 ## Authentication
 
@@ -135,13 +133,13 @@ order (highest precedence first):
 3. `<path>/.ghx.toml`
 4. `~/.ghx.toml`
 
-Before any API calls, `ghx-go` prints the resolved settings (with an obfuscated
+Before any API calls, `ghx` prints the resolved settings (with an obfuscated
 token) so you can verify what values are in effect.
 
 ## Usage
 
 ```bash
-ghx-go <ORG> <PATH> [OPTIONS]
+ghx <ORG> <PATH> [OPTIONS]
 ```
 
 `ORG` is the GitHub organization name. `PATH` is the output directory (created
@@ -154,22 +152,22 @@ pull the latest changes, clone any new repos, and handle removed or archived rep
 
 ```bash
 # Clone all repos for an org into ./acme
-ghx-go acme ./acme
+ghx acme ./acme
 
 # Dry-run to preview what would happen
-ghx-go acme ./acme --dry-run
+ghx acme ./acme --dry-run
 
 # Only private repos, exclude names matching a pattern
-ghx-go acme ./acme --type private --exclude "^test-"
+ghx acme ./acme --type private --exclude "^test-"
 
 # Also clone wikis, use SSH transport
-ghx-go acme ./acme --clone-wiki --ssh
+ghx acme ./acme --clone-wiki --ssh
 
 # Permanently delete removed/archived repos instead of moving them
-ghx-go acme ./acme --delete
+ghx acme ./acme --delete
 
 # Custom directory names for moved repos
-ghx-go acme ./acme --deleted-dir removed --archived-dir inactive
+ghx acme ./acme --deleted-dir removed --archived-dir inactive
 ```
 
 ### How it works
@@ -187,7 +185,7 @@ ghx-go acme ./acme --deleted-dir removed --archived-dir inactive
 ## CLI Reference
 
 ```
-ghx-go <ORG> <PATH> [OPTIONS]
+ghx <ORG> <PATH> [OPTIONS]
 
 Arguments:
   ORG                        GitHub organization name

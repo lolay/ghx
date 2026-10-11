@@ -1,4 +1,4 @@
-module github.com/garyrudolph/ghx
+module github.com/lolay/ghx
 
 go 1.26.2
 

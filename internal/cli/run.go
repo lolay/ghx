@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/garyrudolph/ghx/internal/cloner"
-	"github.com/garyrudolph/ghx/internal/config"
-	"github.com/garyrudolph/ghx/internal/ghapi"
-	"github.com/garyrudolph/ghx/internal/manifest"
-	"github.com/garyrudolph/ghx/internal/ui"
 	"github.com/jedib0t/go-pretty/v6/text"
+	"github.com/lolay/ghx/internal/cloner"
+	"github.com/lolay/ghx/internal/config"
+	"github.com/lolay/ghx/internal/ghapi"
+	"github.com/lolay/ghx/internal/manifest"
+	"github.com/lolay/ghx/internal/ui"
 	"github.com/spf13/cobra"
 )
 

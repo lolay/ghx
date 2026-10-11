@@ -11,10 +11,10 @@ import (
 	"io"
 	"os"
 
-	"github.com/garyrudolph/ghx/internal/cloner"
-	"github.com/garyrudolph/ghx/internal/ghapi"
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/jedib0t/go-pretty/v6/text"
+	"github.com/lolay/ghx/internal/cloner"
+	"github.com/lolay/ghx/internal/ghapi"
 )
 
 // Out is the writer used for all UI output. Tests can override it.
