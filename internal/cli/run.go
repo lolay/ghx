@@ -8,12 +8,13 @@ import (
 	"sort"
 
 	"github.com/jedib0t/go-pretty/v6/text"
+	"github.com/spf13/cobra"
+
 	"github.com/lolay/ghx/internal/cloner"
 	"github.com/lolay/ghx/internal/config"
 	"github.com/lolay/ghx/internal/ghapi"
 	"github.com/lolay/ghx/internal/manifest"
 	"github.com/lolay/ghx/internal/ui"
-	"github.com/spf13/cobra"
 )
 
 func run(cmd *cobra.Command, args []string, f *flags) error {
@@ -30,7 +31,7 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 		return err
 	}
 	for _, m := range msgs {
-		fmt.Fprintln(ui.Out, text.Faint.Sprint(m))
+		ui.Println(text.Faint.Sprint(m))
 	}
 
 	// --ssh is a shortcut that forces protocol=ssh even if --protocol
@@ -48,7 +49,7 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 	token, tokenSrc, err := config.ResolveToken(f.token, homeCfg, localCfg)
 	if err != nil {
 		if errors.Is(err, config.ErrNoToken) {
-			return errors.New(config.NoTokenMessage)
+			return errors.New(config.NoTokenMessage) //nolint:staticcheck // ST1005: multi-line, user-facing sentence, not a wrapped error
 		}
 		return err
 	}
@@ -92,14 +93,14 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 	)
 	ui.PrintSettings(rows)
 
-	fmt.Fprintln(ui.Out, text.Faint.Sprint("Authenticating..."))
+	ui.Println(text.Faint.Sprint("Authenticating..."))
 	username, err := ghapi.ValidateToken(ctx, token)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(ui.Out, "Authenticated as %s\n", text.Bold.Sprint(username))
+	ui.Printf("Authenticated as %s\n", text.Bold.Sprint(username))
 
-	fmt.Fprintf(ui.Out, "Fetching repos for %s...\n", text.Bold.Sprint(org))
+	ui.Printf("Fetching repos for %s...\n", text.Bold.Sprint(org))
 	allRepos, err := ghapi.ListOrgRepos(ctx, token, org)
 	if err != nil {
 		return err
@@ -108,7 +109,7 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(ui.Out, "Found %s repos\n", text.Bold.Sprint(len(repos)))
+	ui.Printf("Found %s repos\n", text.Bold.Sprint(len(repos)))
 
 	var skippedLargeResults []cloner.RepoResult
 	if maxSizeSet {
@@ -123,7 +124,7 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 		}
 		repos = kept
 		if len(tooLarge) > 0 {
-			fmt.Fprintf(ui.Out,
+			ui.Printf(
 				"Skipping %s repo(s) exceeding %d MB\n",
 				text.Bold.Sprint(len(tooLarge)), maxSize,
 			)
@@ -140,7 +141,7 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 		return err
 	}
 	if msg != "" {
-		fmt.Fprintln(ui.Out, text.Faint.Sprint(msg))
+		ui.Println(text.Faint.Sprint(msg))
 	}
 	var previousRepos []manifest.Repo
 	if m != nil {
@@ -156,25 +157,25 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 			shouldDelete, deletedDir, archivedDir, dryRun,
 		)
 		if len(removalSummary.Results) > 0 {
-			fmt.Fprintln(ui.Out)
-			fmt.Fprintln(ui.Out, text.Bold.Sprint("Changes for removed/archived repos:"))
+			ui.Println()
+			ui.Println(text.Bold.Sprint("Changes for removed/archived repos:"))
 			for _, r := range removalSummary.Results {
-				fmt.Fprintf(ui.Out, "  %s: %s\n", r.Name, r.Action)
+				ui.Printf("  %s: %s\n", r.Name, r.Action)
 			}
 		}
 	}
 
 	if len(skippedLargeResults) > 0 {
-		fmt.Fprintln(ui.Out)
-		fmt.Fprintln(ui.Out, text.Bold.Sprint("Repos skipped (too large):"))
+		ui.Println()
+		ui.Println(text.Bold.Sprint("Repos skipped (too large):"))
 		for _, r := range skippedLargeResults {
-			fmt.Fprintf(ui.Out, "  %s: %s\n", r.Name, r.Action)
+			ui.Printf("  %s: %s\n", r.Name, r.Action)
 		}
 	}
 
 	if dryRun {
-		fmt.Fprintln(ui.Out)
-		fmt.Fprintln(ui.Out, text.Faint.Sprint("Dry run complete. No changes made."))
+		ui.Println()
+		ui.Println(text.Faint.Sprint("Dry run complete. No changes made."))
 		return nil
 	}
 
@@ -206,9 +207,9 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 
 	if len(archivedRepos) > 0 {
 		if shouldDelete {
-			fmt.Fprintf(ui.Out, "Skipping %d archived repo(s) (--delete)\n", len(archivedRepos))
+			ui.Printf("Skipping %d archived repo(s) (--delete)\n", len(archivedRepos))
 		} else {
-			fmt.Fprintf(ui.Out, "Cloning %d archived repo(s) into %s/...\n",
+			ui.Printf("Cloning %d archived repo(s) into %s/...\n",
 				len(archivedRepos), archivedDir)
 			archivedOpts := baseOpts
 			archivedOpts.OutputDir = filepath.Join(outputDir, archivedDir)
