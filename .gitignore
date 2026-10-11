@@ -2,6 +2,7 @@
 /ghx
 *.test
 *.out
+*.DS_Store
 coverage.out
 
 .cursor/rules/personal-*.mdc
