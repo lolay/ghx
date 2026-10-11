@@ -40,15 +40,21 @@ or promoted before the branch merges.
   helpers `internal/gittest` and `internal/ghapi/ghapitest`. cli reaches the
   fake API by swapping `http.DefaultTransport` (`ghapitest.RedirectGitHub`),
   documented in `specs/testing.md`. Gate 5 passed unattended.
+- Wave 2 `[deep]` m1.s4-m1.s5: PASS, `f9d4148..83231a0` (`580d54a`,
+  `83231a0`). Windows touchpoints audited (table in `specs/testing.md`),
+  `CheckRepoName`, `FindGit` with a git 2.31 minimum, Windows/Unix platform
+  files; the token goes to git only through `GIT_CONFIG_*` env, old origins
+  are cleaned, `internal/redact` masks failure details. Gate 2 passed
+  unattended. The m2 milestone handoff is `handoff-m2-ci.md` (gate 4).
 
 ## Spend
 
-- Token log: ~$2.5 so far against ~$18 expected (API-equiv; guard ~$54).
+- Token log: ~$9.0 so far against ~$18 expected (API-equiv; guard ~$54).
 
 ## Next
 
-- Wave 2 `[deep]` ghx m1 s4-s5 (Windows OS touchpoints; token out of clone
-  URLs), gate 2 logged unattended, launching now.
+- Wave 3 `[exec]` ghx m2 s1-s2 (CI workflow; CI map docs), gate 4 logged
+  unattended, launching now. Push after it, before wave 4 reads the CI run.
 
 ## Pending question
 
@@ -67,7 +73,12 @@ high).
 - `manifest.Write` is given the repo list before `--include` / `--exclude`
   filtering, so excluded repos appear in `.ghx.json`. Existing behaviour.
 - Windows-only paths (read-only `.git/objects` removal, `GIT_CONFIG_GLOBAL`
-  set to `NUL`) are only type-checked until the m2 CI run.
+  set to `NUL`, the `git.bat` fake, open-file rename retries) are only
+  type-checked until the m2 CI run.
+- On a 401, git can still fall back to the user's credential helper or a
+  terminal prompt; `GIT_TERMINAL_PROMPT=0` needs a decision.
+- Minor: an existing lower-case `git_config_count` on Windows isn't detected,
+  so ghx would overwrite that user's entry 0.
 
 ## Gotchas
 

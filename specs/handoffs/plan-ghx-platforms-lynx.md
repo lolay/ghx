@@ -1,7 +1,7 @@
 ```
 --- KICKOFF: begin orchestration at [deep] ---
 
-  Status: 1/4 groups done | last review: wave-1 PASS | current: m1 s4-s5 [deep] | updated 2026-10-10
+  Status: 2/4 groups done | last review: wave-2 PASS | current: m2 s1-s2 [exec] | updated 2026-10-10
 
   mode: unattended | proposed gated (harness=claude-code runner=none; workstation, no runner signal) | guard 3x min $50 | fixups 2 | confirmed 2026-10-10 session 43a767ca-8b50-41c3-9808-49159f0ef9f6 by Kickoff prompt: Run in unattended mode.
 
@@ -82,14 +82,14 @@ Run B of the orchestrate phase 1 dogfood (`GaryRudolph/public` `specs/handoffs/d
 - **Accept when:** `internal/cli` is at or above 70% statement coverage (the rest listed in `specs/testing.md` with a reason); `make ci` passes.
 
 --- WAVE 2 [deep] ---
-#### s4 - [deep] Make every OS touchpoint correct on Windows
+#### s4 - [deep] Make every OS touchpoint correct on Windows (done)
 
 - Audit each place ghx meets the OS and decide, with a test where one can show it: paths (`filepath` everywhere, `filepath.Base` on user input, the manifest's names); repo names Windows can't hold as directories (`CON`, `AUX`, `NUL`, `COM1`, a trailing `.`), which today would fail mid-sync, so skip them with a clear message or document the limit; `os.Rename` of a directory onto a path just removed, and anything holding a handle open; `os.RemoveAll` on read-only git objects; finding `git` (`exec.LookPath` once, a clear error when it's missing, `git.exe` on Windows); `git status --porcelain` with CRLF output; the home directory (`USERPROFILE`); ANSI colour and the progress bar on a Windows console (enable virtual terminal processing, or turn colour off when it can't be); `os.Interrupt` and `SIGTERM`; file modes; long paths (`core.longpaths`, or document the limit).
 - Fix what's wrong, behind build tags only where the standard library can't do it portably (`_windows.go` / `_unix.go` files, each with a test).
 - Leave the token in the HTTPS clone URL alone: m1.s5 takes it out. Record in the step's artifact anything the audit finds that m1.s5 should know (for example how `git` is found on Windows).
 - **Accept when:** each touchpoint above is fixed with a test, or recorded as correct or as a documented limit in `specs/testing.md` or the README; `GOOS=windows`, `GOOS=linux` and `GOOS=darwin` `go vet ./...` and `go build ./...` pass for amd64 and arm64; `make ci` passes.
 
-#### s5 - [deep] Keep the token out of clone URLs and .git/config
+#### s5 - [deep] Keep the token out of clone URLs and .git/config (done)
 
 Hardening. With the default `https` protocol, `resolveURL` and `resolveWikiURL` call `authenticatedHTTPS`, which puts the token in the URL that `processRepo` and `processWiki` hand to `runGit(…, "clone", …)`. So the token is in `git`'s arguments while the clone runs (the process list), and `git` stores it as `remote.origin.url` in every clone's and wiki's `.git/config`, where it outlives a rotated token. `--protocol ssh` clones aren't affected.
 
@@ -126,6 +126,7 @@ Hardening. With the default `https` protocol, `resolveURL` and `resolveWikiURL` 
 ## Review log
 
 - review wave-1 (ghx m1 s1-s3) 2ed9d2b..9f0db0c: PASS - make ci, Windows vet and -race -count=3 pass; coverage cloner 95.9%, ghapi 100%, cli 91.6%; out of scope, not fixed: resolveWikiURL replaces the first ".git" anywhere (acme.github.io), and manifest.Write gets the unfiltered repo list; passed unattended: gate 5 - 2026-10-10
+- review wave-2 (ghx m1 s4-s5) f9d4148..83231a0: PASS - make ci, 3 GOOS x 2 GOARCH vet and build, Windows lint pass; coverage cloner 96.1%, cli 91.5%, ghapi 100%, redact 100%, ui 98.8%; `git grep authenticatedHTTPS` matches only this plan's step text; also closed a manifest-name path traversal with --delete; Windows-only tests compile but first run in m2 CI; open: GIT_TERMINAL_PROMPT=0 on a 401 needs a decision; passed unattended: gate 2 - 2026-10-10
 
 ## Token log
 
@@ -140,3 +141,6 @@ Hardening. With the default `https` protocol, `resolveURL` and `resolveWikiURL` 
 tokens orchestrator-kickoff plan-ghx-platforms-lynx (claude-opus-5-5): input ~22 / cache read ~840k / cache write ~0 5m + ~69k 1h / output ~8.9k | ~$0.90 API-equiv
 tokens review-wave-1 ghx-m1-s1-s3 (claude-opus-5-5): input ~16 / cache read ~220k / cache write ~57k / output ~8.8k | ~$0.50 API-equiv (output est.) session 43a767ca-8b50-41c3-9808-49159f0ef9f6
 tokens wave-1 ghx-m1-s1-s3 (claude-sonnet-5-5): input ~52 / cache read ~2.6M / cache write ~140k / output ~26k | ~$1.11 API-equiv (output est.) session 43a767ca-8b50-41c3-9808-49159f0ef9f6
+tokens orchestrator-wave-1 plan-ghx-platforms-lynx (claude-opus-5-5): input ~22 / cache read ~710k / cache write ~0 5m + ~56k 1h / output ~11k | ~$0.81 API-equiv
+tokens review-wave-2 ghx-m1-s4-s5 (claude-opus-5-5): input ~22 / cache read ~500k / cache write ~87k / output ~11k | ~$0.75 API-equiv (output est.) session 43a767ca-8b50-41c3-9808-49159f0ef9f6
+tokens wave-2 ghx-m1-s4-s5 (claude-opus-5-5): input ~120 / cache read ~11M / cache write ~260k / output ~71k | ~$4.89 API-equiv (output est.) session 43a767ca-8b50-41c3-9808-49159f0ef9f6
