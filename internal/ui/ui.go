@@ -21,6 +21,33 @@ import (
 // Out is the writer used for all UI output. Tests can override it.
 var Out io.Writer = os.Stdout
 
+// animate is whether progress bars draw on Out; SetupTerminal decides.
+var animate = true
+
+// SetupTerminal decides, once at startup, whether f (os.Stdout) can show the
+// animated progress bar: it must be a terminal that takes ANSI escape codes,
+// since the bar redraws itself with cursor movements. go-pretty has by now
+// turned on virtual terminal processing for a Windows console, or turned
+// colors off where it couldn't (text.ANSICodesSupported); a pipe or a file
+// gets no bar, so a log isn't full of redraws.
+func SetupTerminal(f *os.File) {
+	animate = text.ANSICodesSupported && isTerminal(f)
+}
+
+func isTerminal(f *os.File) bool {
+	info, err := f.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
+
+// ProgressOut is where progress bars render: Out on an interactive terminal,
+// io.Discard otherwise.
+func ProgressOut() io.Writer {
+	if animate {
+		return Out
+	}
+	return io.Discard
+}
+
 // Printf formats to Out and drops the write error: there is nothing useful to
 // do when the terminal is gone.
 func Printf(format string, args ...any) { _, _ = fmt.Fprintf(Out, format, args...) }
@@ -141,13 +168,15 @@ func PrintSummary(summary cloner.SyncSummary) {
 	tw.Render()
 	Println()
 
-	var failed, dirty []cloner.RepoResult
+	var failed, dirty, unusable []cloner.RepoResult
 	for _, r := range summary.Results {
 		switch r.Action {
 		case cloner.ActionFailed:
 			failed = append(failed, r)
 		case cloner.ActionSkippedDirty:
 			dirty = append(dirty, r)
+		case cloner.ActionSkippedName:
+			unusable = append(unusable, r)
 		}
 	}
 	if len(failed) > 0 {
@@ -160,6 +189,12 @@ func PrintSummary(summary cloner.SyncSummary) {
 		Println(text.FgYellow.Sprint(text.Bold.Sprint("Skipped (local changes):")))
 		for _, r := range dirty {
 			Printf("  %s\n", r.Name)
+		}
+	}
+	if len(unusable) > 0 {
+		Println(text.FgYellow.Sprint(text.Bold.Sprint("Skipped (unusable name):")))
+		for _, r := range unusable {
+			Printf("  %s: %s\n", r.Name, r.Detail)
 		}
 	}
 }

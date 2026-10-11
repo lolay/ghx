@@ -68,6 +68,13 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 	archivedDir, _ := config.ResolveString(flagPtr(cmd, "archived-dir", f.archivedDir), homeCfg, localCfg, "archived-dir", "ARCHIVED")
 	maxSize, maxSizeSrc, maxSizeSet := config.ResolveOptionalInt(flagIntPtr(cmd, "max-size", f.maxSize), homeCfg, localCfg, "max-size")
 
+	if err := checkSubdir("deleted-dir", deletedDir); err != nil {
+		return err
+	}
+	if err := checkSubdir("archived-dir", archivedDir); err != nil {
+		return err
+	}
+
 	rows := []ui.SettingRow{
 		{Label: "Organization:", Value: org, Source: string(config.SourceArgument)},
 		{Label: "Output:", Value: outputDir, Source: string(config.SourceArgument)},
@@ -92,6 +99,15 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 		ui.SettingRow{Label: "Git email:", Value: orDash(gitEmail), Source: string(emailSrc)},
 	)
 	ui.PrintSettings(rows)
+
+	// A dry run never runs git, so only a real sync needs it; looking it up
+	// here stops a run without git before it asks GitHub for anything.
+	var gitPath string
+	if !dryRun {
+		if gitPath, err = cloner.FindGit(); err != nil {
+			return err
+		}
+	}
 
 	ui.Println(text.Faint.Sprint("Authenticating..."))
 	username, err := ghapi.ValidateToken(ctx, token)
@@ -195,7 +211,8 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 		UseSSH:      protocol == "ssh",
 		GitAuthor:   gitAuthor,
 		GitEmail:    gitEmail,
-		ProgressOut: ui.Out,
+		GitPath:     gitPath,
+		ProgressOut: ui.ProgressOut(),
 	}
 
 	activeOpts := baseOpts
@@ -278,6 +295,13 @@ func handleRemovedAndArchived(
 
 	process := func(names []string, moveTarget string, moveAction cloner.Action) {
 		for _, name := range names {
+			// The names come from the previous manifest, which anyone who can
+			// write the output directory can edit: "../x" must not be moved
+			// or deleted.
+			if err := cloner.CheckRepoName(name); err != nil {
+				summary.Append(cloner.RepoResult{Name: name, Action: cloner.ActionSkippedName, Detail: err.Error()})
+				continue
+			}
 			repoDir := filepath.Join(outputDir, name)
 			if _, err := os.Stat(repoDir); err != nil {
 				continue
@@ -309,6 +333,17 @@ func handleRemovedAndArchived(
 	process(removed, deletedDir, cloner.ActionMovedDeleted)
 	process(newlyArchived, archivedDir, cloner.ActionMovedArchived)
 	return summary
+}
+
+// checkSubdir rejects a --deleted-dir or --archived-dir that isn't a
+// directory inside the output directory: ".." or an absolute path would move
+// repos elsewhere, and "." would move each repo onto itself, which MoveRepo
+// does by deleting the destination first.
+func checkSubdir(key, dir string) error {
+	if !filepath.IsLocal(dir) || filepath.Clean(dir) == "." {
+		return fmt.Errorf("%s %q must be a directory inside the output directory, such as %q", key, dir, "DELETED")
+	}
+	return nil
 }
 
 // flagPtr returns a pointer to s when the named flag was set on the

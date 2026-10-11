@@ -228,6 +228,31 @@ token and network access.
 - Writes a `.ghx.json` manifest to the output directory after each run, used to
   detect removed and newly archived repos next time.
 
+## Platforms
+
+ghx runs on macOS, Linux and Windows. It needs `git` on your `PATH` (Git for
+Windows on Windows); a sync without it stops before contacting GitHub, while
+`--dry-run` works without it.
+
+- **Repository names.** A name that isn't a single directory name (such as
+  `..`, which only an edited `.ghx.json` could hold) is skipped on every system
+  and reported as `skipped (unusable name)`. On Windows, names Windows can't
+  hold as a directory are skipped the same way: device names such as `CON`,
+  `AUX`, `NUL` or `COM1` (with or without an extension), and names ending in a
+  dot or a space. The summary lists each one with the reason.
+- **`--deleted-dir` and `--archived-dir`** must be directories inside `PATH`,
+  such as `DELETED` or `old/removed`: not `.`, `..` or an absolute path.
+- **Long paths on Windows.** ghx turns on `core.longpaths` for its own git
+  commands and in each clone it makes, so git can check out paths longer than
+  260 characters. Other Windows tools may still fail on them, so keep `PATH`
+  short (for example `C:\src\acme`).
+- **Files held open on Windows.** Moving or deleting a repository waits briefly
+  for a virus scanner or indexer to let go of its files. A terminal or editor
+  open inside the repository blocks the move; ghx reports it as failed and
+  tries again on the next run.
+- **Output.** The progress bar is drawn only on a terminal; piped or redirected
+  output gets the summary without it. Set `NO_COLOR=1` to turn colors off.
+
 ## CLI reference
 
 This is the output of `ghx --help`:

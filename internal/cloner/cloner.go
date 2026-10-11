@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -24,6 +25,9 @@ type Options struct {
 	UseSSH      bool
 	GitAuthor   string
 	GitEmail    string
+	// GitPath is the git executable, normally from FindGit. When empty,
+	// CloneRepos calls FindGit itself.
+	GitPath string
 	// ProgressOut is the io.Writer the progress bar renders to.
 	// Defaults to os.Stdout when nil.
 	ProgressOut io.Writer
@@ -40,6 +44,15 @@ func CloneRepos(ctx context.Context, repos []ghapi.RepoInfo, opts Options) (Sync
 
 	if len(repos) == 0 {
 		return summary, nil
+	}
+
+	git := gitRunner{path: opts.GitPath}
+	if git.path == "" {
+		path, err := FindGit()
+		if err != nil {
+			return summary, err
+		}
+		git.path = path
 	}
 
 	concurrency := opts.Concurrency
@@ -80,7 +93,7 @@ func CloneRepos(ctx context.Context, repos []ghapi.RepoInfo, opts Options) (Sync
 		go func() {
 			defer wg.Done()
 			for j := range jobs {
-				results := processRepo(ctx, j.repo, opts)
+				results := processRepo(ctx, git, j.repo, opts)
 				mu.Lock()
 				summary.Results = append(summary.Results, results...)
 				mu.Unlock()
@@ -110,17 +123,25 @@ func CloneRepos(ctx context.Context, repos []ghapi.RepoInfo, opts Options) (Sync
 	return summary, nil
 }
 
-func processRepo(ctx context.Context, repo ghapi.RepoInfo, opts Options) []RepoResult {
+func processRepo(ctx context.Context, git gitRunner, repo ghapi.RepoInfo, opts Options) []RepoResult {
+	if err := CheckRepoName(repo.Name); err != nil {
+		return []RepoResult{{Name: repo.Name, Action: ActionSkippedName, Detail: err.Error()}}
+	}
+
 	var results []RepoResult
 	dest := filepath.Join(opts.OutputDir, repo.Name)
 	url := resolveURL(repo, opts.Token, opts.UseSSH)
 
 	if hasGitDir(dest) {
-		setGitIdentity(ctx, dest, opts.GitAuthor, opts.GitEmail)
-		if isDirty(ctx, dest) {
+		git.setIdentity(ctx, dest, opts.GitAuthor, opts.GitEmail)
+		dirty, status := git.status(ctx, dest)
+		switch {
+		case !status.Success():
+			results = append(results, RepoResult{Name: repo.Name, Action: ActionFailed, Detail: status.Message()})
+		case dirty:
 			results = append(results, RepoResult{Name: repo.Name, Action: ActionSkippedDirty})
-		} else {
-			r := runGit(ctx, dest, "pull", "--ff-only")
+		default:
+			r := git.run(ctx, dest, "pull", "--ff-only")
 			if r.Success() {
 				results = append(results, RepoResult{Name: repo.Name, Action: ActionPulled})
 			} else {
@@ -128,9 +149,10 @@ func processRepo(ctx context.Context, repo ghapi.RepoInfo, opts Options) []RepoR
 			}
 		}
 	} else {
-		r := runGit(ctx, "", "clone", "--branch", repo.DefaultBranch, url, dest)
+		args := slices.Concat([]string{"clone"}, platformCloneArgs, []string{"--branch", repo.DefaultBranch, url, dest})
+		r := git.run(ctx, "", args...)
 		if r.Success() {
-			setGitIdentity(ctx, dest, opts.GitAuthor, opts.GitEmail)
+			git.setIdentity(ctx, dest, opts.GitAuthor, opts.GitEmail)
 			results = append(results, RepoResult{Name: repo.Name, Action: ActionCloned})
 		} else {
 			results = append(results, RepoResult{Name: repo.Name, Action: ActionFailed, Detail: r.Message()})
@@ -138,25 +160,26 @@ func processRepo(ctx context.Context, repo ghapi.RepoInfo, opts Options) []RepoR
 	}
 
 	if opts.CloneWiki && repo.HasWiki && results[len(results)-1].Action != ActionFailed {
-		results = append(results, processWiki(ctx, repo, opts)...)
+		results = append(results, processWiki(ctx, git, repo, opts)...)
 	}
 	return results
 }
 
-func processWiki(ctx context.Context, repo ghapi.RepoInfo, opts Options) []RepoResult {
+func processWiki(ctx context.Context, git gitRunner, repo ghapi.RepoInfo, opts Options) []RepoResult {
 	wikiDest := filepath.Join(opts.OutputDir, repo.Name+".wiki")
 	wikiURL := resolveWikiURL(repo, opts.Token, opts.UseSSH)
 
 	if hasGitDir(wikiDest) {
-		setGitIdentity(ctx, wikiDest, opts.GitAuthor, opts.GitEmail)
-		if !isDirty(ctx, wikiDest) {
-			runGit(ctx, wikiDest, "pull", "--ff-only")
+		git.setIdentity(ctx, wikiDest, opts.GitAuthor, opts.GitEmail)
+		if dirty, status := git.status(ctx, wikiDest); status.Success() && !dirty {
+			git.run(ctx, wikiDest, "pull", "--ff-only")
 		}
 		return nil
 	}
-	r := runGit(ctx, "", "clone", wikiURL, wikiDest)
+	args := slices.Concat([]string{"clone"}, platformCloneArgs, []string{wikiURL, wikiDest})
+	r := git.run(ctx, "", args...)
 	if r.Success() {
-		setGitIdentity(ctx, wikiDest, opts.GitAuthor, opts.GitEmail)
+		git.setIdentity(ctx, wikiDest, opts.GitAuthor, opts.GitEmail)
 		return []RepoResult{{Name: repo.Name, Action: ActionClonedWiki}}
 	}
 	return []RepoResult{{Name: repo.Name, Action: ActionSkippedWiki}}
@@ -198,23 +221,27 @@ func authenticatedHTTPS(url, token string) string {
 }
 
 // MoveRepo moves a repo directory into targetDir (creating targetDir if
-// missing). If the destination already exists it is removed first.
+// missing). If the destination already exists it is removed first. On
+// Windows, a remove or rename that fails because another process briefly holds
+// a file open is retried for up to retryBudget.
 func MoveRepo(repoDir, targetDir string) error {
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
 		return err
 	}
 	dest := filepath.Join(targetDir, filepath.Base(repoDir))
 	if _, err := os.Stat(dest); err == nil {
-		if err := os.RemoveAll(dest); err != nil {
+		if err := retryTransient(func() error { return os.RemoveAll(dest) }); err != nil {
 			return err
 		}
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	return os.Rename(repoDir, dest)
+	return retryTransient(func() error { return os.Rename(repoDir, dest) })
 }
 
 // DeleteRepo removes repoDir. Missing directories are treated as success.
+// os.RemoveAll clears the read-only attribute Windows git gives its object
+// files, so a clone deletes on every OS.
 func DeleteRepo(repoDir string) error {
 	if _, err := os.Stat(repoDir); err != nil {
 		if os.IsNotExist(err) {
@@ -222,5 +249,28 @@ func DeleteRepo(repoDir string) error {
 		}
 		return err
 	}
-	return os.RemoveAll(repoDir)
+	return retryTransient(func() error { return os.RemoveAll(repoDir) })
+}
+
+// retryBudget bounds how long MoveRepo and DeleteRepo retry a transient
+// failure before reporting it.
+const retryBudget = 2 * time.Second
+
+func retryTransient(op func() error) error {
+	return retryWithin(op, isTransient, retryBudget)
+}
+
+// retryWithin runs op until it succeeds, fails with an error transient
+// doesn't accept, or budget runs out, backing off between attempts.
+func retryWithin(op func() error, transient func(error) bool, budget time.Duration) error {
+	deadline := time.Now().Add(budget)
+	delay := 5 * time.Millisecond
+	for {
+		err := op()
+		if err == nil || !transient(err) || time.Now().Add(delay).After(deadline) {
+			return err
+		}
+		time.Sleep(delay)
+		delay = min(2*delay, 250*time.Millisecond)
+	}
 }

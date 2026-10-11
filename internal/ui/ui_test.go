@@ -2,12 +2,15 @@ package ui_test
 
 import (
 	"bytes"
+	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"testing"
 
 	"github.com/jedib0t/go-pretty/v6/text"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/lolay/ghx/internal/cloner"
 	"github.com/lolay/ghx/internal/ghapi"
@@ -110,6 +113,16 @@ func TestPrintSummary_CountsActionsAndListsFailedAndDirty(t *testing.T) {
 	assert.Contains(t, out, "Skipped (local changes):\n  e\n")
 }
 
+func TestPrintSummary_ListsUnusableNamesWithTheReason(t *testing.T) {
+	buf := captureOut(t)
+
+	ui.PrintSummary(cloner.SyncSummary{Results: []cloner.RepoResult{
+		{Name: "CON", Action: cloner.ActionSkippedName, Detail: "a reserved device name on Windows"},
+	}})
+
+	assert.Contains(t, buf.String(), "Skipped (unusable name):\n  CON: a reserved device name on Windows\n")
+}
+
 func TestPrintSummary_OmitsSectionsWithNothingToList(t *testing.T) {
 	buf := captureOut(t)
 
@@ -121,6 +134,30 @@ func TestPrintSummary_OmitsSectionsWithNothingToList(t *testing.T) {
 	assert.Contains(t, out, "Sync Summary")
 	assert.NotContains(t, out, "Failed repos:")
 	assert.NotContains(t, out, "Skipped (local changes):")
+	assert.NotContains(t, out, "Skipped (unusable name):")
+}
+
+func TestSetupTerminal_DrawsProgressOnlyOnATerminal(t *testing.T) {
+	buf := captureOut(t)
+	t.Cleanup(ui.ResetTerminal)
+	assert.Same(t, buf, ui.ProgressOut(), "before setup, progress draws on Out")
+
+	file, err := os.Create(filepath.Join(t.TempDir(), "log.txt"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = file.Close() })
+	ui.SetupTerminal(file)
+	assert.Equal(t, io.Discard, ui.ProgressOut(), "a file gets no progress bar")
+
+	// The null device is a character device, as a console is, on every OS.
+	null, err := os.Open(os.DevNull)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = null.Close() })
+	ui.SetupTerminal(null)
+	if text.ANSICodesSupported {
+		assert.Same(t, buf, ui.ProgressOut(), "a terminal that takes ANSI codes gets the bar")
+	} else {
+		assert.Equal(t, io.Discard, ui.ProgressOut(), "a console without ANSI support gets no bar")
+	}
 }
 
 func TestPrintRepoTable_FormatsEachColumn(t *testing.T) {

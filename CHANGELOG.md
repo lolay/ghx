@@ -29,3 +29,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - `gofmt` drift in `internal/config/resolve.go`.
+- Repository names that can't be a directory are skipped and reported as
+  `skipped (unusable name)` instead of failing mid-sync: on every system a name
+  that isn't a single directory name (a `..` in an edited `.ghx.json` could
+  otherwise move or delete a directory outside the output directory), and on
+  Windows device names such as `CON` or `NUL` and names ending in a dot or space.
+- `--deleted-dir` and `--archived-dir` must now be directories inside the output
+  directory; `.` would have deleted each repo it moved.
+- `git` is looked up once, before anything is asked of GitHub, with a clear
+  error when it's missing. A `git` found only in the current directory is not
+  run.
+- A repository whose `git status` fails is reported as failed instead of being
+  pulled.
+- On Windows, git commands run with `core.longpaths` on, and moves and deletes
+  wait briefly for a file another program holds open.
+- On macOS and Linux, a git that ghx stops (Ctrl-C, or the 5-minute timeout)
+  is interrupted rather than killed, so it can remove a half-made clone.
+- The progress bar is drawn only on a terminal, so piped output holds no cursor
+  escapes.

@@ -18,6 +18,9 @@ const (
 	ActionClonedWiki      Action = "cloned wiki"
 	ActionSkippedWiki     Action = "skipped wiki (not found)"
 	ActionSkippedTooLarge Action = "skipped (too large)"
+	// ActionSkippedName is a repo whose name can't be a directory here (see
+	// CheckRepoName); Detail says why.
+	ActionSkippedName Action = "skipped (unusable name)"
 )
 
 // AllActions is used for stable iteration in the summary table.
@@ -33,6 +36,7 @@ var AllActions = []Action{
 	ActionClonedWiki,
 	ActionSkippedWiki,
 	ActionSkippedTooLarge,
+	ActionSkippedName,
 }
 
 // RepoResult records the outcome for a single repo (or its wiki).
