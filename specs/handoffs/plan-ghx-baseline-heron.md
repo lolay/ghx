@@ -1,7 +1,7 @@
 ```
 --- KICKOFF: begin orchestration at [deep] ---
 
-  Status: 0/3 groups done | last review: — | current: ghx m1 s1-s3 [exec] | updated 2026-10-10
+  Status: 1/3 groups done | last review: wave-1 PASS | current: ghx m1 s4 [deep] | updated 2026-10-10 | BLOCKED at gate 5
 
   mode: gated | proposed gated (harness=claude-code runner=none; Mac CLI workstation, dogfood run A) | guard 3x min $50 | fixups 2 | confirmed 2026-10-10 session bf82fd5c-3117-418c-934b-c0d47391532a by Kickoff prompt: Run in gated mode.
 
@@ -60,13 +60,13 @@ Run A of the orchestrate phase 1 dogfood (`GaryRudolph/public` `specs/handoffs/d
 
 --- WAVE 1 [exec] ---
 
-#### s1 - [exec] Rename the module to github.com/lolay/ghx and the binary to ghx
+#### s1 - [exec] Rename the module to github.com/lolay/ghx and the binary to ghx (done)
 
 - `go mod edit -module github.com/lolay/ghx`; rewrite every import. `git mv cmd/ghx-go cmd/ghx`; cobra `Use` becomes `ghx <ORG> <PATH>`; the package comment in `cmd/ghx/main.go` drops the side-by-side note.
 - README: `ghx-go` becomes `ghx` everywhere, the install path becomes `go install github.com/lolay/ghx/cmd/ghx@latest`, and the side-by-side paragraph goes (one line may say the Python version lives on the `old/python` branch).
 - **Accept when:** `grep -rn 'garyrudolph\|ghx-go' --include='*.go' --include='*.md' --include=go.mod .` finds nothing; `go build ./... && go vet ./...` pass; `go run ./cmd/ghx --help` prints `ghx <ORG> <PATH>`.
 
-#### s2 - [fast] Repo hygiene files
+#### s2 - [fast] Repo hygiene files (done)
 
 - `gofmt -w internal/config/resolve.go` (the only drift).
 - `.gitignore`: replace `/ghx-go` and `/ghx` with `/bin/` and `/dist/`; keep `*.test`, `*.out`, `coverage.*`, `/.scratch/` and the Cursor line; add `.DS_Store`.
@@ -74,7 +74,7 @@ Run A of the orchestrate phase 1 dogfood (`GaryRudolph/public` `specs/handoffs/d
 - `.go-version`: the latest stable Go release, looked up now (`curl -s 'https://go.dev/dl/?mode=json' | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["version"][2:])'`), never from memory. Leave `go.mod`'s `go` line as it is unless the build needs newer.
 - **Accept when:** `gofmt -l .` prints nothing; `git check-ignore -q bin/x dist/x .scratch/x` succeeds; `.go-version` holds one `X.Y.Z` line.
 
-#### s3 - [exec] Makefile and Makefile.md to the standard
+#### s3 - [exec] Makefile and Makefile.md to the standard (done)
 
 - A leaf `Makefile` modelled on triage's, in the standard's section order (`##@ Develop`, `##@ GitHub`; no Release or Danger section yet, plan C adds them): `SHELL := bash`, `.DEFAULT_GOAL := help`, the awk `help` with `[a-zA-Z0-9_.-]+`, every target in `.PHONY`, no magic strings in recipes.
 - Targets: `help`, `init` (`go mod download`; `INSTALL_PACKAGES=1` also installs golangci-lint), `doctor` (runs `triage` on a new `triage.yaml` that checks `go` against `.go-version`, `git`, `gh`, `golangci-lint`; `MODE=default|release`, release adding `goreleaser`), `build` (`go build -o bin/ghx ./cmd/ghx`; plan C adds version stamping), `lint` (gofmt drift + `go mod tidy -diff` + `go vet` + `golangci-lint run`, hard fail when golangci-lint is missing), `format` (`gofmt -w .` and `go mod tidy`), `test` (`go test -race -cover ./...`), `vuln` (`go tool govulncheck ./...`, with govulncheck added as a `go.mod` tool dependency), `ci` (build, lint, test), `pre-commit` (alias of `ci`), `clean`, and `gh-runs-list`, `gh-runs-watch`, `gh-runs-status` (triage's recipes; three buckets for conclusions).
@@ -108,6 +108,8 @@ Run A of the orchestrate phase 1 dogfood (`GaryRudolph/public` `specs/handoffs/d
 
 ## Review log
 
+review wave-1 (ghx m1 s1-s3) 3e99c74..92f4ee3: PASS - acceptance met; make ci/vuln/doctor pass; golangci-lint fell back to standard+misspell+errorlint (29 findings > ~25), exclusions listed in .golangci.yml header; `git check-ignore -q` with three paths is rejected by git, each path checked singly; README still says Go 1.22+ (not in s1 scope); govulncheck: 2 uncalled vulns in old deps - 2026-10-10
+
 ## Token log
 
 **Counting header (Claude Code)**
@@ -117,3 +119,7 @@ Run A of the orchestrate phase 1 dogfood (`GaryRudolph/public` `specs/handoffs/d
 - Rates by `<model>`, $ per Mtok input / cached / output: `claude-opus-5-5` 4.00 / 0.20 / 20.00; `claude-sonnet-5-5` 2.00 / 0.20 / 10.00; `claude-haiku-4-5` 1.00 / 0.10 / 5.00.
 - `$C` = (input × in + cache read × cached + 5m write × in × 1.25 + 1h write × in × 2.00 + output × out) / 1M.
 - In another harness, or on a model not listed here, count and price per plan-execution.md "Token accounting" and "Model price table" instead.
+
+tokens orchestrator-kickoff plan-ghx-baseline-heron (claude-opus-5-5): input ~16 / cache read ~540k / cache write ~0 5m + ~58k 1h / output ~7.4k | ~$0.72 API-equiv
+tokens wave-1 ghx-m1-s1-s3 (claude-sonnet-5-5): input ~44 / cache read ~1.6M / cache write ~97k / output ~22k | ~$0.79 API-equiv (output est.) session bf82fd5c-3117-418c-934b-c0d47391532a
+tokens review-wave-1 ghx-m1-s1-s3 (claude-opus-5-5): input ~24 / cache read ~320k / cache write ~42k / output ~11k | ~$0.51 API-equiv (output est.) session bf82fd5c-3117-418c-934b-c0d47391532a
