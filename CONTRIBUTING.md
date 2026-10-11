@@ -42,6 +42,9 @@ because the race detector needs cgo there, so a race is caught on Linux and
 macOS only. The job-to-target map is in the "CI map" of
 [`Makefile.md`](./Makefile.md).
 
+Maintainers cut releases with the Release workflow; the procedure, secrets and
+recovery steps are in [`specs/releasing.md`](./specs/releasing.md).
+
 ## The loop
 
 1. Make a change.

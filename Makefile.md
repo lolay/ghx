@@ -19,6 +19,12 @@ graph LR
     format
     vuln
     clean
+    bump
+    snapshot
+    release-check
+    publish-formula
+    publish-scoop
+    release
 ```
 
 Solid arrows are hard prerequisites, run in order (`build`, then `lint`, then
@@ -34,7 +40,7 @@ targets stand alone.
 | `help` | List targets (the default goal) |
 | `init` | `go mod download`; `INSTALL_PACKAGES=1` also installs golangci-lint |
 | `doctor` | Check the dev environment with `triage` against `triage.yaml`; `MODE=default\|release` |
-| `build` | `go build -o bin/ghx ./cmd/ghx` |
+| `build` | `go build -ldflags "-X ..." -o bin/ghx ./cmd/ghx`, stamped with the build version (below) |
 | `lint` | gofmt drift, `go mod tidy -diff`, `go vet`, `golangci-lint run`; fails when golangci-lint is missing |
 | `format` | `gofmt -w .`, `golangci-lint fmt` (when installed), `go mod tidy` |
 | `test` | `go test -race -cover ./...` |
@@ -53,6 +59,70 @@ targets stand alone.
 
 `GH_LIMIT` (default 50) caps how many recent runs are fetched. A `gh` failure
 (for example, not logged in) prints a warning and exits 0.
+
+### Release
+
+| Target | Description |
+|--------|-------------|
+| `bump` | `python3 scripts/bump_version.py $(LEVEL)`: rewrites `version.txt` and moves the `CHANGELOG.md` `## [Unreleased]` entries under a `## [vX.Y.Z] - date` heading. `LEVEL=patch\|minor\|major` is required; `DRY_RUN=1` adds `--dry-run`, which prints what would change and writes nothing. It neither commits nor tags |
+
+`scripts/bump_version.py` is the `personal-release` skill's template, copied
+unchanged; update it by copying the template again, not by editing it here.
+
+| Target | Description |
+|--------|-------------|
+| `snapshot` | `goreleaser release --snapshot --clean`: builds the six archives (darwin, linux and windows, each amd64 and arm64) and `checksums.txt` into `dist/` and publishes nothing. The version is `<release>+<sha>` with no pre-release suffix, so archives are named `ghx_0.1.0+abc1234_linux_amd64.tar.gz` |
+| `release-check` | `goreleaser check`: validates [`.goreleaser.yaml`](./.goreleaser.yaml) |
+
+`GORELEASER` (default `goreleaser`) names the command, so a machine without the
+tool can pass the `go run` form:
+`make snapshot GORELEASER="go run github.com/goreleaser/goreleaser/v2@v2.18.3"`.
+CI's `release-check` job and the Publish workflow set `GORELEASER` that way in
+their environment, each with the same pinned version; bump both together.
+
+### Danger
+
+These change something outside the working tree, so each refuses to run until
+its `CONFIRM_*` variable is set, and prints what to re-run with. Humans and
+agents hit the refusal; the Publish workflow (`publish.yml`) sets the variable
+inline. There is no `tag` target: tags come from the Release workflow
+(`release.yml`).
+
+| Target | Confirm | Description |
+|--------|---------|-------------|
+| `publish-formula` | `CONFIRM_PUBLISH_FORMULA=1` | `scripts/publish-formula.sh $(VERSION) dist`: renders `Formula/ghx.rb` from `dist/checksums.txt` and pushes it to `lolay/homebrew-tap` as `ghx-release-bot`. `VERSION=x.y.z` is required, and `HOMEBREW_TAP_TOKEN` comes from the environment |
+| `publish-scoop` | `CONFIRM_PUBLISH_SCOOP=1` | `scripts/publish-scoop.sh $(VERSION) dist`: the same for `bucket/ghx.json` in `lolay/scoop-bucket`, with `SCOOP_BUCKET_TOKEN` |
+| `release` | `CONFIRM_RELEASE=1` | `goreleaser release --clean` for the tag at `HEAD`, uploading the archives and `checksums.txt` to the GitHub release; `GITHUB_TOKEN` comes from the environment |
+
+Both publish scripts take `DRY_RUN=1` to print the rendered file and exit
+without cloning or pushing; run them that way after `make snapshot`, passing
+the snapshot's version (`<release>+<sha>`), to check a template change. The
+rendered sha256 values come from `dist/checksums.txt`, and the templates are
+`scripts/ghx.rb.tmpl` and `scripts/ghx.json.tmpl`. A token is never written to
+a file or a clone URL: the scripts give it to `git` as an `http.extraheader`
+through its environment.
+
+## The build version
+
+`make build` stamps three values into `internal/buildinfo` with `-ldflags -X`,
+and `ghx --version` prints them as `ghx <RELEASE>+<SHA> (<BUILD_CODE>)`, the
+versioning standard's form:
+
+| Variable | Source |
+|----------|--------|
+| `RELEASE` | [`version.txt`](./version.txt): the last released version, which only a release rewrites |
+| `SHA` | `git rev-parse --short HEAD`, plus `.dirty` when `git status --porcelain` reports anything, untracked files included |
+| `BUILD_CODE` | `git rev-list --count HEAD`; a shallow clone undercounts, so a release checkout needs full history (`fetch-depth: 0`) |
+
+Outside a git checkout `SHA` and `BUILD_CODE` are empty and the binary prints
+`ghx <RELEASE>`. A build that skips the Makefile (`go build`, `go run`,
+`go install`) prints `ghx dev`.
+
+Release builds use the same three values instead of computing their own:
+goreleaser stamps `{{ .Env.RELEASE }}`, `{{ .Env.SHA }}` and
+`{{ .Env.BUILD_CODE }}`, and runs only through Makefile targets that put the
+Makefile's values in its environment, so a local build and a release build of
+one commit print the same string.
 
 ## `make init`: idempotent bootstrap
 
@@ -82,13 +152,25 @@ the pinned version; the CI install step must use the same value.
 [`.github/workflows/ci.yml`](./.github/workflows/ci.yml) runs on every push and
 on every pull request, one run per ref (a newer push cancels the run it
 supersedes), with read-only `contents` permission. It has three jobs, one per
-operating system, and each job name shows its OS.
+operating system, and each job name shows its OS, plus a `release-check` job.
+Two more workflows do the release; they are not part of the gate, and the
+second table maps them to the targets.
 
 | Job | Runner | Runs |
 |-----|--------|------|
 | `build, lint, test, vuln (linux)` | `ubuntu-latest` | `go mod verify`, golangci-lint install, `make ci`, `make vuln` |
 | `build, lint, test (macos)` | `macos-latest` | golangci-lint install, `make ci` |
 | `build, vet, test (windows)` | `windows-latest` | `go build ./...`, `go vet ./...`, `go test ./...` under `shell: bash` |
+| `release-check (goreleaser check)` | `ubuntu-latest` | `make release-check`, with goreleaser run as `go run github.com/goreleaser/goreleaser/v2@<pin>` |
+
+| Workflow | Trigger | Runs |
+|----------|---------|------|
+| [`release.yml`](./.github/workflows/release.yml) (Release) | Manual dispatch from `main` or a `release/*` branch, with a `level` input | `python3 scripts/bump_version.py <level>` (what `make bump` runs), then commits `release vX.Y.Z`, tags it and pushes both with `RELEASE_TAG_PAT` |
+| [`publish.yml`](./.github/workflows/publish.yml) (Publish) | Push of a `vX.Y.Z` tag; manual dispatch with a `tag` input to re-run | Three chained jobs: `release` runs `make release`, `homebrew` runs `make publish-formula`, and `scoop` runs `make publish-scoop`, each with its `CONFIRM_*` set inline and the pinned goreleaser as `GORELEASER` |
+
+The release procedure, the secrets (`RELEASE_TAG_PAT`, `HOMEBREW_TAP_TOKEN`,
+`SCOOP_BUCKET_TOKEN`) and the recovery steps are in
+[`specs/releasing.md`](./specs/releasing.md).
 
 Windows runs the Go commands directly rather than `make ci`: `make test` uses
 `-race`, and the race detector needs cgo, which the Windows runner lacks.

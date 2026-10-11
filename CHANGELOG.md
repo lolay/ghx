@@ -21,6 +21,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   GitHub API errors.
 
 ### Added
+- `ghx --version` (and `-v`) prints the build version as
+  `ghx <release>+<sha> (<build code>)`, for example `ghx 0.1.0+abc1234 (42)`,
+  with `.dirty` after the sha for a build from a tree with uncommitted changes.
+  `make build` stamps it; a plain `go build` or `go install` prints `ghx dev`.
+- Release pipeline: the Release workflow (`release.yml`) bumps `version.txt`
+  and the changelog, commits and tags `vX.Y.Z`; the tag starts the Publish
+  workflow (`publish.yml`), which builds six archives and `checksums.txt` with
+  goreleaser, publishes the GitHub release, then updates `lolay/homebrew-tap`
+  and `lolay/scoop-bucket`, in that order. `make snapshot` builds the same
+  archives locally without publishing, `make release-check` validates
+  `.goreleaser.yaml` (also a CI job), and the Danger targets
+  `publish-formula`, `publish-scoop` and `release` refuse to run without a
+  `CONFIRM_*` variable. The procedure, secrets and first-release checklist are
+  in [`specs/releasing.md`](./specs/releasing.md).
+- Install with `brew install lolay/tap/ghx` or `scoop install lolay/ghx`, or
+  download an archive from GitHub Releases, once the first release is out.
+- `version.txt` holds the last released version (`0.1.0` until the first
+  release), and `make bump LEVEL=patch|minor|major` runs
+  `scripts/bump_version.py` to bump it and move these entries under the new
+  version's heading.
 - `Makefile` with the standard targets (`make help` lists them; `make ci` is
   the pre-push gate), documented in [`Makefile.md`](./Makefile.md).
 - Unit tests for configuration loading and precedence, repository filtering,
