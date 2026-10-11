@@ -96,7 +96,7 @@ Go to **Actions, Release, Run workflow**, keep the branch `main`, pick the
 `level` (`patch`, `minor` or `major`) and click **Run workflow**.
 [`release.yml`](../.github/workflows/release.yml) then:
 
-1. Checks out the branch with full history and `RELEASE_TOKEN`.
+1. Checks out the branch with full history and `RELEASE_TAG_PAT`.
 2. Refuses unless the branch is `main`, `release/vX` or `release/vX.Y`.
 3. Runs `scripts/bump_version.py <level>`, which rewrites `version.txt` and
    moves the Unreleased entries in `CHANGELOG.md`.
@@ -106,7 +106,7 @@ Go to **Actions, Release, Run workflow**, keep the branch `main`, pick the
 The tag push starts [`publish.yml`](../.github/workflows/publish.yml) (the
 Publish workflow), which runs its `release`, `homebrew` and `scoop` jobs in that
 order. A push made with `GITHUB_TOKEN` would not start another workflow, which
-is why `release.yml` pushes with `RELEASE_TOKEN`.
+is why `release.yml` pushes with `RELEASE_TAG_PAT`.
 
 Watch it with `make gh-runs-watch`, and check `make gh-runs-status` afterwards.
 
@@ -180,14 +180,15 @@ step that uses it, and never written to a file or a clone URL.
 
 | Secret | Used by | Scope it needs |
 |--------|---------|----------------|
-| `RELEASE_TOKEN` | `release.yml` checkout, so its push can start `publish.yml` | Fine-grained PAT on `lolay/ghx`: Contents read and write. It must be able to push the release commit to `main` (and to a `release/*` branch) and the tag, so if a branch ruleset or protection requires pull requests, the token's owner needs bypass for it |
+| `RELEASE_TAG_PAT` | `release.yml` checkout, so its push can start `publish.yml` | Fine-grained PAT on `lolay/ghx`: Contents read and write. It must be able to push the release commit to `main` (and to a `release/*` branch) and the tag, so if a branch ruleset or protection requires pull requests, the token's owner needs bypass for it |
 | `HOMEBREW_TAP_TOKEN` | `publish.yml` `homebrew` job, `scripts/publish-formula.sh` | Fine-grained PAT on `lolay/homebrew-tap` only: Contents read and write |
 | `SCOOP_BUCKET_TOKEN` | `publish.yml` `scoop` job, `scripts/publish-scoop.sh` | Fine-grained PAT on `lolay/scoop-bucket` only: Contents read and write |
 
 Give each token the one repository it needs and nothing else, and set an
 expiry. The publish scripts commit as `ghx-release-bot` and hand the token to
 `git` as an `http.extraheader` through its environment, so it is in no command
-line, clone URL or `.git/config`. To rotate a token, replace the secret's value
+line, clone URL or `.git/config`, and mask its base64 form in the Actions
+log, since Actions masks only the raw secret. To rotate a token, replace the secret's value
 and re-run a failed publish.
 
 ## First-release checklist

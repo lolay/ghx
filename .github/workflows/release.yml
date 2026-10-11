@@ -9,7 +9,7 @@
 # Unreleased entries, commits "release vX.Y.Z", tags vX.Y.Z, and pushes both.
 # The tag push starts publish.yml, which builds and publishes the release.
 #
-# Needs secrets.RELEASE_TOKEN: a token with contents write on lolay/ghx that
+# Needs secrets.RELEASE_TAG_PAT: a token with contents write on lolay/ghx that
 # can push to this branch. A push made with GITHUB_TOKEN wouldn't start
 # publish.yml, which is why the checkout, and so the push, uses it.
 name: Release
@@ -23,7 +23,7 @@ on:
         options: [patch, minor, major]
         required: true
 
-# The push uses RELEASE_TOKEN, not GITHUB_TOKEN, so GITHUB_TOKEN only needs
+# The push uses RELEASE_TAG_PAT, not GITHUB_TOKEN, so GITHUB_TOKEN only needs
 # to read (the template grants write).
 permissions:
   contents: read
@@ -41,7 +41,7 @@ jobs:
         with:
           fetch-depth: 0              # full history: buildCode = git rev-list --count HEAD
           fetch-tags: true            # the existing-tag check below reads local tags
-          token: ${{ secrets.RELEASE_TOKEN }}
+          token: ${{ secrets.RELEASE_TAG_PAT }}
 
       - name: Refuse unless on main or a release line branch
         id: branch

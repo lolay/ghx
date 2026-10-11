@@ -69,6 +69,9 @@ fi
 # Hand git the token as a header through its environment rather than in the
 # clone URL, so it lands in no command line and not in the clone's .git/config.
 AUTH="$(printf 'x-access-token:%s' "$HOMEBREW_TAP_TOKEN" | base64 | tr -d '\n')"
+# Actions masks the raw secret but not this encoding of it; mask it too, as
+# actions/checkout does for its own header.
+if [[ -n "${GITHUB_ACTIONS:-}" ]]; then echo "::add-mask::${AUTH}"; fi
 export GIT_CONFIG_COUNT=1
 export GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"
 export GIT_CONFIG_VALUE_0="Authorization: Basic ${AUTH}"

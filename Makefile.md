@@ -165,10 +165,10 @@ second table maps them to the targets.
 
 | Workflow | Trigger | Runs |
 |----------|---------|------|
-| [`release.yml`](./.github/workflows/release.yml) (Release) | Manual dispatch from `main` or a `release/*` branch, with a `level` input | `python3 scripts/bump_version.py <level>` (what `make bump` runs), then commits `release vX.Y.Z`, tags it and pushes both with `RELEASE_TOKEN` |
+| [`release.yml`](./.github/workflows/release.yml) (Release) | Manual dispatch from `main` or a `release/*` branch, with a `level` input | `python3 scripts/bump_version.py <level>` (what `make bump` runs), then commits `release vX.Y.Z`, tags it and pushes both with `RELEASE_TAG_PAT` |
 | [`publish.yml`](./.github/workflows/publish.yml) (Publish) | Push of a `vX.Y.Z` tag; manual dispatch with a `tag` input to re-run | Three chained jobs: `release` runs `make release`, `homebrew` runs `make publish-formula`, and `scoop` runs `make publish-scoop`, each with its `CONFIRM_*` set inline and the pinned goreleaser as `GORELEASER` |
 
-The release procedure, the secrets (`RELEASE_TOKEN`, `HOMEBREW_TAP_TOKEN`,
+The release procedure, the secrets (`RELEASE_TAG_PAT`, `HOMEBREW_TAP_TOKEN`,
 `SCOOP_BUCKET_TOKEN`) and the recovery steps are in
 [`specs/releasing.md`](./specs/releasing.md).
 
