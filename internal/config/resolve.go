@@ -10,12 +10,12 @@ import (
 type Source string
 
 const (
-	SourceFlag      Source = "option"
-	SourceEnv       Source = "GITHUB_TOKEN env"
-	SourceLocal     Source = "<path>/" + ConfigFilename
-	SourceHome      Source = "~/" + ConfigFilename
-	SourceDefault   Source = "default"
-	SourceArgument  Source = "argument"
+	SourceFlag     Source = "option"
+	SourceEnv      Source = "GITHUB_TOKEN env"
+	SourceLocal    Source = "<path>/" + ConfigFilename
+	SourceHome     Source = "~/" + ConfigFilename
+	SourceDefault  Source = "default"
+	SourceArgument Source = "argument"
 )
 
 // ErrNoToken is returned when no GitHub token can be resolved.

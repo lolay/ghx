@@ -1,0 +1,6 @@
+# Normalize line endings on commit; checkout with LF everywhere.
+* text=auto
+
+# Golden test fixture files must always be LF so Windows checkouts (git
+# autocrlf converts \n to \r\n) don't break byte-exact comparisons.
+**/testdata/** text eol=lf
