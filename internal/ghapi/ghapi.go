@@ -7,9 +7,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/google/go-github/v67/github"
+
+	"github.com/lolay/ghx/internal/redact"
 )
 
 // RepoInfo is the slim struct used throughout the rest of the code.
@@ -29,13 +32,27 @@ type RepoInfo struct {
 	PushedAt      string // RFC3339, empty when unset
 }
 
+// baseURL, when set, replaces GitHub's API endpoint. Only tests set it (see
+// export_test.go); nil means the public API, so users see no difference.
+var baseURL *url.URL
+
+// newClient builds the go-github client both ValidateToken and ListOrgRepos
+// use, so a test that points baseURL at an httptest server covers both.
+func newClient(token string) *github.Client {
+	client := github.NewClient(nil).WithAuthToken(token)
+	if baseURL != nil {
+		client.BaseURL = baseURL
+	}
+	return client
+}
+
 // ValidateToken calls GET /user to confirm the token is valid, returning
 // the authenticated login.
 func ValidateToken(ctx context.Context, token string) (string, error) {
-	client := github.NewClient(nil).WithAuthToken(token)
+	client := newClient(token)
 	user, _, err := client.Users.Get(ctx, "")
 	if err != nil {
-		return "", formatAPIError("Token validation failed", err)
+		return "", formatAPIError("Token validation failed", err, token)
 	}
 	if user.Login == nil {
 		return "", errors.New("token validation returned empty login")
@@ -47,7 +64,7 @@ func ValidateToken(ctx context.Context, token string) (string, error) {
 // returns them as RepoInfo values. Uses type=all to match the Python
 // behavior (subsequent --type filtering happens in FilterRepos).
 func ListOrgRepos(ctx context.Context, token, org string) ([]RepoInfo, error) {
-	client := github.NewClient(nil).WithAuthToken(token)
+	client := newClient(token)
 
 	opts := &github.RepositoryListByOrgOptions{
 		Type:        "all",
@@ -59,7 +76,7 @@ func ListOrgRepos(ctx context.Context, token, org string) ([]RepoInfo, error) {
 		repos, resp, err := client.Repositories.ListByOrg(ctx, org, opts)
 		if err != nil {
 			return nil, formatAPIError(
-				fmt.Sprintf("Failed to access organization %q", org), err,
+				fmt.Sprintf("Failed to access organization %q", org), err, token,
 			)
 		}
 		for _, r := range repos {
@@ -97,7 +114,11 @@ func toRepoInfo(r *github.Repository) RepoInfo {
 
 // formatAPIError wraps a go-github error with a friendly prefix,
 // surfacing the HTTP status and response message when available.
-func formatAPIError(prefix string, err error) error {
+//
+// The token travels in the Authorization header, which go-github never puts
+// in an error, and GitHub's messages don't quote it; it is masked anyway, so
+// a proxy or a future client change that echoes it can't reach the terminal.
+func formatAPIError(prefix string, err error, token string) error {
 	var ghErr *github.ErrorResponse
 	if errors.As(err, &ghErr) {
 		status := 0
@@ -108,9 +129,9 @@ func formatAPIError(prefix string, err error) error {
 		if msg == "" {
 			msg = err.Error()
 		}
-		return fmt.Errorf("%s (%d): %s", prefix, status, msg)
+		return fmt.Errorf("%s (%d): %s", prefix, status, redact.String(msg, token))
 	}
-	return fmt.Errorf("%s: %w", prefix, err)
+	return redact.Error(fmt.Errorf("%s: %w", prefix, err), token)
 }
 
 func deref(p *string) string {

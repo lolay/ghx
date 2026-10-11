@@ -17,6 +17,7 @@ ghx is a Go CLI that clones and syncs every repository of a GitHub organization.
 | `internal/cloner/` | Cloning, pulling, moving and deleting repos with `git` |
 | `internal/manifest/` | The `.ghx.json` manifest (byte-compatible with the Python tool) |
 | `internal/ui/` | Terminal output: settings table, progress, summary |
+| `internal/gittest/`, `internal/ghapi/ghapitest/` | Test helpers: local bare git repos, and a fake GitHub API on loopback |
 | `specs/` | Specs; [`specs/testing.md`](./specs/testing.md) records test layout and seams |
 | `specs/handoffs/` | Plan and handoff scratch (see below) |
 | `Makefile`, [`Makefile.md`](./Makefile.md) | The build, lint and test verbs and their reference |

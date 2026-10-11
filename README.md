@@ -1,5 +1,7 @@
 # ghx
 
+[![CI](https://github.com/lolay/ghx/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/lolay/ghx/actions/workflows/ci.yml)
+
 > **tldr** -- Clone every repository in a GitHub organization, then keep the
 > copies in sync: one command, safe to re-run.
 
@@ -38,8 +40,8 @@ ghx acme ./acme
 
 ## Install
 
-Requires [Git](https://git-scm.com/) and Go 1.26.2 or newer (the `go` line in
-[`go.mod`](./go.mod)). Development uses the version pinned in
+Requires [Git](https://git-scm.com/) 2.31 or newer, and Go 1.26.2 or newer
+(the `go` line in [`go.mod`](./go.mod)) to build it. Development uses the version pinned in
 [`.go-version`](./.go-version).
 
 From source, with the repository's Makefile:
@@ -102,7 +104,9 @@ The token is resolved in this order, highest precedence first:
 
 If none is set, `ghx` exits with an error that lists these options. Avoid
 `--token` on a shared machine: the value lands in your shell history and the
-process list. The environment variable or the config file is safer. See
+process list. The environment variable or the config file is safer. `ghx` hands
+the token to `git` through `git`'s environment, never in a clone URL, so no
+clone's `.git/config` holds it. See
 [`SECURITY.md`](./SECURITY.md) for how `ghx` handles the token.
 
 ## Configuration
@@ -227,6 +231,31 @@ token and network access.
   skipped rather than moved.
 - Writes a `.ghx.json` manifest to the output directory after each run, used to
   detect removed and newly archived repos next time.
+
+## Platforms
+
+ghx runs on macOS, Linux and Windows. It needs `git` 2.31 or newer on your
+`PATH` (Git for Windows on Windows); a sync without it, or with an older one,
+stops before contacting GitHub, while `--dry-run` works without it.
+
+- **Repository names.** A name that isn't a single directory name (such as
+  `..`, which only an edited `.ghx.json` could hold) is skipped on every system
+  and reported as `skipped (unusable name)`. On Windows, names Windows can't
+  hold as a directory are skipped the same way: device names such as `CON`,
+  `AUX`, `NUL` or `COM1` (with or without an extension), and names ending in a
+  dot or a space. The summary lists each one with the reason.
+- **`--deleted-dir` and `--archived-dir`** must be directories inside `PATH`,
+  such as `DELETED` or `old/removed`: not `.`, `..` or an absolute path.
+- **Long paths on Windows.** ghx turns on `core.longpaths` for its own git
+  commands and in each clone it makes, so git can check out paths longer than
+  260 characters. Other Windows tools may still fail on them, so keep `PATH`
+  short (for example `C:\src\acme`).
+- **Files held open on Windows.** Moving or deleting a repository waits briefly
+  for a virus scanner or indexer to let go of its files. A terminal or editor
+  open inside the repository blocks the move; ghx reports it as failed and
+  tries again on the next run.
+- **Output.** The progress bar is drawn only on a terminal; piped or redirected
+  output gets the summary without it. Set `NO_COLOR=1` to turn colors off.
 
 ## CLI reference
 

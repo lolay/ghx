@@ -33,6 +33,15 @@ INSTALL_PACKAGES=1` installs the pinned release. `make doctor` runs
 [`triage`](https://github.com/lolay/triage) against [`triage.yaml`](./triage.yaml)
 and tells you what is missing and how to install it.
 
+## Continuous integration
+
+[`ci.yml`](./.github/workflows/ci.yml) runs on every push and pull request, on
+macOS, Linux and Windows. Linux and macOS run `make ci`; Linux also runs
+`make vuln`. Windows runs `go build`, `go vet` and `go test` without `-race`,
+because the race detector needs cgo there, so a race is caught on Linux and
+macOS only. The job-to-target map is in the "CI map" of
+[`Makefile.md`](./Makefile.md).
+
 ## The loop
 
 1. Make a change.

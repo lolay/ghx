@@ -1,0 +1,95 @@
+# CI gate on Linux, macOS and Windows. Linux and macOS run `make ci`, so a green
+# local gate matches CI; Linux also runs `make vuln`. Windows runs the Go
+# commands directly: `make test` uses -race, which needs cgo there. Every
+# branch is checked on push, so a task branch is green before its pull request.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+# One run per ref: a newer push cancels the run it supersedes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Must equal GOLANGCI_LINT_VERSION in the Makefile.
+  GOLANGCI_LINT_VERSION: v2.14.0
+
+jobs:
+  linux:
+    name: build, lint, test, vuln (linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: .go-version
+          cache: true
+          cache-dependency-path: go.mod
+
+      # Verify dependencies on disk match go.sum before building anything.
+      - name: go mod verify
+        run: go mod verify
+
+      # `make lint` fails hard when the binary is missing.
+      - name: Install golangci-lint
+        run: |
+          curl -sSfL "https://raw.githubusercontent.com/golangci/golangci-lint/${GOLANGCI_LINT_VERSION}/install.sh" \
+            | sh -s -- -b "$(go env GOPATH)/bin" "${GOLANGCI_LINT_VERSION}"
+
+      - name: make ci
+        run: make ci
+
+      - name: make vuln
+        run: make vuln
+
+  macos:
+    name: build, lint, test (macos)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: .go-version
+          cache: true
+          cache-dependency-path: go.mod
+
+      - name: Install golangci-lint
+        run: |
+          curl -sSfL "https://raw.githubusercontent.com/golangci/golangci-lint/${GOLANGCI_LINT_VERSION}/install.sh" \
+            | sh -s -- -b "$(go env GOPATH)/bin" "${GOLANGCI_LINT_VERSION}"
+
+      - name: make ci
+        run: make ci
+
+  windows:
+    name: build, vet, test (windows)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: .go-version
+          cache: true
+          cache-dependency-path: go.mod
+
+      - name: go build
+        run: go build ./...
+
+      - name: go vet
+        run: go vet ./...
+
+      # No -race: the race detector needs cgo, which the runner lacks.
+      - name: go test
+        run: go test ./...

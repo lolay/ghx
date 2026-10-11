@@ -11,6 +11,8 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
+
+	"github.com/lolay/ghx/internal/ui"
 )
 
 // Execute runs the ghx command with the given arguments (typically
@@ -18,6 +20,8 @@ import (
 func Execute() int {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+
+	ui.SetupTerminal(os.Stdout)
 
 	cmd := newRootCmd()
 	cmd.SilenceUsage = true
