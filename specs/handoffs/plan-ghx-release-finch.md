@@ -1,7 +1,7 @@
 ```
---- KICKOFF: begin orchestration at [deep] ---
+--- KICKOFF: plan complete ---
 
-  Status: 3/4 groups done | last review: wave-3 PASS | current: m2 s2 [exec] | updated 2026-10-11 | passed unattended: gate 5, gate 4, gate 2
+  Status: 4/4 groups done | completed 2026-10-11
 
   mode: unattended | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch claude/stoic-planck-qfqg75) | guard 3x min $50 | fixups 2 | confirmed 2026-10-11 session 49ac3a33-e356-58b6-9971-24a023142f66: yes, unattended
 
@@ -29,14 +29,14 @@
 
 **Cost (API-equiv, Claude Code models)**
 
-| wave | expected tokens | expected $ |
-|---|---|---|
-| 1 [deep] m1 s1 | ~2.7M | ~$1.4 |
-| 2 [exec] m1 s2-s4 | ~3.3M | ~$1.4 |
-| 3 [deep] m2 s1 | ~2.7M | ~$1.4 |
-| 4 [exec] m2 s2 | ~2.0M | ~$0.89 |
-| orchestrator | ~7.3M | ~$6.3 |
-| **Total** | ~18M | ~$11 |
+| wave | expected tokens | expected $ | actual tokens | actual $ |
+|---|---|---|---|---|
+| 1 [deep] m1 s1 | ~2.7M | ~$1.4 | ~6.5M (output est.) | ~$3.41 (output est.) |
+| 2 [exec] m1 s2-s4 | ~3.3M | ~$1.4 | ~3.1M (output est.) | ~$1.74 (output est.) |
+| 3 [deep] m2 s1 | ~2.7M | ~$1.4 | ~5.3M (output est.) | ~$3.08 (output est.) |
+| 4 [exec] m2 s2 | ~2.0M | ~$0.89 | ~2.6M (output est.) | ~$1.42 (output est.) |
+| orchestrator | ~7.3M | ~$6.3 | ~6.8M | ~$4.49 |
+| **Total** | ~18M | ~$11 | ~24.3M (output est.) | ~$14.14 (output est.) |
 
 Expected values are estimates, good to about 2-3× per wave. Waves 1 and 3 are one medium step on Opus 5.5 (high); wave 2 is two medium steps and one small folded `[fast]` step on Sonnet 5.5 (high); wave 4 is one medium step on Sonnet 5.5 (high); each wave adds one Opus 5.5 (high) review (~1.0M, ~$0.54). The orchestrator row is the kickoff, four waves of bookkeeping, and one human wait (the kickoff answer, unattended; no new-chat start-up on a runner).
 
@@ -102,7 +102,7 @@ Run C of the orchestrate phase 1 dogfood (`GaryRudolph/public` `specs/handoffs/d
 
 --- WAVE 4 [exec] ---
 
-#### s2 - [exec] Release docs
+#### s2 - [exec] Release docs (done)
 
 - `specs/releasing.md` modelled on triage's, for this repo's flow: the core rule (remote pushes last, in order), versioning (`version.txt`, lazy bump, `<release>+<sha> (<buildCode>)`), pre-flight, cutting a release (Actions, Release, Run workflow, level), re-running a failed publish, the emergency local path with the Danger targets, the three secrets with the scope each needs, and a first-release checklist: create the secrets, add a `ghx` row to the tap's and the bucket's README tables, confirm `brew install lolay/tap/ghx` and `scoop install lolay/ghx` afterwards.
 - README "Install": `brew trust lolay/tap`, `brew install lolay/tap/ghx`; `scoop bucket add lolay https://github.com/lolay/scoop-bucket`, `scoop install lolay/ghx`; GitHub Releases; from source. Marked as available from the first release.
@@ -114,6 +114,7 @@ Run C of the orchestrate phase 1 dogfood (`GaryRudolph/public` `specs/handoffs/d
 review wave-1 (ghx m1 s1) 2fbf197..da66e81: PASS - acceptance re-run (ghx 0.1.0+da66e81 (14), bump dry-run 0.1.1 with a clean tree, make ci green); goreleaser takes RELEASE/SHA/BUILD_CODE from the Makefile via .Env.*, not .Version/.ShortCommit (m1.s2 follows); make ci needed runner workarounds (golangci-lint v2.14.0 and a covdata-built go1.26.2 in the scratchpad, GIT_CONFIG_* unset for a pre-existing cloner test); passed unattended: gate 5 - 2026-10-11
 review wave-2 (ghx m1 s2-s4) 1d6be7b..296482d: PASS - reviewer re-ran everything on a clean tree: release-check ok (goreleaser v2.18.3 via go run), snapshot built 6 archives ghx_0.1.0+296482d_<os>_<arch> plus checksums, dist binary and make build both print ghx 0.1.0+296482d (18); DRY_RUN=1 formula and manifest hashes match checksums.txt, ruby -c and json.tool pass, shellcheck clean (scratchpad venv); Danger targets refuse without CONFIRM_* and exit 2; publish scripts validate VERSION and pass the token via GIT_CONFIG_* extraheader, not the URL; make ci green with wave 1's runner workarounds - 2026-10-11
 review wave-3 (ghx m2 s1) 2541c0c..b4e6da2: PASS - actionlint v1.7.12 clean on 3 workflows (shellcheck rule on), shellcheck clean on scripts/*.sh; secrets named: RELEASE_TOKEN (release.yml checkout token:, as the personal-release template does), HOMEBREW_TAP_TOKEN and SCOOP_BUCKET_TOKEN (step env), none echoed; publish.yml order enforced by needs: release (make release, goreleaser) then homebrew then scoop, each re-runnable; scripts/fetch-release-checksums.sh renders from the published release (stub-tested only, gh has no API access here); release-check job in ci.yml; no floating tags, per-job permissions from {}, first-party actions at a major, goreleaser pinned v2.18.3 via go run; make ci green with the runner workarounds; for m2.s2: a hotfix from an old line moves the tap and bucket back, partial-release recovery, RELEASE_TOKEN ruleset bypass; ci.yml header comment doesn't mention release-check (cosmetic); passed unattended: gate 4, gate 2 - 2026-10-11
+review wave-4 (ghx m2 s2) a101696..a415872: PASS - specs/releasing.md (push order, versioning, pre-flight, cutting, re-running, hotfixes, half-uploaded recovery, emergency Danger path, three secrets with scopes, first-release checklist), README Install, Makefile.md workflow table, CHANGELOG, CONTRIBUTING pointer; every target, script, workflow, secret and CONFIRM_* named in the docs checked against the code; make ci green with the runner workarounds; not blocking: Makefile.md release.yml row omits --line, half-uploaded recovery and `brew trust lolay/tap` unverified, first workflow release is 0.1.1/0.2.0/1.0.0 since version.txt reads 0.1.0 - 2026-10-11
 
 ## Token log
 
@@ -134,3 +135,28 @@ tokens wave-2 ghx-m1-s2-s4 (claude-sonnet-5-5): input ~50 / cache read ~2.3M / c
 tokens orchestrator-wave-2 ghx-m1-s2-s4 (claude-opus-5-5): input ~16 / cache read ~960k / cache write ~0 5m + ~28k 1h / output ~9.9k | ~$0.62 API-equiv
 tokens review-wave-3 ghx-m2-s1 (claude-opus-5-5): input ~24 / cache read ~460k / cache write ~55k / output ~12k | ~$0.61 API-equiv (output est.) session 49ac3a33-e356-58b6-9971-24a023142f66
 tokens wave-3 ghx-m2-s1 (claude-opus-5-5): input ~66 / cache read ~4.6M / cache write ~180k / output ~33k | ~$2.47 API-equiv (output est.) session 49ac3a33-e356-58b6-9971-24a023142f66
+tokens orchestrator-wave-3 ghx-m2-s1 (claude-opus-5-5): input ~9 / cache read ~820k / cache write ~0 5m + ~27k 1h / output ~10k | ~$0.58 API-equiv
+tokens review-wave-4 ghx-m2-s2 (claude-opus-5-5): input ~24 / cache read ~340k / cache write ~35k / output ~12k | ~$0.48 API-equiv (output est.) session 49ac3a33-e356-58b6-9971-24a023142f66
+tokens wave-4 ghx-m2-s2 (claude-sonnet-5-5): input ~40 / cache read ~2.1M / cache write ~130k / output ~20k | ~$0.94 API-equiv (output est.) session 49ac3a33-e356-58b6-9971-24a023142f66
+tokens orchestrator-wave-4 ghx-m2-s2 (claude-opus-5-5): input ~6 / cache read ~360k / cache write ~0 5m + ~14k 1h / output ~990 | ~$0.20 API-equiv
+
+## Completion summary
+
+**Completed**: 2026-10-11
+**What shipped**: ghx has a version source of truth (`version.txt` 0.1.0, `scripts/bump_version.py`, `internal/buildinfo`) and `ghx --version` printing `<release>+<sha> (<buildCode>)`, stamped identically by `make build` and goreleaser. `.goreleaser.yaml` builds six archives plus checksums, with `make snapshot` and `make release-check`. `scripts/publish-formula.sh` and `scripts/publish-scoop.sh` render the Homebrew formula and Scoop manifest from the release checksums, behind `make publish-formula`, `make publish-scoop` and `make release` in a `##@ Danger` section gated by `CONFIRM_*`. `.github/workflows/release.yml` (bump, commit, tag, push with `RELEASE_TOKEN`) and `publish.yml` (goreleaser, then formula, then Scoop, as three re-runnable jobs) are in place, plus a `release-check` job in CI. `specs/releasing.md`, README Install, Makefile.md and CHANGELOG document it. Nothing was tagged, released, dispatched or pushed outside the task branch.
+**Deviations from plan**:
+- Unattended checkpoints: gate 5 (canary, wave 1), gates 4 and 2 (before wave 3). No retries, no fix-ups.
+- m1.s2: goreleaser stamps `{{ .Env.RELEASE }}`, `{{ .Env.SHA }}`, `{{ .Env.BUILD_CODE }}` from the Makefile instead of `{{ .ShortCommit }}`, per m1.s1's decision, so local and release builds print the same string.
+- m2.s1: the publish job is three jobs chained by `needs` (release, homebrew, scoop) so a partial failure re-runs only what failed; added `scripts/fetch-release-checksums.sh` so the publishers render only from a complete, non-draft release.
+- m2.s1: `release.yml` passes `RELEASE_TOKEN` through `actions/checkout`'s `token:` input, as the personal-release template does, not a step's `env` as the plan's rule reads. No value lands in a file.
+- m2.s2: added a one-line pointer to `specs/releasing.md` in CONTRIBUTING.md.
+- Every `make ci` ran with runner-only workarounds (golangci-lint v2.14.0 and a covdata-built go1.26.2 in the scratchpad, `GIT_CONFIG_*` unset); CI on GitHub hasn't run this branch yet.
+- Spend ~$14.14 against ~$11 expected (output est.; the session is live, so no `cost-state` totals yet).
+**Follow-ups**:
+- Gary: create `RELEASE_TOKEN`, `HOMEBREW_TAP_TOKEN`, `SCOOP_BUCKET_TOKEN`; give `RELEASE_TOKEN` a ruleset bypass to push to `main`; add `ghx` rows to the tap's and bucket's READMEs.
+- Decide the first version: `version.txt` reads 0.1.0 as the last release, so the first workflow release is 0.1.1, 0.2.0 or 1.0.0. Set it to 0.0.0 and bump minor if you want v0.1.0.
+- Decide whether `RELEASE_TOKEN` via checkout's `token:` is acceptable or the rule should change.
+- `internal/cloner`'s `TestCloneRepos_GivesGitTheTokenOnlyThroughItsEnvironment` fails when the environment sets `GIT_CONFIG_COUNT`; isolate those variables in the test.
+- Unverified until a real release: the half-uploaded-release recovery, `fetch-release-checksums.sh` against real `gh`, and `brew trust lolay/tap`.
+- Cosmetic: Makefile.md's release.yml row omits `--line`; `ci.yml`'s header comment doesn't mention `release-check`.
+- Before merge: remove `specs/handoffs/plan-ghx-release-finch.md` and `handoff-ghx-release-finch.md` (the Completion summary is the only durable part, and it belongs in the PR description).
