@@ -3,7 +3,7 @@
 
   Status: 0/3 groups done | last review: — | current: ghx m1 s1-s3 [exec] | updated 2026-10-10
 
-  mode: gated | proposed gated (harness=claude-code runner=none; Mac CLI workstation, dogfood run A) | guard 3x min $50 | fixups 2 | confirmed 2026-10-10 session 4e8ee344-6dc5-44cf-8111-98422ff3c14c: gated
+  mode: gated | proposed gated (harness=claude-code runner=none; Mac CLI workstation, dogfood run A) | guard 3x min $50 | fixups 2 | confirmed 2026-10-10 session bf82fd5c-3117-418c-934b-c0d47391532a by Kickoff prompt: Run in gated mode.
 
   review: every-wave (log-only)
 

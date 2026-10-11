@@ -15,6 +15,9 @@ promoted to durable docs, before the PR merges.
   `4e8ee344-6dc5-44cf-8111-98422ff3c14c` (answer: "gated";
   `harness=claude-code runner=none`: Mac CLI workstation, dogfood run A).
   Orchestrate in a new chat (default). Claude Code path: phase 1 dogfood.
+- Re-confirmed 2026-10-10 by Kickoff prompt in session
+  `bf82fd5c-3117-418c-934b-c0d47391532a` (same harness and runner tokens);
+  this session orchestrates.
 
 ## Waves
 
@@ -38,8 +41,8 @@ Review log and Token log into the plan.
 
 ## Next
 
-Wave 1 `[exec]` ghx m1 s1-s3 in a new chat. Its first launch is the canary
-and stops at gate 5.
+Wave 1 `[exec]` ghx m1 s1-s3, launching in session `bf82fd5c`. Its first
+launch is the canary (group ghx m1 s1-s3) and stops at gate 5.
 
 ## Resume
 
