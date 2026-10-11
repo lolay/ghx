@@ -20,6 +20,8 @@ graph LR
     vuln
     clean
     bump
+    snapshot
+    release-check
 ```
 
 Solid arrows are hard prerequisites, run in order (`build`, then `lint`, then
@@ -63,6 +65,15 @@ targets stand alone.
 
 `scripts/bump_version.py` is the `personal-release` skill's template, copied
 unchanged; update it by copying the template again, not by editing it here.
+
+| Target | Description |
+|--------|-------------|
+| `snapshot` | `goreleaser release --snapshot --clean`: builds the six archives (darwin, linux and windows, each amd64 and arm64) and `checksums.txt` into `dist/` and publishes nothing. The version is `<release>+<sha>` with no pre-release suffix, so archives are named `ghx_0.1.0+abc1234_linux_amd64.tar.gz` |
+| `release-check` | `goreleaser check`: validates [`.goreleaser.yaml`](./.goreleaser.yaml) |
+
+`GORELEASER` (default `goreleaser`) names the command, so a machine without the
+tool can pass the `go run` form:
+`make snapshot GORELEASER="go run github.com/goreleaser/goreleaser/v2@v2.18.3"`.
 
 ## The build version
 

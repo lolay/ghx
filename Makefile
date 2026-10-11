@@ -17,7 +17,7 @@ SHELL := bash
 .DEFAULT_GOAL := help
 
 .PHONY: help init doctor build lint format test vuln ci pre-commit clean \
-        gh-runs-list gh-runs-watch gh-runs-status bump
+        gh-runs-list gh-runs-watch gh-runs-status bump snapshot release-check
 
 # Binary coordinates.
 BINARY  := ghx
@@ -55,6 +55,10 @@ BUILDINFO_PKG := github.com/lolay/ghx/internal/buildinfo
 LDFLAGS       := -X $(BUILDINFO_PKG).Version=$(RELEASE) \
                  -X $(BUILDINFO_PKG).Sha=$(SHA) \
                  -X $(BUILDINFO_PKG).BuildCode=$(BUILD_CODE)
+
+# goreleaser; a runner without it installed passes the pinned `go run` form,
+# e.g. GORELEASER="go run github.com/goreleaser/goreleaser/v2@v2.18.3".
+GORELEASER ?= goreleaser
 
 # LEVEL picks the bump for `make bump` (patch | minor | major).
 LEVEL ?=
@@ -171,3 +175,9 @@ bump: ## Bump version.txt and move CHANGELOG's Unreleased entries (LEVEL=patch|m
 	  *) echo "LEVEL must be patch, minor or major (make bump LEVEL=patch)" >&2; exit 1 ;; \
 	esac
 	python3 scripts/bump_version.py $(LEVEL)$(if $(filter 1,$(DRY_RUN)), --dry-run)
+
+snapshot: ## Build every release archive and checksums.txt into dist/ without publishing (goreleaser snapshot)
+	RELEASE="$(RELEASE)" SHA="$(SHA)" BUILD_CODE="$(BUILD_CODE)" $(GORELEASER) release --snapshot --clean
+
+release-check: ## Validate .goreleaser.yaml (goreleaser check)
+	$(GORELEASER) check

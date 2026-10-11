@@ -1,0 +1,71 @@
+# goreleaser configuration (v2 schema).
+#
+# Build matrix (darwin/linux/windows x amd64/arm64), archives, checksums and
+# the GitHub release assets. goreleaser runs only through the Makefile's
+# `snapshot` and `release` targets, which pass RELEASE, SHA and BUILD_CODE in
+# its environment, the same three values `make build` stamps, so a release
+# binary and a local build of one commit print the same `ghx --version`
+# string (see the Makefile). `.Version` and `.ShortCommit` aren't used for the
+# stamp: `.Version` is the tag, and a snapshot's carries a suffix the
+# versioning standard forbids.
+#
+# Publishing order inside `goreleaser release`:
+#   1. Build, archive and checksum (local, no remote)
+#   2. GitHub Release upload (lolay/ghx)
+# The Homebrew formula and Scoop manifest are published afterwards by
+# scripts/publish-formula.sh and scripts/publish-scoop.sh, from dist/.
+version: 2
+
+project_name: ghx
+
+builds:
+  - id: ghx
+    main: ./cmd/ghx
+    binary: ghx
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/lolay/ghx/internal/buildinfo.Version={{ .Env.RELEASE }}
+      - -X github.com/lolay/ghx/internal/buildinfo.Sha={{ .Env.SHA }}
+      - -X github.com/lolay/ghx/internal/buildinfo.BuildCode={{ .Env.BUILD_CODE }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: ghx
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+      - CHANGELOG.md
+
+checksum:
+  name_template: checksums.txt
+
+# A snapshot is a dev build, so it reads <release>+<sha> like `make build`,
+# with no pre-release suffix (no -SNAPSHOT, no -next).
+snapshot:
+  version_template: "{{ .Env.RELEASE }}+{{ .Env.SHA }}"
+
+changelog:
+  sort: asc
+
+release:
+  github:
+    owner: lolay
+    name: ghx
