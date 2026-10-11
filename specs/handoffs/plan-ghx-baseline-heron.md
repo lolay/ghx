@@ -1,3 +1,43 @@
+```
+--- KICKOFF: begin orchestration at [deep] ---
+
+  Status: 0/3 groups done | last review: — | current: ghx m1 s1-s3 [exec] | updated 2026-10-10
+
+  mode: gated | proposed gated (harness=claude-code runner=none; Mac CLI workstation, dogfood run A) | guard 3x min $50 | fixups 2 | confirmed 2026-10-10 session 4e8ee344-6dc5-44cf-8111-98422ff3c14c: gated
+
+  review: every-wave (log-only)
+
+  Next model
+    Cursor:      claude-opus-5-5[effort=high]
+    Claude Code: /model opus                (/effort high)
+
+  Prompt to paste into the next chat:
+    In lolay/ghx, read specs/handoffs/plan-ghx-baseline-heron.md. The plan is already tagged.
+    On branch feature/ghx-baseline-heron (task branch): subagents commit each finished step.
+    Run in gated mode.
+    Run the personal-plan-orchestrate skill from the top: walk to
+    each tier boundary, dispatch subagents per the skill's procedure,
+    and pause only where the recorded mode stops. Do not execute plan
+    work inline. Update plan progress after each wave returns per the
+    skill's procedure. The mode line above is the kickoff answer. If the
+    Status line shows BLOCKED, re-post that question and wait; otherwise
+    record the mode, print the kickoff summary and begin dispatching.
+
+---
+```
+
+**Cost (API-equiv, Claude Code models)**
+
+| wave | expected tokens | expected $ |
+|---|---|---|
+| 1 [exec] ghx m1 s1-s3 | ~2.6M | ~$1.1 |
+| 2 [deep] ghx m1 s4 | ~6.1M | ~$3.2 |
+| 3 [exec] ghx m2 s1-s2 | ~3.0M | ~$1.2 |
+| orchestrator | ~7.5M | ~$7.3 |
+| **Total** | ~19M | ~$13 |
+
+Expected values are estimates, good to about 2-3× per wave.
+
 # Plan: bring ghx to triage's repo baseline (heron)
 
 Run A of the orchestrate phase 1 dogfood (`GaryRudolph/public` `specs/handoffs/dogfood-orchestrate-native.md`): Mac CLI, gated. First of three plans that bring `lolay/ghx` to the shape of `lolay/triage`; B (`plan-ghx-platforms-lynx`) and C (`plan-ghx-release-finch`) start from `main` after this plan's PR merges.
@@ -17,6 +57,8 @@ Run A of the orchestrate phase 1 dogfood (`GaryRudolph/public` `specs/handoffs/d
 - Paths with `filepath`, never a hard-coded `/`; nothing that works only on macOS (plan B adds Windows and Linux CI, and this plan's code must not get in its way).
 
 ## m1 - Identity, build and first tests
+
+--- WAVE 1 [exec] ---
 
 #### s1 - [exec] Rename the module to github.com/lolay/ghx and the binary to ghx
 
@@ -40,6 +82,8 @@ Run A of the orchestrate phase 1 dogfood (`GaryRudolph/public` `specs/handoffs/d
 - `Makefile.md`: target overview (mermaid), target tables per section, `make init` behaviour, a "CI map" placeholder line for plan B.
 - **Accept when:** bare `make` prints the grouped help; `make ci` and `make vuln` pass on the Mac; `make doctor` runs (a missing tool is a reported result, not a Makefile error); `make clean` leaves `git status` clean; `checkmake Makefile`, if installed, reports nothing new.
 
+--- WAVE 2 [deep] ---
+
 #### s4 - [deep] Test seams and the first unit tests
 
 - Decide the seams the pure packages need, with the smallest change to production code: where `config.Load` finds the home directory (tests set `HOME` and `USERPROFILE` with `t.Setenv`, or the function takes the directory), and how `GITHUB_TOKEN` is isolated. Write the decision as a short `specs/testing.md`: test layout, testify (`require` / `assert`), table-driven style, what needs `git` on `PATH`, and the coverage exemptions with a reason each (`cmd/ghx`; anything plan B covers).
@@ -48,6 +92,8 @@ Run A of the orchestrate phase 1 dogfood (`GaryRudolph/public` `specs/handoffs/d
 - **Accept when:** `make test` passes with `-race`; `config`, `manifest` and `ghapi` (filter) are at or above 80% statement coverage per package, or the gap is listed in `specs/testing.md` with a reason; no test touches the network or the real home directory.
 
 ## m2 - Docs
+
+--- WAVE 3 [exec] ---
 
 #### s1 - [exec] README and CHANGELOG
 
@@ -59,3 +105,15 @@ Run A of the orchestrate phase 1 dogfood (`GaryRudolph/public` `specs/handoffs/d
 
 - `CONTRIBUTING.md` (from triage's: setup, the make loop, `.go-version`, commit style, PR flow), `SECURITY.md` (private reporting via GitHub security advisories; the token handling ghx does), `.github/CODEOWNERS` (`* @GaryRudolph`), and a short `AGENTS.md`: layout, `make ci` as the gate, where tests and specs live, the Go standards, and that `specs/handoffs/` holds plan scratch removed before merge.
 - **Accept when:** every relative link in the new docs resolves (`grep -o '](\./[^)]*)'` and check each path); `make ci` passes.
+
+## Review log
+
+## Token log
+
+**Counting header (Claude Code)**
+
+- Line, one per model a chat ran, appended below: `tokens <row> <group-id> (<model>): input ~X / cache read ~R / cache write ~W / output ~Y | ~$C API-equiv`. `<row>` is `wave-N`, `review-wave-N`, or `wave-N-fix` and `review-wave-N-fix` for a fix-up wave; `<group-id>` is the wave's group id with hyphens (`m1-s1-s3`); `<model>` is `message.model` without a date suffix (`claude-haiku-4-5-20251001` is `claude-haiku-4-5`). Round counts to two significant figures with `k` or `M`.
+- Usage: `~/.claude/projects/<slug>/$CLAUDE_CODE_SESSION_ID.jsonl` (`<slug>` is the working directory with every character but a letter or digit turned into `-`, matched by prefix when long; without the id, the newest `.jsonl` there; `$CLAUDE_CONFIG_DIR` replaces `~/.claude` when set), plus its subagents' `<session-id>/subagents/**/agent-*.jsonl` in the same directory. Sum `message.usage` over assistant lines once per `message.id`, from the line with `stop_reason`: input `input_tokens`, cache read `cache_read_input_tokens`, cache write `cache_creation.ephemeral_5m_input_tokens` (with `ephemeral_1h_input_tokens` too, `cache write ~40k 5m + ~8k 1h`), output `output_tokens`. A call with no `stop_reason` line keeps its input-side counts, takes output as about 1,000, and its line ends `(output est.) session <id>`.
+- Rates by `<model>`, $ per Mtok input / cached / output: `claude-opus-5-5` 4.00 / 0.20 / 20.00; `claude-sonnet-5-5` 2.00 / 0.20 / 10.00; `claude-haiku-4-5` 1.00 / 0.10 / 5.00.
+- `$C` = (input × in + cache read × cached + 5m write × in × 1.25 + 1h write × in × 2.00 + output × out) / 1M.
+- In another harness, or on a model not listed here, count and price per plan-execution.md "Token accounting" and "Model price table" instead.
