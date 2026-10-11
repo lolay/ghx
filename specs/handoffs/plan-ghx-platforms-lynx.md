@@ -1,7 +1,7 @@
 ```
 --- KICKOFF: begin orchestration at [deep] ---
 
-  Status: 2/4 groups done | last review: wave-2 PASS | current: m2 s1-s2 [exec] | updated 2026-10-10
+  Status: 3/4 groups done | last review: wave-3 PASS | current: m2 s3 [deep] | updated 2026-10-10
 
   mode: unattended | proposed gated (harness=claude-code runner=none; workstation, no runner signal) | guard 3x min $50 | fixups 2 | confirmed 2026-10-10 session 43a767ca-8b50-41c3-9808-49159f0ef9f6 by Kickoff prompt: Run in unattended mode.
 
@@ -103,14 +103,14 @@ Hardening. With the default `https` protocol, `resolveURL` and `resolveWikiURL` 
 ## m2 - CI on three operating systems
 
 --- WAVE 3 [exec] ---
-#### s1 - [exec] CI workflow for macOS, Linux and Windows
+#### s1 - [exec] CI workflow for macOS, Linux and Windows (done)
 
 - `.github/workflows/ci.yml` modelled on triage's: on `push` (every branch, so a task branch is checked before its PR) and `pull_request`, with a `concurrency` group per ref that cancels superseded runs; `permissions: contents: read`; `actions/checkout` and `actions/setup-go` (`go-version-file: .go-version`, module cache) at their current major versions, looked up now.
 - Jobs: Linux `go mod verify`, golangci-lint installed at the Makefile's pinned version, `make ci`, `make vuln`; macOS `make ci` (same lint install); Windows `go build ./...`, `go vet ./...`, `go test ./...` (no `-race`: it needs cgo there), under `shell: bash`. Each job shows its OS in its name.
 - Lint the workflow with `actionlint` (installed, or `go run github.com/rhysd/actionlint/cmd/actionlint@latest`).
 - **Accept when:** `actionlint` reports nothing; the golangci-lint version in `ci.yml` equals `GOLANGCI_LINT_VERSION` in the Makefile; `make ci` passes locally.
 
-#### s2 - [fast] Document the CI map
+#### s2 - [fast] Document the CI map (done)
 
 - `Makefile.md`: fill the "CI map" (each workflow job and the make target or command it runs). README: a CI badge for `ci.yml` on `main`. `CONTRIBUTING.md`: CI runs on macOS, Linux and Windows; Windows runs without `-race`.
 - **Accept when:** the CI map names every job in `ci.yml`; the badge URL points at `lolay/ghx`'s `ci.yml`.
@@ -127,6 +127,7 @@ Hardening. With the default `https` protocol, `resolveURL` and `resolveWikiURL` 
 
 - review wave-1 (ghx m1 s1-s3) 2ed9d2b..9f0db0c: PASS - make ci, Windows vet and -race -count=3 pass; coverage cloner 95.9%, ghapi 100%, cli 91.6%; out of scope, not fixed: resolveWikiURL replaces the first ".git" anywhere (acme.github.io), and manifest.Write gets the unfiltered repo list; passed unattended: gate 5 - 2026-10-10
 - review wave-2 (ghx m1 s4-s5) f9d4148..83231a0: PASS - make ci, 3 GOOS x 2 GOARCH vet and build, Windows lint pass; coverage cloner 96.1%, cli 91.5%, ghapi 100%, redact 100%, ui 98.8%; `git grep authenticatedHTTPS` matches only this plan's step text; also closed a manifest-name path traversal with --delete; Windows-only tests compile but first run in m2 CI; open: GIT_TERMINAL_PROMPT=0 on a 401 needs a decision; passed unattended: gate 2 - 2026-10-10
+- review wave-3 (ghx m2 s1-s2) d121a72..8d3f957: PASS - actionlint clean, golangci-lint v2.14.0 matches the Makefile, make ci and Windows vet pass; checkout and setup-go at @v7 (orchestrator confirmed v7.0.1 / v7.0.0 with gh; the reviewer could not); the workflow has not run yet; passed unattended: gate 4 - 2026-10-10
 
 ## Token log
 
@@ -144,3 +145,6 @@ tokens wave-1 ghx-m1-s1-s3 (claude-sonnet-5-5): input ~52 / cache read ~2.6M / c
 tokens orchestrator-wave-1 plan-ghx-platforms-lynx (claude-opus-5-5): input ~22 / cache read ~710k / cache write ~0 5m + ~56k 1h / output ~11k | ~$0.81 API-equiv
 tokens review-wave-2 ghx-m1-s4-s5 (claude-opus-5-5): input ~22 / cache read ~500k / cache write ~87k / output ~11k | ~$0.75 API-equiv (output est.) session 43a767ca-8b50-41c3-9808-49159f0ef9f6
 tokens wave-2 ghx-m1-s4-s5 (claude-opus-5-5): input ~120 / cache read ~11M / cache write ~260k / output ~71k | ~$4.89 API-equiv (output est.) session 43a767ca-8b50-41c3-9808-49159f0ef9f6
+tokens orchestrator-wave-2 plan-ghx-platforms-lynx (claude-opus-5-5): input ~22 / cache read ~960k / cache write ~0 5m + ~32k 1h / output ~10k | ~$0.65 API-equiv
+tokens review-wave-3 ghx-m2-s1-s2 (claude-opus-5-5): input ~10 / cache read ~61k / cache write ~16k / output ~4.4k | ~$0.18 API-equiv (output est.) session 43a767ca-8b50-41c3-9808-49159f0ef9f6
+tokens wave-3 ghx-m2-s1-s2 (claude-sonnet-5-5): input ~16 / cache read ~370k / cache write ~60k / output ~7.8k | ~$0.30 API-equiv (output est.) session 43a767ca-8b50-41c3-9808-49159f0ef9f6

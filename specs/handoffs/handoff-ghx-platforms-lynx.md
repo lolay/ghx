@@ -46,15 +46,21 @@ or promoted before the branch merges.
   files; the token goes to git only through `GIT_CONFIG_*` env, old origins
   are cleaned, `internal/redact` masks failure details. Gate 2 passed
   unattended. The m2 milestone handoff is `handoff-m2-ci.md` (gate 4).
+- Wave 3 `[exec]` m2.s1-m2.s2: PASS, `d121a72..8d3f957` (`76a4b76`,
+  `8d3f957`). `.github/workflows/ci.yml` (linux, macos, windows jobs;
+  checkout and setup-go @v7; golangci-lint v2.14.0 in a workflow env var),
+  the CI map in `Makefile.md`, a README badge, a CONTRIBUTING section. Gate 4
+  passed unattended. Pushed, which starts the first `ci` run.
 
 ## Spend
 
-- Token log: ~$9.0 so far against ~$18 expected (API-equiv; guard ~$54).
+- Token log: ~$10 so far against ~$18 expected (API-equiv; guard ~$54).
 
 ## Next
 
-- Wave 3 `[exec]` ghx m2 s1-s2 (CI workflow; CI map docs), gate 4 logged
-  unattended, launching now. Push after it, before wave 4 reads the CI run.
+- Wave 4 `[deep]` ghx m2 s3 (read this branch's first `ci` run with `gh`
+  and fix what fails), gate 2 logged unattended, launching now. Then final
+  completion: the PR waits for Gary.
 
 ## Pending question
 
