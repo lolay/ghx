@@ -33,15 +33,22 @@ or promoted before the branch merges.
 ## Done
 
 - Kickoff: wave markers, Kickoff block, Cost table and counting header
-  written; mode recorded. No wave has run.
+  written; mode recorded.
+- Wave 1 `[exec]` m1.s1-m1.s3 (canary): PASS, `2ed9d2b..9f0db0c`
+  (`fb00a5e`, `8dfa741`, `9f0db0c`). Hermetic tests for cloner (95.9%),
+  ghapi (100%, new unexported `baseURL` seam) and the cli run flow (91.6%);
+  helpers `internal/gittest` and `internal/ghapi/ghapitest`. cli reaches the
+  fake API by swapping `http.DefaultTransport` (`ghapitest.RedirectGitHub`),
+  documented in `specs/testing.md`. Gate 5 passed unattended.
 
 ## Spend
 
-- Token log: $0 so far against ~$18 expected (API-equiv).
+- Token log: ~$2.5 so far against ~$18 expected (API-equiv; guard ~$54).
 
 ## Next
 
-- Wave 1 `[exec]` ghx m1 s1-s3 (the canary of session `43a767ca`), launching now.
+- Wave 2 `[deep]` ghx m1 s4-s5 (Windows OS touchpoints; token out of clone
+  URLs), gate 2 logged unattended, launching now.
 
 ## Pending question
 
@@ -51,6 +58,16 @@ or promoted before the branch merges.
 
 Paste the plan's Kickoff prompt into a new chat on this machine (Opus, effort
 high).
+
+## Follow-ups found (out of scope, not fixed)
+
+- `cloner.resolveWikiURL` uses `strings.Replace(CloneURL, ".git", ".wiki.git", 1)`,
+  which hits the first `.git` anywhere: a repo like `acme.github.io` gets a
+  malformed wiki URL. Needs its own step or issue.
+- `manifest.Write` is given the repo list before `--include` / `--exclude`
+  filtering, so excluded repos appear in `.ghx.json`. Existing behaviour.
+- Windows-only paths (read-only `.git/objects` removal, `GIT_CONFIG_GLOBAL`
+  set to `NUL`) are only type-checked until the m2 CI run.
 
 ## Gotchas
 

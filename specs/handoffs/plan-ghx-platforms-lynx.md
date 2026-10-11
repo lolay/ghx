@@ -1,7 +1,7 @@
 ```
 --- KICKOFF: begin orchestration at [deep] ---
 
-  Status: 0/4 groups done | last review: — | current: m1 s1-s3 [exec] | updated 2026-10-10
+  Status: 1/4 groups done | last review: wave-1 PASS | current: m1 s4-s5 [deep] | updated 2026-10-10
 
   mode: unattended | proposed gated (harness=claude-code runner=none; workstation, no runner signal) | guard 3x min $50 | fixups 2 | confirmed 2026-10-10 session 43a767ca-8b50-41c3-9808-49159f0ef9f6 by Kickoff prompt: Run in unattended mode.
 
@@ -61,7 +61,7 @@ Run B of the orchestrate phase 1 dogfood (`GaryRudolph/public` `specs/handoffs/d
 ## m1 - Cross-platform correctness
 
 --- WAVE 1 [exec] ---
-#### s1 - [exec] Hermetic tests for the cloner against local git repos
+#### s1 - [exec] Hermetic tests for the cloner against local git repos (done)
 
 - A test helper that makes a bare repo with one commit on a named default branch (`git init --bare`, a seed clone, a commit, a push) under `t.TempDir()`, using `filepath` throughout and setting `user.name`, `user.email` and `init.defaultBranch` per command (`-c`), so a runner's global git config doesn't matter.
 - `RepoInfo.CloneURL` set to the bare repo's path passes through `resolveURL` unchanged (only `https://` URLs get the token), so `CloneRepos` runs for real: clone, a second run that pulls a new upstream commit, a dirty working tree skipped, a wiki that doesn't exist reported as skipped, `--git-author` / `--git-email` written to the clone's config, concurrency above 1, and a cancelled context.
@@ -69,13 +69,13 @@ Run B of the orchestrate phase 1 dogfood (`GaryRudolph/public` `specs/handoffs/d
 - Table tests for `resolveURL`, `resolveWikiURL` and `authenticatedHTTPS` (SSH, HTTPS, a URL without `.git`).
 - **Accept when:** `go test -race ./internal/cloner/...` passes on the Mac; `cloner` is at or above 80% statement coverage; `GOOS=windows go vet ./...` passes.
 
-#### s2 - [exec] A seam for the GitHub API and its tests
+#### s2 - [exec] A seam for the GitHub API and its tests (done)
 
 - Give `ghapi` an unexported way to point the go-github client at a base URL (one constructor both `ValidateToken` and `ListOrgRepos` use; tests set it through an `export_test.go` or an option), with no behaviour change for users.
 - `httptest` tests: token validation (ok, 401, a network error), listing with pagination across two pages, the repo type filter passed through, `toRepoInfo`'s nil-safe fields, and `formatAPIError`'s messages.
 - **Accept when:** `ghapi` is at or above 80% statement coverage; no test reaches `api.github.com` (run them with the network off, or check the base URL in each test).
 
-#### s3 - [exec] End-to-end tests for the run flow
+#### s3 - [exec] End-to-end tests for the run flow (done)
 
 - Drive the cobra root command in-process (`newRootCmd`, args, a buffer for `ui.Out`, `t.Setenv` for `HOME`, `USERPROFILE` and `GITHUB_TOKEN`) against the `httptest` server from m1.s2 and bare repos from m1.s1: a first sync, a second sync that pulls, a repo removed upstream moved to `DELETED/`, an archived one moved to `ARCHIVED/`, `--delete` removing both, `--dry-run` changing nothing on disk, and `--include` / `--exclude`.
 - Assert on the directory tree and the `.ghx.json` manifest, not on the progress bar's frames.
@@ -125,6 +125,8 @@ Hardening. With the default `https` protocol, `resolveURL` and `resolveWikiURL` 
 
 ## Review log
 
+- review wave-1 (ghx m1 s1-s3) 2ed9d2b..9f0db0c: PASS - make ci, Windows vet and -race -count=3 pass; coverage cloner 95.9%, ghapi 100%, cli 91.6%; out of scope, not fixed: resolveWikiURL replaces the first ".git" anywhere (acme.github.io), and manifest.Write gets the unfiltered repo list; passed unattended: gate 5 - 2026-10-10
+
 ## Token log
 
 **Counting header (Claude Code)**
@@ -134,3 +136,7 @@ Hardening. With the default `https` protocol, `resolveURL` and `resolveWikiURL` 
 - Rates by `<model>`, $ per Mtok input / cached / output: `claude-opus-5-5` 4.00 / 0.20 / 20.00; `claude-sonnet-5-5` 2.00 / 0.20 / 10.00; `claude-haiku-4-5` 1.00 / 0.10 / 5.00.
 - `$C` = (input × in + cache read × cached + 5m write × in × 1.25 + 1h write × in × 2.00 + output × out) / 1M.
 - In another harness, or on a model not listed here, count and price per plan-execution.md "Token accounting" and "Model price table" instead.
+
+tokens orchestrator-kickoff plan-ghx-platforms-lynx (claude-opus-5-5): input ~22 / cache read ~840k / cache write ~0 5m + ~69k 1h / output ~8.9k | ~$0.90 API-equiv
+tokens review-wave-1 ghx-m1-s1-s3 (claude-opus-5-5): input ~16 / cache read ~220k / cache write ~57k / output ~8.8k | ~$0.50 API-equiv (output est.) session 43a767ca-8b50-41c3-9808-49159f0ef9f6
+tokens wave-1 ghx-m1-s1-s3 (claude-sonnet-5-5): input ~52 / cache read ~2.6M / cache write ~140k / output ~26k | ~$1.11 API-equiv (output est.) session 43a767ca-8b50-41c3-9808-49159f0ef9f6
