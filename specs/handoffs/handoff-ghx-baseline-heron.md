@@ -24,7 +24,7 @@ promoted to durable docs, before the PR merges.
 | wave | tier | steps | state |
 |---|---|---|---|
 | 1 | exec | m1.s1-s3 (s2 is `[fast]`, folded) | done, PASS, `3e99c74..92f4ee3` |
-| 2 | deep | m1.s4 | next, BLOCKED at gates 5 and 2 |
+| 2 | deep | m1.s4 | running (gates 5 and 2 approved: "yes, continue wave 2") |
 | 3 | exec | m2.s1-s2 | pending |
 
 ## Done
@@ -52,13 +52,6 @@ Projected after wave 2: ~$5.2.
 
 Wave 2 `[deep]` ghx m1 s4 (test seams and first unit tests), Opus high
 worker and reviewer, ~$3.2.
-
-## Pending question (verbatim)
-
-> Wave 1 passed: canary `ghx m1 s1-s3` in `lolay/ghx` `3e99c74..92f4ee3`
-> (m1.s1-s3), check ok, review PASS. Next unit: wave 2 `[deep]` ghx m1 s4,
-> ~$3.2. That crosses gate 5 (canary done) and gate 2 (`[exec]` →
-> `[deep]`). Approve wave 2?
 
 ## Resume
 

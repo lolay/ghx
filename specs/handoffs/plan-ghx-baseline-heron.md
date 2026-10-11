@@ -1,7 +1,7 @@
 ```
 --- KICKOFF: begin orchestration at [deep] ---
 
-  Status: 1/3 groups done | last review: wave-1 PASS | current: ghx m1 s4 [deep] | updated 2026-10-10 | BLOCKED at gate 5
+  Status: 1/3 groups done | last review: wave-1 PASS | current: ghx m1 s4 [deep] | updated 2026-10-10
 
   mode: gated | proposed gated (harness=claude-code runner=none; Mac CLI workstation, dogfood run A) | guard 3x min $50 | fixups 2 | confirmed 2026-10-10 session bf82fd5c-3117-418c-934b-c0d47391532a by Kickoff prompt: Run in gated mode.
 
