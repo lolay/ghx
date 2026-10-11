@@ -2,10 +2,18 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
     "allow": [
-      "Bash(make -C agents test)",
-      "Bash(make -C agents status)",
-      "Bash(make -C agents dry-run)",
-      "Bash(make -C agents validate)"
+      "Workflow(orch-spike:plan-segment)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(make:*)",
+      "Bash(go build:*)",
+      "Bash(go test:*)",
+      "Bash(go vet:*)",
+      "Bash(go mod:*)",
+      "Bash(go run:*)",
+      "Bash(gofmt:*)",
+      "Bash(python3 scripts/bump_version.py:*)"
     ]
   },
   "attribution": {
@@ -13,4 +21,3 @@
     "pr": "Assisted-by: Claude Code"
   }
 }
-
