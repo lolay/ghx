@@ -284,9 +284,17 @@ Flags:
       --ssh                   Shortcut for --protocol ssh.
   -t, --token string          GitHub Personal Access Token.
       --type string           Repo type: all|public|private|forks|sources.
+  -v, --version               version for ghx
 ```
 
 `ghx` exits 0 on success and 1 on any error.
+
+`ghx --version` prints `ghx <release>+<sha> (<build code>)`, for example
+`ghx 0.1.0+abc1234 (42)`: the last release in [`version.txt`](./version.txt),
+the commit the binary was built from (`.dirty` when the tree had uncommitted
+changes) and the number of commits up to it. `make build` and release builds
+stamp it; a plain `go build`, `go run` or `go install` doesn't, and prints
+`ghx dev`.
 
 ## Development
 

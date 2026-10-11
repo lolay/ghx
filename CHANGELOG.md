@@ -21,6 +21,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   GitHub API errors.
 
 ### Added
+- `ghx --version` (and `-v`) prints the build version as
+  `ghx <release>+<sha> (<build code>)`, for example `ghx 0.1.0+abc1234 (42)`,
+  with `.dirty` after the sha for a build from a tree with uncommitted changes.
+  `make build` stamps it; a plain `go build` or `go install` prints `ghx dev`.
+- `version.txt` holds the last released version (`0.1.0` until the first
+  release), and `make bump LEVEL=patch|minor|major` runs
+  `scripts/bump_version.py` to bump it and move these entries under the new
+  version's heading.
 - `Makefile` with the standard targets (`make help` lists them; `make ci` is
   the pre-push gate), documented in [`Makefile.md`](./Makefile.md).
 - Unit tests for configuration loading and precedence, repository filtering,

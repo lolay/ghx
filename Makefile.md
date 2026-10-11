@@ -19,6 +19,7 @@ graph LR
     format
     vuln
     clean
+    bump
 ```
 
 Solid arrows are hard prerequisites, run in order (`build`, then `lint`, then
@@ -34,7 +35,7 @@ targets stand alone.
 | `help` | List targets (the default goal) |
 | `init` | `go mod download`; `INSTALL_PACKAGES=1` also installs golangci-lint |
 | `doctor` | Check the dev environment with `triage` against `triage.yaml`; `MODE=default\|release` |
-| `build` | `go build -o bin/ghx ./cmd/ghx` |
+| `build` | `go build -ldflags "-X ..." -o bin/ghx ./cmd/ghx`, stamped with the build version (below) |
 | `lint` | gofmt drift, `go mod tidy -diff`, `go vet`, `golangci-lint run`; fails when golangci-lint is missing |
 | `format` | `gofmt -w .`, `golangci-lint fmt` (when installed), `go mod tidy` |
 | `test` | `go test -race -cover ./...` |
@@ -53,6 +54,37 @@ targets stand alone.
 
 `GH_LIMIT` (default 50) caps how many recent runs are fetched. A `gh` failure
 (for example, not logged in) prints a warning and exits 0.
+
+### Release
+
+| Target | Description |
+|--------|-------------|
+| `bump` | `python3 scripts/bump_version.py $(LEVEL)`: rewrites `version.txt` and moves the `CHANGELOG.md` `## [Unreleased]` entries under a `## [vX.Y.Z] - date` heading. `LEVEL=patch\|minor\|major` is required; `DRY_RUN=1` adds `--dry-run`, which prints what would change and writes nothing. It neither commits nor tags |
+
+`scripts/bump_version.py` is the `personal-release` skill's template, copied
+unchanged; update it by copying the template again, not by editing it here.
+
+## The build version
+
+`make build` stamps three values into `internal/buildinfo` with `-ldflags -X`,
+and `ghx --version` prints them as `ghx <RELEASE>+<SHA> (<BUILD_CODE>)`, the
+versioning standard's form:
+
+| Variable | Source |
+|----------|--------|
+| `RELEASE` | [`version.txt`](./version.txt): the last released version, which only a release rewrites |
+| `SHA` | `git rev-parse --short HEAD`, plus `.dirty` when `git status --porcelain` reports anything, untracked files included |
+| `BUILD_CODE` | `git rev-list --count HEAD`; a shallow clone undercounts, so a release checkout needs full history (`fetch-depth: 0`) |
+
+Outside a git checkout `SHA` and `BUILD_CODE` are empty and the binary prints
+`ghx <RELEASE>`. A build that skips the Makefile (`go build`, `go run`,
+`go install`) prints `ghx dev`.
+
+Release builds use the same three values instead of computing their own:
+goreleaser stamps `{{ .Env.RELEASE }}`, `{{ .Env.SHA }}` and
+`{{ .Env.BUILD_CODE }}`, and runs only through Makefile targets that put the
+Makefile's values in its environment, so a local build and a release build of
+one commit print the same string.
 
 ## `make init`: idempotent bootstrap
 
