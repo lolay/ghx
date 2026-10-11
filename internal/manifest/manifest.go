@@ -1,7 +1,9 @@
 // Package manifest reads and writes the .ghx.json file that tracks which
-// repositories were synced on the previous run. The format matches the
-// Python implementation byte-for-byte so an existing manifest from the
-// Python version is interchangeable with this one.
+// repositories were synced on the previous run. The layout matches the
+// Python implementation byte for byte except exported_at, which is RFC 3339
+// in UTC to the second where Python wrote isoformat() with microseconds and
+// "+00:00". Neither version reads exported_at back, so a manifest from the
+// Python version is interchangeable with this one; testdata/golden pins it.
 package manifest
 
 import (
@@ -60,7 +62,7 @@ func Read(dir string) (*Manifest, string, error) {
 
 // Write serializes a manifest capturing all repos in the given list and
 // writes it to <dir>/.ghx.json with 2-space indentation and a trailing
-// newline (matching the Python output exactly).
+// newline, matching the Python layout (see the package comment).
 func Write(dir, org string, repos []ghapi.RepoInfo) error {
 	m := Manifest{
 		Org:        org,
