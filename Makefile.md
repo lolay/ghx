@@ -79,4 +79,20 @@ the pinned version; the CI install step must use the same value.
 
 ## CI map
 
-Placeholder: the workflow to target map lands with the CI workflow in plan B.
+[`.github/workflows/ci.yml`](./.github/workflows/ci.yml) runs on every push and
+on every pull request, one run per ref (a newer push cancels the run it
+supersedes), with read-only `contents` permission. It has three jobs, one per
+operating system, and each job name shows its OS.
+
+| Job | Runner | Runs |
+|-----|--------|------|
+| `build, lint, test, vuln (linux)` | `ubuntu-latest` | `go mod verify`, golangci-lint install, `make ci`, `make vuln` |
+| `build, lint, test (macos)` | `macos-latest` | golangci-lint install, `make ci` |
+| `build, vet, test (windows)` | `windows-latest` | `go build ./...`, `go vet ./...`, `go test ./...` under `shell: bash` |
+
+Windows runs the Go commands directly rather than `make ci`: `make test` uses
+`-race`, and the race detector needs cgo, which the Windows runner lacks.
+
+The golangci-lint install step in `ci.yml` reads its version from the workflow's
+`GOLANGCI_LINT_VERSION`, which must equal `GOLANGCI_LINT_VERSION` in the
+Makefile. Bump both together.

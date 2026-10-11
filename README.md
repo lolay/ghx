@@ -1,5 +1,7 @@
 # ghx
 
+[![CI](https://github.com/lolay/ghx/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/lolay/ghx/actions/workflows/ci.yml)
+
 > **tldr** -- Clone every repository in a GitHub organization, then keep the
 > copies in sync: one command, safe to re-run.
 
