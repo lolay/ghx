@@ -50,26 +50,40 @@ or promoted before the branch merges.
   `8d3f957`). `.github/workflows/ci.yml` (linux, macos, windows jobs;
   checkout and setup-go @v7; golangci-lint v2.14.0 in a workflow env var),
   the CI map in `Makefile.md`, a README badge, a CONTRIBUTING section. Gate 4
-  passed unattended. Pushed, which starts the first `ci` run.
+  passed unattended. Pushed, which started the first `ci` run.
+- Wave 4 `[deep]` m2.s3: PASS, `f0a00e7..0e94e5d`. CI run
+  [38107170470](https://github.com/lolay/ghx/actions/runs/38107170470) at
+  `f0a00e7` passed on linux, macos and windows (confirmed with `gh`), so the
+  step is an empty commit recording the run and job URLs. Gate 2 passed
+  unattended.
+- **Plan complete.** Completion summary and the completed Cost table are in
+  the plan.
 
 ## Spend
 
-- Token log: ~$10 so far against ~$18 expected (API-equiv; guard ~$54).
+- Actual ~$13 against ~$18 expected (API-equiv; wave rows are output
+  estimates from this live session; the kickoff session is exact).
 
 ## Next
 
-- Wave 4 `[deep]` ghx m2 s3 (read this branch's first `ci` run with `gh`
-  and fix what fails), gate 2 logged unattended, launching now. Then final
-  completion: the PR waits for Gary.
+- Waiting on Gary: open a PR from `feature/ghx-platforms-lynx` to `main`?
+- Before merge, a cleanup commit as the branch's last: remove
+  `specs/handoffs/plan-ghx-platforms-lynx.md`,
+  `specs/handoffs/handoff-ghx-platforms-lynx.md` and
+  `specs/handoffs/handoff-m2-ci.md` (the durable parts already live in
+  `specs/testing.md`, `Makefile.md`, `SECURITY.md`, the README and the
+  CHANGELOG); carry the follow-ups to issues or a new plan.
 
 ## Pending question
 
-- None.
+- Open a PR from `feature/ghx-platforms-lynx` to `main` now, with the
+  cleanup commit (remove the plan and both handoffs) first? Reply `pr`,
+  `pr, keep handoffs`, or `not yet`.
 
 ## How to resume
 
-Paste the plan's Kickoff prompt into a new chat on this machine (Opus, effort
-high).
+The plan is complete; nothing is left to dispatch. In a new chat, answer the
+pending question (PR and cleanup) on `feature/ghx-platforms-lynx`.
 
 ## Follow-ups found (out of scope, not fixed)
 

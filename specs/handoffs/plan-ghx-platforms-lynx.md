@@ -1,7 +1,7 @@
 ```
---- KICKOFF: begin orchestration at [deep] ---
+--- KICKOFF: plan complete ---
 
-  Status: 3/4 groups done | last review: wave-3 PASS | current: m2 s3 [deep] | updated 2026-10-10
+  Status: 4/4 groups done | completed 2026-10-10
 
   mode: unattended | proposed gated (harness=claude-code runner=none; workstation, no runner signal) | guard 3x min $50 | fixups 2 | confirmed 2026-10-10 session 43a767ca-8b50-41c3-9808-49159f0ef9f6 by Kickoff prompt: Run in unattended mode.
 
@@ -28,14 +28,14 @@
 
 **Cost (API-equiv, Claude Code models)**
 
-| wave | expected tokens | expected $ |
-|---|---|---|
-| 1 [exec] m1 s1-s3 | ~6.0M | ~$2.3 |
-| 2 [deep] m1 s4-s5 | ~11M | ~$5.9 |
-| 3 [exec] m2 s1-s2 | ~2.3M | ~$1.0 |
-| 4 [deep] m2 s3 | ~2.7M | ~$1.4 |
-| orchestrator | ~8.2M | ~$7.0 |
-| **Total** | ~30M | ~$18 |
+| wave | expected tokens | expected $ | actual tokens | actual $ |
+|---|---|---|---|---|
+| 1 [exec] m1 s1-s3 | ~6.0M | ~$2.3 | ~3.1M | ~$1.6 (output est.) |
+| 2 [deep] m1 s4-s5 | ~11M | ~$5.9 | ~12M | ~$5.6 (output est.) |
+| 3 [exec] m2 s1-s2 | ~2.3M | ~$1.0 | ~520k | ~$0.48 (output est.) |
+| 4 [deep] m2 s3 | ~2.7M | ~$1.4 | ~750k | ~$0.84 (output est.) |
+| orchestrator | ~8.2M | ~$7.0 | ~5.7M | ~$4.4 |
+| **Total** | ~30M | ~$18 | ~22M | ~$13 (output est.) |
 
 Expected values are estimates, good to about 2-3× per wave.
 
@@ -116,12 +116,13 @@ Hardening. With the default `https` protocol, `resolveURL` and `resolveWikiURL` 
 - **Accept when:** the CI map names every job in `ci.yml`; the badge URL points at `lolay/ghx`'s `ci.yml`.
 
 --- WAVE 4 [deep] ---
-#### s3 - [deep] Read this branch's CI run and fix what fails
+#### s3 - [deep] Read this branch's CI run and fix what fails (done)
 
 - The orchestrator pushed this branch after m2.s1-m2.s2. Find the `ci` run for this branch's head (`gh run list --branch <branch> --workflow ci.yml`), wait for it (`gh run watch <id>`), and read each failed job's log (`gh run view <id> --log-failed`).
 - Fix each failure at its cause (most likely Windows: path separators, CRLF in fixtures, file locking, `bash` vs `pwsh`), with the fix tested locally where it can be and cross-compiled where it can't. If every job passed, make an empty commit for this step whose body records the run URL and each job's result.
 - If the run never starts (Actions disabled, workflow rejected) or `gh` can't read it, stop with `needs_info` and say what you saw. Don't dispatch or re-run workflows.
 - **Accept when:** every failed job in that run is fixed or explained in the step's artifact with its log line; the artifact names the run URL and each job's result; `make ci` and the three `GOOS` vets pass. The next run, on the orchestrator's push, is the check of record; Gary sees it on the PR.
+- review wave-4 (ghx m2 s3) f0a00e7..0e94e5d: PASS - CI run 38107170470 at f0a00e7 green on linux, macos and windows (orchestrator confirmed with gh; the reviewer could not); the step is the empty commit with the run and job URLs; every Windows-only test ran (only t.Skip is the helper-process guard); govulncheck lists two unreachable golang.org/x/text vulns; passed unattended: gate 2 - 2026-10-10
 
 ## Review log
 
@@ -148,3 +149,30 @@ tokens wave-2 ghx-m1-s4-s5 (claude-opus-5-5): input ~120 / cache read ~11M / cac
 tokens orchestrator-wave-2 plan-ghx-platforms-lynx (claude-opus-5-5): input ~22 / cache read ~960k / cache write ~0 5m + ~32k 1h / output ~10k | ~$0.65 API-equiv
 tokens review-wave-3 ghx-m2-s1-s2 (claude-opus-5-5): input ~10 / cache read ~61k / cache write ~16k / output ~4.4k | ~$0.18 API-equiv (output est.) session 43a767ca-8b50-41c3-9808-49159f0ef9f6
 tokens wave-3 ghx-m2-s1-s2 (claude-sonnet-5-5): input ~16 / cache read ~370k / cache write ~60k / output ~7.8k | ~$0.30 API-equiv (output est.) session 43a767ca-8b50-41c3-9808-49159f0ef9f6
+tokens review-wave-4 ghx-m2-s3 (claude-opus-5-5): input ~10 / cache read ~50k / cache write ~11k / output ~5k | ~$0.16 API-equiv (output est.) session 43a767ca-8b50-41c3-9808-49159f0ef9f6
+tokens wave-4 ghx-m2-s3 (claude-opus-5-5): input ~24 / cache read ~600k / cache write ~68k / output ~11k | ~$0.68 API-equiv (output est.) session 43a767ca-8b50-41c3-9808-49159f0ef9f6
+tokens orchestrator-wave-4 plan-ghx-platforms-lynx (claude-opus-5-5): input ~12 / cache read ~680k / cache write ~0 5m + ~16k 1h / output ~1.5k | ~$0.30 API-equiv
+tokens orchestrator-kickoff plan-ghx-platforms-lynx (claude-opus-5-5): input ~1.0k / cache read ~1.6M / cache write ~99k / output ~13k | ~$1.36 API-equiv (cost-state) session 98cba6b5-3f71-4517-9cdd-ab4709007e5a
+tokens orchestrator-kickoff plan-ghx-platforms-lynx (claude-haiku-5-5): input ~1.2k / cache read ~0 / cache write ~0 / output ~27 | ~$0.00 API-equiv (cost-state) session 98cba6b5-3f71-4517-9cdd-ab4709007e5a
+
+## Completion summary
+
+**Completed**: 2026-10-10
+
+**What shipped**: ghx now has hermetic tests for the cloner (local bare repos), the GitHub API (an unexported `baseURL` seam and a fake API) and the run flow end to end, with coverage cloner 96.1%, ghapi 100% and cli 91.5%. Every OS touchpoint was audited for Windows and is recorded in the "Platforms" table of `specs/testing.md`. The audit added `CheckRepoName` (Windows device names, trailing dots, and names that aren't one path element, which also closed a `--delete` path traversal through `.ghx.json`), `FindGit` with a git 2.31 minimum, `core.longpaths`, retried moves and deletes on Windows, a clean stop of git on Unix, and a progress bar only on ANSI terminals. The token no longer appears in clone URLs, git arguments or `.git/config`: git gets it as a host-scoped `http.extraheader` through `GIT_CONFIG_*` environment variables, old token-bearing origins are cleaned, and failure details and API errors are redacted. `.github/workflows/ci.yml` runs on Linux (with `make vuln`), macOS and Windows. Its first run, `38107170470` at `f0a00e7`, passed on all three.
+
+**Deviations from plan**:
+- Unattended checkpoints logged, not asked: gate 5 (canary, wave 1), gate 2 (before wave 2), gate 4 (before wave 3, with `specs/handoffs/handoff-m2-ci.md` written first), gate 2 (before wave 4).
+- No retries and no fix-up waves; every review passed first time.
+- m1.s5's `git grep -n authenticatedHTTPS` still matches this plan's own step text, and nothing else.
+- m1.s5 cleans origins of clones directly under the output root as well as `DELETED/` and `ARCHIVED/`, so the `SECURITY.md` sentence holds for excluded repos and orphaned wikis.
+- m2.s3 found nothing to fix and is an empty commit (`0e94e5d`) recording the run and job URLs, as the step allows.
+- The reviewer's hook blocks `gh`, so the orchestrator confirmed the action majors (v7) and the CI result itself.
+
+**Follow-ups**:
+- `cloner.resolveWikiURL` replaces the first `.git` anywhere in the URL, so a repo like `acme.github.io` gets a malformed wiki URL.
+- `manifest.Write` is given the repo list before `--include` / `--exclude` filtering, so excluded repos appear in `.ghx.json`.
+- Decide on `GIT_TERMINAL_PROMPT=0`: on a 401, git can still fall back to the user's credential helper or a prompt.
+- Bump `golang.org/x/text` from v0.22.0 (GO-2026-6629 fixed in v0.41.0, GO-2026-5970 in v0.39.0). govulncheck finds neither reachable.
+- Minor: a lower-case `git_config_count` set by the user on Windows isn't detected.
+- `ubuntu-latest` moves to Ubuntu 26 on 2026-10-19; Windows tests run about 6x slower than Linux.
