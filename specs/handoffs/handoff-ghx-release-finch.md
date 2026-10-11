@@ -26,9 +26,9 @@ Open a PR from `claude/stoic-planck-qfqg75` to `main`? If yes, I first add the c
 - Every `make ci` ran with runner-only workarounds (golangci-lint v2.14.0 and a covdata-built go1.26.2 in the scratchpad, `GIT_CONFIG_*` unset); CI on GitHub hasn't run this branch yet.
 - Spend ~$14.14 against ~$11 expected (output est.; the session is live, so no `cost-state` totals yet).
 **Follow-ups**:
-- Gary: create `RELEASE_TOKEN`, `HOMEBREW_TAP_TOKEN`, `SCOOP_BUCKET_TOKEN`; give `RELEASE_TOKEN` a ruleset bypass to push to `main`; add `ghx` rows to the tap's and bucket's READMEs.
+- Gary: create the repository secrets `RELEASE_TAG_PAT` (renamed from `RELEASE_TOKEN` after the run, to match triage), `HOMEBREW_TAP_TOKEN`, `SCOOP_BUCKET_TOKEN`; give `RELEASE_TAG_PAT` a ruleset bypass to push to `main`; add `ghx` rows to the tap's and bucket's READMEs.
 - Decide the first version: `version.txt` reads 0.1.0 as the last release, so the first workflow release is 0.1.1, 0.2.0 or 1.0.0. Set it to 0.0.0 and bump minor if you want v0.1.0.
-- Decide whether `RELEASE_TOKEN` via checkout's `token:` is acceptable or the rule should change.
+- Decide whether `RELEASE_TAG_PAT` via checkout's `token:` is acceptable (triage does the same) or the rule should change.
 - `internal/cloner`'s `TestCloneRepos_GivesGitTheTokenOnlyThroughItsEnvironment` fails when the environment sets `GIT_CONFIG_COUNT`; isolate those variables in the test.
 - Unverified until a real release: the half-uploaded-release recovery, `fetch-release-checksums.sh` against real `gh`, and `brew trust lolay/tap`.
 - Cosmetic: Makefile.md's release.yml row omits `--line`; `ci.yml`'s header comment doesn't mention `release-check`.
