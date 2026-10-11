@@ -44,7 +44,34 @@ Requires [Git](https://git-scm.com/) 2.31 or newer, and Go 1.26.2 or newer
 (the `go` line in [`go.mod`](./go.mod)) to build it. Development uses the version pinned in
 [`.go-version`](./.go-version).
 
-From source, with the repository's Makefile:
+### Homebrew (macOS, Linux)
+
+```sh
+brew trust lolay/tap
+brew install lolay/tap/ghx
+```
+
+### Scoop (Windows)
+
+```powershell
+scoop bucket add lolay https://github.com/lolay/scoop-bucket
+scoop install lolay/ghx
+```
+
+### GitHub Releases
+
+Download the archive for your system (macOS, Linux or Windows, each on amd64 or
+arm64) and `checksums.txt` from the
+[Releases page](https://github.com/lolay/ghx/releases), check the archive's
+sha256 against `checksums.txt`, and put `ghx` on your `PATH`.
+
+The Homebrew, Scoop and GitHub Releases installs are available from the first
+release; until then, build from source. Releases are cut as
+[`specs/releasing.md`](./specs/releasing.md) describes.
+
+### From source
+
+With the repository's Makefile:
 
 ```sh
 git clone https://github.com/lolay/ghx.git

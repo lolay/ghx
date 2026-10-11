@@ -153,6 +153,8 @@ the pinned version; the CI install step must use the same value.
 on every pull request, one run per ref (a newer push cancels the run it
 supersedes), with read-only `contents` permission. It has three jobs, one per
 operating system, and each job name shows its OS, plus a `release-check` job.
+Two more workflows do the release; they are not part of the gate, and the
+second table maps them to the targets.
 
 | Job | Runner | Runs |
 |-----|--------|------|
@@ -160,6 +162,15 @@ operating system, and each job name shows its OS, plus a `release-check` job.
 | `build, lint, test (macos)` | `macos-latest` | golangci-lint install, `make ci` |
 | `build, vet, test (windows)` | `windows-latest` | `go build ./...`, `go vet ./...`, `go test ./...` under `shell: bash` |
 | `release-check (goreleaser check)` | `ubuntu-latest` | `make release-check`, with goreleaser run as `go run github.com/goreleaser/goreleaser/v2@<pin>` |
+
+| Workflow | Trigger | Runs |
+|----------|---------|------|
+| [`release.yml`](./.github/workflows/release.yml) (Release) | Manual dispatch from `main` or a `release/*` branch, with a `level` input | `python3 scripts/bump_version.py <level>` (what `make bump` runs), then commits `release vX.Y.Z`, tags it and pushes both with `RELEASE_TOKEN` |
+| [`publish.yml`](./.github/workflows/publish.yml) (Publish) | Push of a `vX.Y.Z` tag; manual dispatch with a `tag` input to re-run | Three chained jobs: `release` runs `make release`, `homebrew` runs `make publish-formula`, and `scoop` runs `make publish-scoop`, each with its `CONFIRM_*` set inline and the pinned goreleaser as `GORELEASER` |
+
+The release procedure, the secrets (`RELEASE_TOKEN`, `HOMEBREW_TAP_TOKEN`,
+`SCOOP_BUCKET_TOKEN`) and the recovery steps are in
+[`specs/releasing.md`](./specs/releasing.md).
 
 Windows runs the Go commands directly rather than `make ci`: `make test` uses
 `-race`, and the race detector needs cgo, which the Windows runner lacks.
