@@ -16,8 +16,11 @@ promoted to durable docs, before the PR merges.
   `harness=claude-code runner=none`: Mac CLI workstation, dogfood run A).
   Claude Code path: phase 1 dogfood.
 - Re-confirmed 2026-10-10 by Kickoff prompt in session
-  `bf82fd5c-3117-418c-934b-c0d47391532a` (same harness and runner tokens);
-  this session orchestrates.
+  `bf82fd5c-3117-418c-934b-c0d47391532a` (same harness and runner tokens),
+  which ran waves 1 and 2.
+- Re-confirmed 2026-10-10 by Kickoff prompt in session
+  `6517b573-c846-47e6-ac6e-39aa5313307e` (same tokens); this session
+  orchestrates wave 3.
 
 ## Waves
 
@@ -25,7 +28,7 @@ promoted to durable docs, before the PR merges.
 |---|---|---|---|
 | 1 | exec | m1.s1-s3 (s2 is `[fast]`, folded) | done, PASS, `3e99c74..92f4ee3` |
 | 2 | deep | m1.s4 | done, PASS, `cd6de0a..2797c2d` (gates 5 and 2 approved: "yes, continue wave 2") |
-| 3 | exec | m2.s1-s2 | next, BLOCKED at gate 4 |
+| 3 | exec | m2.s1-s2 | launching (gates 4 and 5 approved: "yes, continue wave 3") |
 
 ## Done
 
@@ -63,12 +66,10 @@ Projected after wave 3: ~$6.8.
 Wave 3 `[exec]` ghx m2 s1-s2 (README, CHANGELOG, contributor and agent
 docs), Sonnet high worker, Opus high reviewer, ~$1.2.
 
-## Pending question (verbatim)
+## Pending question
 
-> Wave 2 passed: `ghx m1 s4` in `lolay/ghx` `cd6de0a..2797c2d` (m1.s4),
-> check ok, review PASS. m1 is complete. Next unit: wave 3 `[exec]` ghx m2
-> s1-s2, ~$1.2, which starts milestone m2 (gate 4; milestone handoff
-> `specs/handoffs/handoff-m2-docs.md`). Approve wave 3?
+None. Gate 4 (and this session's canary, gate 5) approved 2026-10-10:
+"yes, continue wave 3".
 
 ## Resume
 
