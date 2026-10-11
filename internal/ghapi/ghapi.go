@@ -89,7 +89,7 @@ func toRepoInfo(r *github.Repository) RepoInfo {
 	if info.DefaultBranch == "" {
 		info.DefaultBranch = "main"
 	}
-	if r.PushedAt != nil && !r.PushedAt.Time.IsZero() {
+	if r.PushedAt != nil && !r.PushedAt.IsZero() {
 		info.PushedAt = r.PushedAt.Time.UTC().Format(time.RFC3339)
 	}
 	return info

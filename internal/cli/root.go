@@ -53,7 +53,7 @@ type flags struct {
 func newRootCmd() *cobra.Command {
 	f := &flags{}
 	cmd := &cobra.Command{
-		Use:   "ghx-go <ORG> <PATH>",
+		Use:   "ghx <ORG> <PATH>",
 		Short: "Export and sync all GitHub repos for an organization",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {

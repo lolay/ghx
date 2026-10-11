@@ -11,14 +11,22 @@ import (
 	"io"
 	"os"
 
-	"github.com/garyrudolph/ghx/internal/cloner"
-	"github.com/garyrudolph/ghx/internal/ghapi"
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/jedib0t/go-pretty/v6/text"
+
+	"github.com/lolay/ghx/internal/cloner"
+	"github.com/lolay/ghx/internal/ghapi"
 )
 
 // Out is the writer used for all UI output. Tests can override it.
 var Out io.Writer = os.Stdout
+
+// Printf formats to Out and drops the write error: there is nothing useful to
+// do when the terminal is gone.
+func Printf(format string, args ...any) { _, _ = fmt.Fprintf(Out, format, args...) }
+
+// Println writes args and a newline to Out, dropping the write error as Printf does.
+func Println(args ...any) { _, _ = fmt.Fprintln(Out, args...) }
 
 // SettingRow is one line of the settings block.
 type SettingRow struct {
@@ -40,17 +48,17 @@ func PrintSettings(rows []SettingRow) {
 			maxVal = len(r.Value)
 		}
 	}
-	fmt.Fprintln(Out)
-	fmt.Fprintln(Out, text.Bold.Sprint("Settings:"))
+	Println()
+	Println(text.Bold.Sprint("Settings:"))
 	for _, r := range rows {
 		padding := maxVal - len(r.Value) + 2
-		fmt.Fprintf(Out,
+		Printf(
 			"  %-15s%s%s%s\n",
 			r.Label, r.Value, spaces(padding),
 			text.Faint.Sprintf("(%s)", r.Source),
 		)
 	}
-	fmt.Fprintln(Out)
+	Println()
 }
 
 // ObfuscateToken returns a short redacted form of tok for display
@@ -104,9 +112,9 @@ func PrintRepoTable(repos []ghapi.RepoInfo) {
 	})
 	tw.SetStyle(table.StyleLight)
 
-	fmt.Fprintln(Out)
+	Println()
 	tw.Render()
-	fmt.Fprintf(Out, "\nTotal: %s repos\n", text.Bold.Sprint(len(repos)))
+	Printf("\nTotal: %s repos\n", text.Bold.Sprint(len(repos)))
 }
 
 // PrintSummary renders the post-run summary: per-action counts, the
@@ -129,9 +137,9 @@ func PrintSummary(summary cloner.SyncSummary) {
 	})
 	tw.SetStyle(table.StyleLight)
 
-	fmt.Fprintln(Out)
+	Println()
 	tw.Render()
-	fmt.Fprintln(Out)
+	Println()
 
 	var failed, dirty []cloner.RepoResult
 	for _, r := range summary.Results {
@@ -143,15 +151,15 @@ func PrintSummary(summary cloner.SyncSummary) {
 		}
 	}
 	if len(failed) > 0 {
-		fmt.Fprintln(Out, text.FgRed.Sprint(text.Bold.Sprint("Failed repos:")))
+		Println(text.FgRed.Sprint(text.Bold.Sprint("Failed repos:")))
 		for _, r := range failed {
-			fmt.Fprintf(Out, "  %s: %s\n", r.Name, r.Detail)
+			Printf("  %s: %s\n", r.Name, r.Detail)
 		}
 	}
 	if len(dirty) > 0 {
-		fmt.Fprintln(Out, text.FgYellow.Sprint(text.Bold.Sprint("Skipped (local changes):")))
+		Println(text.FgYellow.Sprint(text.Bold.Sprint("Skipped (local changes):")))
 		for _, r := range dirty {
-			fmt.Fprintf(Out, "  %s\n", r.Name)
+			Printf("  %s\n", r.Name)
 		}
 	}
 }

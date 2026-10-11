@@ -10,8 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/garyrudolph/ghx/internal/ghapi"
 	"github.com/jedib0t/go-pretty/v6/progress"
+
+	"github.com/lolay/ghx/internal/ghapi"
 )
 
 // Options controls a single CloneRepos invocation.

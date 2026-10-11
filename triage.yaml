@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/lolay/triage/main/schema/triage.schema.json
+# triage.yaml: triage checks ghx's dev environment.
+#
+# `make doctor` runs `triage` here; `make doctor MODE=release` adds the
+# tooling needed to cut a release.
+#
+# Profile hierarchy:
+#   base    - git + go (go checked against .go-version)
+#   default - extends base, adds gh and golangci-lint (full local dev setup)
+#   release - extends default, adds goreleaser
+
+base:
+  - group: Core
+    items:
+      - tool: git
+        hint: https://git-scm.com
+  - group: Toolchain
+    items:
+      - tool: go
+        version_from: .go-version
+        hint: https://go.dev/dl
+
+default:
+  extends: [base]
+  add:
+    - group: GitHub
+      items:
+        - tool: gh
+          hint: https://cli.github.com
+    - group: Lint
+      items:
+        - tool: golangci-lint
+          hint: run 'make init INSTALL_PACKAGES=1' to install
+
+release:
+  extends: [default]
+  add:
+    - group: Release
+      items:
+        - tool: goreleaser
+          hint: brew install goreleaser

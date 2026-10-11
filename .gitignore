@@ -1,10 +1,9 @@
-/ghx-go
-/ghx
+/bin/
+/dist/
 *.test
 *.out
-*.DS_Store
-coverage.out
+coverage.*
+.DS_Store
 
 .cursor/rules/personal-*.mdc
-.scratch/
-.gitignore
+/.scratch/
