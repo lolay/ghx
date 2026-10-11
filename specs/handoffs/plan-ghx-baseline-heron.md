@@ -1,7 +1,7 @@
 ```
 --- KICKOFF: begin orchestration at [deep] ---
 
-  Status: 1/3 groups done | last review: wave-1 PASS | current: ghx m1 s4 [deep] | updated 2026-10-10
+  Status: 2/3 groups done | last review: wave-2 PASS | current: ghx m2 s1-s2 [exec] | updated 2026-10-10 | BLOCKED at gate 4
 
   mode: gated | proposed gated (harness=claude-code runner=none; Mac CLI workstation, dogfood run A) | guard 3x min $50 | fixups 2 | confirmed 2026-10-10 session bf82fd5c-3117-418c-934b-c0d47391532a by Kickoff prompt: Run in gated mode.
 
@@ -84,7 +84,7 @@ Run A of the orchestrate phase 1 dogfood (`GaryRudolph/public` `specs/handoffs/d
 
 --- WAVE 2 [deep] ---
 
-#### s4 - [deep] Test seams and the first unit tests
+#### s4 - [deep] Test seams and the first unit tests (done)
 
 - Decide the seams the pure packages need, with the smallest change to production code: where `config.Load` finds the home directory (tests set `HOME` and `USERPROFILE` with `t.Setenv`, or the function takes the directory), and how `GITHUB_TOKEN` is isolated. Write the decision as a short `specs/testing.md`: test layout, testify (`require` / `assert`), table-driven style, what needs `git` on `PATH`, and the coverage exemptions with a reason each (`cmd/ghx`; anything plan B covers).
 - Tests, colocated, table-driven, with testify: `config` (TOML load and key normalization, legacy `.gh-export.*` migration including the both-exist case, every `Resolve*` precedence order, `ResolveToken`'s flag > env > local > home), `ghapi.FilterRepos` (types, include and exclude, a bad regex), `manifest` (round trip, legacy migration, a missing file, and a golden `.ghx.json` under `testdata/` that pins the Python-compatible format), `ui.ObfuscateToken` and the summary output against a buffer.
@@ -109,6 +109,7 @@ Run A of the orchestrate phase 1 dogfood (`GaryRudolph/public` `specs/handoffs/d
 ## Review log
 
 review wave-1 (ghx m1 s1-s3) 3e99c74..92f4ee3: PASS - acceptance met; make ci/vuln/doctor pass; golangci-lint fell back to standard+misspell+errorlint (29 findings > ~25), exclusions listed in .golangci.yml header; `git check-ignore -q` with three paths is rejected by git, each path checked singly; README still says Go 1.22+ (not in s1 scope); govulncheck: 2 uncalled vulns in old deps - 2026-10-10
+review wave-2 (ghx m1 s4) cd6de0a..2797c2d: PASS - make ci passes; coverage config 95.3%, manifest 90.9%, ui 98.6%, ghapi 42.7% (FilterRepos 100%, gap listed in specs/testing.md); seams need no production change (HOME/USERPROFILE via t.Setenv); no behaviour bug found, manifest doc comment corrected in its own commit (exported_at differs from Python); pinned for later: ResolveInt truncates TOML floats, wrong-typed values fall through; doc nit: comment omits ensure_ascii/HTML-escape differences - 2026-10-10
 
 ## Token log
 
@@ -123,3 +124,6 @@ review wave-1 (ghx m1 s1-s3) 3e99c74..92f4ee3: PASS - acceptance met; make ci/vu
 tokens orchestrator-kickoff plan-ghx-baseline-heron (claude-opus-5-5): input ~16 / cache read ~540k / cache write ~0 5m + ~58k 1h / output ~7.4k | ~$0.72 API-equiv
 tokens wave-1 ghx-m1-s1-s3 (claude-sonnet-5-5): input ~44 / cache read ~1.6M / cache write ~97k / output ~22k | ~$0.79 API-equiv (output est.) session bf82fd5c-3117-418c-934b-c0d47391532a
 tokens review-wave-1 ghx-m1-s1-s3 (claude-opus-5-5): input ~24 / cache read ~320k / cache write ~42k / output ~11k | ~$0.51 API-equiv (output est.) session bf82fd5c-3117-418c-934b-c0d47391532a
+tokens orchestrator-wave-1 ghx-m1-s1-s3 (claude-opus-5-5): input ~16 / cache read ~670k / cache write ~0 5m + ~20k 1h / output ~8.3k | ~$0.46 API-equiv
+tokens wave-2 ghx-m1-s4 (claude-opus-5-5): input ~80 / cache read ~3.8M / cache write ~130k / output ~53k | ~$2.46 API-equiv (output est.) session bf82fd5c-3117-418c-934b-c0d47391532a
+tokens review-wave-2 ghx-m1-s4 (claude-opus-5-5): input ~30 / cache read ~550k / cache write ~54k / output ~16k | ~$0.69 API-equiv (output est.) session bf82fd5c-3117-418c-934b-c0d47391532a

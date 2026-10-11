@@ -24,8 +24,8 @@ promoted to durable docs, before the PR merges.
 | wave | tier | steps | state |
 |---|---|---|---|
 | 1 | exec | m1.s1-s3 (s2 is `[fast]`, folded) | done, PASS, `3e99c74..92f4ee3` |
-| 2 | deep | m1.s4 | running (gates 5 and 2 approved: "yes, continue wave 2") |
-| 3 | exec | m2.s1-s2 | pending |
+| 2 | deep | m1.s4 | done, PASS, `cd6de0a..2797c2d` (gates 5 and 2 approved: "yes, continue wave 2") |
+| 3 | exec | m2.s1-s2 | next, BLOCKED at gate 4 |
 
 ## Done
 
@@ -43,15 +43,32 @@ promoted to durable docs, before the PR merges.
   vulns in old deps (e.g. golang.org/x/text 0.22.0); checkmake not
   installed.
 
+- Wave 2 (`ghx m1 s4`), run `wf_1b70355a-563`, commits `8a26cd8` (tests
+  and `specs/testing.md`) and `2797c2d` (manifest doc comment).
+  `check_wave.py`: ok. Review: PASS. Coverage: config 95.3%, manifest
+  90.9%, ui 98.6%, ghapi 42.7% (FilterRepos 100%; gap listed in
+  `specs/testing.md`). No behaviour bug; pinned for a later decision:
+  `ResolveInt` truncates TOML floats and wrong-typed values fall through.
+  Review nit: the manifest comment omits the `ensure_ascii`/HTML-escape
+  differences from Python.
+- Milestone handoff for m2 written: `specs/handoffs/handoff-m2-docs.md`.
+
 ## Spend
 
-~$2.02 of ~$13 expected (API-equiv). Guard: 3x min $50, so stops past $50.
-Projected after wave 2: ~$5.2.
+~$5.63 of ~$13 expected (API-equiv). Guard: 3x min $50, so stops past $50.
+Projected after wave 3: ~$6.8.
 
 ## Next
 
-Wave 2 `[deep]` ghx m1 s4 (test seams and first unit tests), Opus high
-worker and reviewer, ~$3.2.
+Wave 3 `[exec]` ghx m2 s1-s2 (README, CHANGELOG, contributor and agent
+docs), Sonnet high worker, Opus high reviewer, ~$1.2.
+
+## Pending question (verbatim)
+
+> Wave 2 passed: `ghx m1 s4` in `lolay/ghx` `cd6de0a..2797c2d` (m1.s4),
+> check ok, review PASS. m1 is complete. Next unit: wave 3 `[exec]` ghx m2
+> s1-s2, ~$1.2, which starts milestone m2 (gate 4; milestone handoff
+> `specs/handoffs/handoff-m2-docs.md`). Approve wave 3?
 
 ## Resume
 
