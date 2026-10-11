@@ -93,3 +93,23 @@ jobs:
       # No -race: the race detector needs cgo, which the runner lacks.
       - name: go test
         run: go test ./...
+
+  release-check:
+    name: release-check (goreleaser check)
+    runs-on: ubuntu-latest
+    env:
+      # make reads GORELEASER from the environment. Pinned; must equal the
+      # version in publish.yml's release job.
+      GORELEASER: go run github.com/goreleaser/goreleaser/v2@v2.18.3
+    steps:
+      - uses: actions/checkout@v7
+
+      # goreleaser v2.18 needs Go 1.27.1 or later; .go-version is newer.
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: .go-version
+          cache: true
+          cache-dependency-path: go.mod
+
+      - name: make release-check
+        run: make release-check

@@ -1,0 +1,175 @@
+# Publish a release: build it, put it on GitHub, then point Homebrew and
+# Scoop at it.
+#
+# Triggers:
+#   push of a vX.Y.Z tag - the normal path; release.yml pushes the tag
+#   workflow_dispatch    - re-run a failed publish for an existing tag
+#
+# Remote pushes happen last, in a fixed order, each only after the one before
+# it succeeded, so the formula and the manifest only ever name assets that
+# exist:
+#   1. release  - goreleaser builds, archives and checksums every target, then
+#                 uploads them to the GitHub release (make release)
+#   2. homebrew - Formula/ghx.rb to lolay/homebrew-tap (make publish-formula,
+#                 scripts/publish-formula.sh)
+#   3. scoop    - bucket/ghx.json to lolay/scoop-bucket (make publish-scoop,
+#                 scripts/publish-scoop.sh)
+# The homebrew and scoop jobs render from the checksums.txt on the published
+# release, which scripts/fetch-release-checksums.sh first checks is complete.
+#
+# Re-running: "Re-run failed jobs" re-runs only the job that failed and those
+# after it. A dispatch with the tag re-runs all three, safely: the release job
+# skips goreleaser when the GitHub release is already complete, and the
+# publish scripts commit nothing when the file is unchanged.
+#
+# Secrets: HOMEBREW_TAP_TOKEN and SCOOP_BUCKET_TOKEN, each read only by the
+# step that pushes with it. goreleaser uploads with this run's github.token.
+name: Publish
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to publish (vX.Y.Z)
+        type: string
+        required: true
+
+# Each job grants only what it needs.
+permissions: {}
+
+# One run per tag, and never cancel a publish halfway: a cancelled run could
+# leave the tap updated and the bucket not.
+concurrency:
+  group: publish-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  release:
+    name: GitHub release (goreleaser)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write                 # create the release and upload its assets
+    env:
+      # make reads GORELEASER from the environment. Pinned; must equal the
+      # version in ci.yml's release-check job.
+      GORELEASER: go run github.com/goreleaser/goreleaser/v2@v2.18.3
+    steps:
+      - name: Check the tag
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Publishes run for a vX.Y.Z tag, not $TAG" >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          fetch-depth: 0              # full history: BUILD_CODE = git rev-list --count HEAD
+          fetch-tags: true            # goreleaser reads the previous tag for the changelog
+          persist-credentials: false  # no token in .git/config while the build runs
+
+      - name: Check the checkout matches the tag
+        run: |
+          if [ "$(git rev-parse --is-shallow-repository)" != false ]; then
+            echo "Shallow checkout: BUILD_CODE would undercount" >&2
+            exit 1
+          fi
+          release="$(cat version.txt)"
+          if [ "$release" != "${TAG#v}" ]; then
+            echo "version.txt holds $release, but the tag is $TAG" >&2
+            exit 1
+          fi
+
+      # No cache: a release build uses nothing an earlier run wrote.
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: .go-version
+          cache: false
+
+      - name: Look for a complete release
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if scripts/fetch-release-checksums.sh "$TAG" "$RUNNER_TEMP/existing"; then
+            echo "complete=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "complete=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The Makefile passes RELEASE (version.txt), SHA and BUILD_CODE (computed
+      # from this full-history checkout) to goreleaser, as `make build` stamps
+      # them, so the released binary prints `ghx X.Y.Z+<sha> (<buildCode>)`.
+      - name: goreleaser release
+        if: steps.existing.outputs.complete != 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GORELEASER_CURRENT_TAG: ${{ env.TAG }}
+        run: make release CONFIRM_RELEASE=1
+
+  homebrew:
+    name: Homebrew formula
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read                  # check out, and read the release's assets
+    steps:
+      - name: Check the tag
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Publishes run for a vX.Y.Z tag, not $TAG" >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          persist-credentials: false
+
+      - name: Fetch checksums.txt from the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: scripts/fetch-release-checksums.sh "$TAG" dist
+
+      - name: Publish Formula/ghx.rb
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: make publish-formula CONFIRM_PUBLISH_FORMULA=1 VERSION="${TAG#v}"
+
+  scoop:
+    name: Scoop manifest
+    needs: homebrew
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read                  # check out, and read the release's assets
+    steps:
+      - name: Check the tag
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Publishes run for a vX.Y.Z tag, not $TAG" >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          persist-credentials: false
+
+      - name: Fetch checksums.txt from the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: scripts/fetch-release-checksums.sh "$TAG" dist
+
+      - name: Publish bucket/ghx.json
+        env:
+          SCOOP_BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+        run: make publish-scoop CONFIRM_PUBLISH_SCOOP=1 VERSION="${TAG#v}"

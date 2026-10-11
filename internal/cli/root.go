@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/lolay/ghx/internal/buildinfo"
 	"github.com/lolay/ghx/internal/ui"
 )
 
@@ -60,10 +61,16 @@ func newRootCmd() *cobra.Command {
 		Use:   "ghx <ORG> <PATH>",
 		Short: "Export and sync all GitHub repos for an organization",
 		Args:  cobra.ExactArgs(2),
+		// Setting Version gives the command --version (and -v); cobra handles
+		// it before checking the two required arguments.
+		Version: buildinfo.String(),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return run(cmd, args, f)
 		},
 	}
+	// The versioning standard's form, "ghx <release>+<sha> (<buildCode>)",
+	// in place of cobra's "ghx version ...".
+	cmd.SetVersionTemplate("{{.Name}} {{.Version}}\n")
 
 	pf := cmd.Flags()
 	pf.StringVarP(&f.token, "token", "t", "", "GitHub Personal Access Token.")

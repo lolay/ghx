@@ -17,13 +17,63 @@ SHELL := bash
 .DEFAULT_GOAL := help
 
 .PHONY: help init doctor build lint format test vuln ci pre-commit clean \
-        gh-runs-list gh-runs-watch gh-runs-status
+        gh-runs-list gh-runs-watch gh-runs-status bump snapshot release-check \
+        publish-formula publish-scoop release
 
 # Binary coordinates.
 BINARY  := ghx
 CMD_DIR := ./cmd/ghx
 BIN_DIR := bin
 DIST_DIR := dist
+
+# Build version, per the versioning standard: `ghx --version` prints
+# "ghx <RELEASE>+<SHA> (<BUILD_CODE>)".
+#   RELEASE    the last released version, from version.txt (only the release
+#              step rewrites it; see `make bump`)
+#   SHA        short HEAD commit, plus ".dirty" when `git status --porcelain`
+#              reports anything (untracked files included)
+#   BUILD_CODE commits reachable from HEAD; a shallow clone undercounts, so
+#              a checkout that builds a release needs full history
+# Outside a git checkout SHA and BUILD_CODE are empty and the binary prints
+# "ghx <RELEASE>".
+#
+# Release builds (goreleaser) take these same three values rather than
+# computing their own: `.goreleaser.yaml` stamps `{{ .Env.RELEASE }}`,
+# `{{ .Env.SHA }}` and `{{ .Env.BUILD_CODE }}` into BUILDINFO_PKG, and
+# goreleaser runs only through Makefile targets whose recipes pass
+# `RELEASE="$(RELEASE)" SHA="$(SHA)" BUILD_CODE="$(BUILD_CODE)"` in its
+# environment; the Publish workflow calls those targets after a full-history
+# checkout. goreleaser's own `.Version` is the tag (a `-SNAPSHOT` suffix on
+# snapshots, which the standard forbids) and `.ShortCommit` is computed
+# separately, so neither is used. One computation means a local build and a
+# release build of one commit print the same string.
+RELEASE       := $(strip $(shell cat version.txt 2>/dev/null))
+GIT_SHA       := $(shell git rev-parse --short HEAD 2>/dev/null)
+GIT_DIRTY     := $(shell git status --porcelain 2>/dev/null)
+SHA           := $(if $(GIT_SHA),$(GIT_SHA)$(if $(GIT_DIRTY),.dirty))
+BUILD_CODE    := $(shell git rev-list --count HEAD 2>/dev/null)
+BUILDINFO_PKG := github.com/lolay/ghx/internal/buildinfo
+LDFLAGS       := -X $(BUILDINFO_PKG).Version=$(RELEASE) \
+                 -X $(BUILDINFO_PKG).Sha=$(SHA) \
+                 -X $(BUILDINFO_PKG).BuildCode=$(BUILD_CODE)
+
+# goreleaser; a runner without it installed passes the pinned `go run` form,
+# e.g. GORELEASER="go run github.com/goreleaser/goreleaser/v2@v2.18.3".
+GORELEASER ?= goreleaser
+
+# VERSION names the release (x.y.z, no v prefix) for the publish-* targets.
+VERSION ?=
+
+# Remote-mutating targets sit under `##@ Danger` and refuse to run until their
+# CONFIRM_* variable is set; the Publish workflow sets it inline, a human or an
+# agent hits the refusal. Usage: $(call confirm,CONFIRM_NAME,what it does)
+confirm = @if [ -z "$($(1))" ]; then \
+  printf 'Refusing to run "make %s": %s\nRe-run with %s=1.\n' "$@" "$(2)" "$(1)"; \
+  exit 1; \
+fi
+
+# LEVEL picks the bump for `make bump` (patch | minor | major).
+LEVEL ?=
 
 # MODE selects the triage profile for `make doctor` (default | release).
 MODE ?= default
@@ -54,8 +104,8 @@ doctor: ## Check the dev environment with triage (MODE=default|release)
 	fi
 	@if [ "$(MODE)" = "default" ]; then triage; else triage --profile "$(MODE)"; fi
 
-build: ## Compile the ghx binary into bin/
-	go build -o $(BIN_DIR)/$(BINARY) $(CMD_DIR)
+build: ## Compile bin/ghx, stamped with version.txt, the HEAD sha and the build code
+	go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY) $(CMD_DIR)
 
 lint: ## Static checks: gofmt and go.mod drift, go vet, golangci-lint (required; run make init)
 	@set -o pipefail; \
@@ -128,3 +178,34 @@ gh-runs-status: ## Show pass/skip/fail of the last completed run per workflow
 	      -e "s/^skip/$${esc}[2m-$${esc}[0m   /" \
 	      -e "s/^fail/$${esc}[31m✗$${esc}[0m   /" \
 	      -e 's/^/  /'
+
+##@ Release
+
+bump: ## Bump version.txt and move CHANGELOG's Unreleased entries (LEVEL=patch|minor|major; DRY_RUN=1 previews)
+	@case "$(LEVEL)" in \
+	  patch|minor|major) ;; \
+	  *) echo "LEVEL must be patch, minor or major (make bump LEVEL=patch)" >&2; exit 1 ;; \
+	esac
+	python3 scripts/bump_version.py $(LEVEL)$(if $(filter 1,$(DRY_RUN)), --dry-run)
+
+snapshot: ## Build every release archive and checksums.txt into dist/ without publishing (goreleaser snapshot)
+	RELEASE="$(RELEASE)" SHA="$(SHA)" BUILD_CODE="$(BUILD_CODE)" $(GORELEASER) release --snapshot --clean
+
+release-check: ## Validate .goreleaser.yaml (goreleaser check)
+	$(GORELEASER) check
+
+##@ Danger
+
+publish-formula: ## Push Formula/ghx.rb to lolay/homebrew-tap from dist/ (VERSION=x.y.z CONFIRM_PUBLISH_FORMULA=1; needs HOMEBREW_TAP_TOKEN)
+	$(call confirm,CONFIRM_PUBLISH_FORMULA,it commits to lolay/homebrew-tap)
+	@test -n "$(VERSION)" || { echo "VERSION=x.y.z required" >&2; exit 1; }
+	scripts/publish-formula.sh "$(VERSION)" $(DIST_DIR)
+
+publish-scoop: ## Push bucket/ghx.json to lolay/scoop-bucket from dist/ (VERSION=x.y.z CONFIRM_PUBLISH_SCOOP=1; needs SCOOP_BUCKET_TOKEN)
+	$(call confirm,CONFIRM_PUBLISH_SCOOP,it commits to lolay/scoop-bucket)
+	@test -n "$(VERSION)" || { echo "VERSION=x.y.z required" >&2; exit 1; }
+	scripts/publish-scoop.sh "$(VERSION)" $(DIST_DIR)
+
+release: ## Publish the GitHub release for the current tag with goreleaser (CONFIRM_RELEASE=1; needs GITHUB_TOKEN)
+	$(call confirm,CONFIRM_RELEASE,it publishes a GitHub release for the current tag)
+	RELEASE="$(RELEASE)" SHA="$(SHA)" BUILD_CODE="$(BUILD_CODE)" $(GORELEASER) release --clean

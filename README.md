@@ -44,7 +44,34 @@ Requires [Git](https://git-scm.com/) 2.31 or newer, and Go 1.26.2 or newer
 (the `go` line in [`go.mod`](./go.mod)) to build it. Development uses the version pinned in
 [`.go-version`](./.go-version).
 
-From source, with the repository's Makefile:
+### Homebrew (macOS, Linux)
+
+```sh
+brew trust lolay/tap
+brew install lolay/tap/ghx
+```
+
+### Scoop (Windows)
+
+```powershell
+scoop bucket add lolay https://github.com/lolay/scoop-bucket
+scoop install lolay/ghx
+```
+
+### GitHub Releases
+
+Download the archive for your system (macOS, Linux or Windows, each on amd64 or
+arm64) and `checksums.txt` from the
+[Releases page](https://github.com/lolay/ghx/releases), check the archive's
+sha256 against `checksums.txt`, and put `ghx` on your `PATH`.
+
+The Homebrew, Scoop and GitHub Releases installs are available from the first
+release; until then, build from source. Releases are cut as
+[`specs/releasing.md`](./specs/releasing.md) describes.
+
+### From source
+
+With the repository's Makefile:
 
 ```sh
 git clone https://github.com/lolay/ghx.git
@@ -284,9 +311,17 @@ Flags:
       --ssh                   Shortcut for --protocol ssh.
   -t, --token string          GitHub Personal Access Token.
       --type string           Repo type: all|public|private|forks|sources.
+  -v, --version               version for ghx
 ```
 
 `ghx` exits 0 on success and 1 on any error.
+
+`ghx --version` prints `ghx <release>+<sha> (<build code>)`, for example
+`ghx 0.1.0+abc1234 (42)`: the last release in [`version.txt`](./version.txt),
+the commit the binary was built from (`.dirty` when the tree had uncommitted
+changes) and the number of commits up to it. `make build` and release builds
+stamp it; a plain `go build`, `go run` or `go install` doesn't, and prints
+`ghx dev`.
 
 ## Development
 
