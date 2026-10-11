@@ -1,7 +1,7 @@
 ```
 --- KICKOFF: begin orchestration at [deep] ---
 
-  Status: 0/4 groups done | last review: — | current: m1 s1 [deep] | updated 2026-10-11
+  Status: 1/4 groups done | last review: wave-1 PASS | current: m1 s2-s4 [exec] | updated 2026-10-11 | passed unattended: gate 5
 
   mode: unattended | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch claude/stoic-planck-qfqg75) | guard 3x min $50 | fixups 2 | confirmed 2026-10-11 session 49ac3a33-e356-58b6-9971-24a023142f66: yes, unattended
 
@@ -62,7 +62,7 @@ Run C of the orchestrate phase 1 dogfood (`GaryRudolph/public` `specs/handoffs/d
 
 --- WAVE 1 [deep] ---
 
-#### s1 - [deep] Version source of truth and `ghx --version`
+#### s1 - [deep] Version source of truth and `ghx --version` (done)
 
 - `version.txt` per the `personal-release` skill's set-up section (`0.1.0`, since nothing has shipped), `scripts/bump_version.py` copied from the template unchanged, and an `internal/buildinfo` package with `Version`, `Sha` and `BuildCode` set by `-ldflags -X` (defaults for an unstamped `go build`/`go run`, such as `dev`).
 - `ghx --version` prints `ghx <release>+<sha> (<buildCode>)`, with `.dirty` on the metadata for a dirty tree, per the standard's "Reading a build version" (not triage's format). Wire it through cobra's `Version` with a template.
@@ -111,6 +111,8 @@ Run C of the orchestrate phase 1 dogfood (`GaryRudolph/public` `specs/handoffs/d
 
 ## Review log
 
+review wave-1 (ghx m1 s1) 2fbf197..da66e81: PASS - acceptance re-run (ghx 0.1.0+da66e81 (14), bump dry-run 0.1.1 with a clean tree, make ci green); goreleaser takes RELEASE/SHA/BUILD_CODE from the Makefile via .Env.*, not .Version/.ShortCommit (m1.s2 follows); make ci needed runner workarounds (golangci-lint v2.14.0 and a covdata-built go1.26.2 in the scratchpad, GIT_CONFIG_* unset for a pre-existing cloner test); passed unattended: gate 5 - 2026-10-11
+
 ## Token log
 
 **Counting header (Claude Code)**
@@ -120,3 +122,7 @@ Run C of the orchestrate phase 1 dogfood (`GaryRudolph/public` `specs/handoffs/d
 - Rates by `<model>`, $ per Mtok input / cached / output: `claude-opus-5-5` 4.00 / 0.20 / 20.00; `claude-sonnet-5-5` 2.00 / 0.20 / 10.00; `claude-haiku-4-5` 1.00 / 0.10 / 5.00.
 - `$C` = (input × in + cache read × cached + 5m write × in × 1.25 + 1h write × in × 2.00 + output × out) / 1M.
 - In another harness, or on a model not listed here, count and price per plan-execution.md "Token accounting" and "Model price table" instead.
+
+tokens orchestrator-kickoff plan-ghx-release-finch (claude-opus-5-5): input ~36 / cache read ~2.5M / cache write ~0 5m + ~130k 1h / output ~20k | ~$1.95 API-equiv
+tokens review-wave-1 ghx-m1-s1 (claude-opus-5-5): input ~20 / cache read ~300k / cache write ~42k / output ~11k | ~$0.48 API-equiv (output est.) session 49ac3a33-e356-58b6-9971-24a023142f66
+tokens wave-1 ghx-m1-s1 (claude-opus-5-5): input ~88 / cache read ~5.9M / cache write ~170k / output ~44k | ~$2.93 API-equiv (output est.) session 49ac3a33-e356-58b6-9971-24a023142f66
