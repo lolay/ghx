@@ -1,7 +1,7 @@
 ```
 --- KICKOFF: begin orchestration at [deep] ---
 
-  Status: 2/4 groups done | last review: wave-2 PASS | current: m2 s1 [deep] | updated 2026-10-11 | passed unattended: gate 5
+  Status: 3/4 groups done | last review: wave-3 PASS | current: m2 s2 [exec] | updated 2026-10-11 | passed unattended: gate 5, gate 4, gate 2
 
   mode: unattended | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch claude/stoic-planck-qfqg75) | guard 3x min $50 | fixups 2 | confirmed 2026-10-11 session 49ac3a33-e356-58b6-9971-24a023142f66: yes, unattended
 
@@ -92,7 +92,7 @@ Run C of the orchestrate phase 1 dogfood (`GaryRudolph/public` `specs/handoffs/d
 
 --- WAVE 3 [deep] ---
 
-#### s1 - [deep] Release and publish workflows
+#### s1 - [deep] Release and publish workflows (done)
 
 - `.github/workflows/release.yml` from the `personal-release` template (dispatch with `level`, from `main` or a `release/vX[.Y]` line branch, bump with `bump_version.py`, commit `release vX.Y.Z`, tag, push with `RELEASE_TOKEN`) and `.github/workflows/publish.yml` on `push` of `v[0-9]+.[0-9]+.[0-9]+` tags: checkout with `fetch-depth: 0`, `setup-go` from `.go-version`, `BUILD_CODE` computed, `goreleaser release --clean` with `GITHUB_TOKEN`, then `scripts/publish-formula.sh`, then `scripts/publish-scoop.sh`, in that order so the formula and manifest only point at assets that exist (triage's `specs/releasing.md` "remote pushes happen LAST"). A `workflow_dispatch` on `publish.yml` re-runs a failed publish for an existing tag, as triage's does.
 - Decide, and record in the step's artifact with a reason each: floating `vX.Y` / `vX` tags (triage has them for its GitHub Action consumers; a CLI likely doesn't need them); least-privilege `permissions` per job; `concurrency`; pinning third-party actions to a major or a SHA (`go/security.md`); what happens when the tap push succeeds and the bucket push fails.
@@ -113,6 +113,7 @@ Run C of the orchestrate phase 1 dogfood (`GaryRudolph/public` `specs/handoffs/d
 
 review wave-1 (ghx m1 s1) 2fbf197..da66e81: PASS - acceptance re-run (ghx 0.1.0+da66e81 (14), bump dry-run 0.1.1 with a clean tree, make ci green); goreleaser takes RELEASE/SHA/BUILD_CODE from the Makefile via .Env.*, not .Version/.ShortCommit (m1.s2 follows); make ci needed runner workarounds (golangci-lint v2.14.0 and a covdata-built go1.26.2 in the scratchpad, GIT_CONFIG_* unset for a pre-existing cloner test); passed unattended: gate 5 - 2026-10-11
 review wave-2 (ghx m1 s2-s4) 1d6be7b..296482d: PASS - reviewer re-ran everything on a clean tree: release-check ok (goreleaser v2.18.3 via go run), snapshot built 6 archives ghx_0.1.0+296482d_<os>_<arch> plus checksums, dist binary and make build both print ghx 0.1.0+296482d (18); DRY_RUN=1 formula and manifest hashes match checksums.txt, ruby -c and json.tool pass, shellcheck clean (scratchpad venv); Danger targets refuse without CONFIRM_* and exit 2; publish scripts validate VERSION and pass the token via GIT_CONFIG_* extraheader, not the URL; make ci green with wave 1's runner workarounds - 2026-10-11
+review wave-3 (ghx m2 s1) 2541c0c..b4e6da2: PASS - actionlint v1.7.12 clean on 3 workflows (shellcheck rule on), shellcheck clean on scripts/*.sh; secrets named: RELEASE_TOKEN (release.yml checkout token:, as the personal-release template does), HOMEBREW_TAP_TOKEN and SCOOP_BUCKET_TOKEN (step env), none echoed; publish.yml order enforced by needs: release (make release, goreleaser) then homebrew then scoop, each re-runnable; scripts/fetch-release-checksums.sh renders from the published release (stub-tested only, gh has no API access here); release-check job in ci.yml; no floating tags, per-job permissions from {}, first-party actions at a major, goreleaser pinned v2.18.3 via go run; make ci green with the runner workarounds; for m2.s2: a hotfix from an old line moves the tap and bucket back, partial-release recovery, RELEASE_TOKEN ruleset bypass; ci.yml header comment doesn't mention release-check (cosmetic); passed unattended: gate 4, gate 2 - 2026-10-11
 
 ## Token log
 
@@ -130,3 +131,6 @@ tokens wave-1 ghx-m1-s1 (claude-opus-5-5): input ~88 / cache read ~5.9M / cache 
 tokens orchestrator-wave-1 ghx-m1-s1 (claude-opus-5-5): input ~32 / cache read ~1.8M / cache write ~0 5m + ~66k 1h / output ~13k | ~$1.14 API-equiv
 tokens review-wave-2 ghx-m1-s2-s4 (claude-opus-5-5): input ~36 / cache read ~630k / cache write ~51k / output ~18k | ~$0.74 API-equiv (output est.) session 49ac3a33-e356-58b6-9971-24a023142f66
 tokens wave-2 ghx-m1-s2-s4 (claude-sonnet-5-5): input ~50 / cache read ~2.3M / cache write ~120k / output ~25k | ~$1.00 API-equiv (output est.) session 49ac3a33-e356-58b6-9971-24a023142f66
+tokens orchestrator-wave-2 ghx-m1-s2-s4 (claude-opus-5-5): input ~16 / cache read ~960k / cache write ~0 5m + ~28k 1h / output ~9.9k | ~$0.62 API-equiv
+tokens review-wave-3 ghx-m2-s1 (claude-opus-5-5): input ~24 / cache read ~460k / cache write ~55k / output ~12k | ~$0.61 API-equiv (output est.) session 49ac3a33-e356-58b6-9971-24a023142f66
+tokens wave-3 ghx-m2-s1 (claude-opus-5-5): input ~66 / cache read ~4.6M / cache write ~180k / output ~33k | ~$2.47 API-equiv (output est.) session 49ac3a33-e356-58b6-9971-24a023142f66
