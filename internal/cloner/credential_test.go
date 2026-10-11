@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -204,28 +205,51 @@ func TestCloneRepos_SSHClonesGetNoToken(t *testing.T) {
 }
 
 func TestCloneRepos_KeepsTheUsersOwnGitConfigEnvironment(t *testing.T) {
-	f := httpsFixture(t)
-	repo := f.httpsRepo(t, "app")
-	t.Setenv("GIT_CONFIG_COUNT", "1")
-	t.Setenv("GIT_CONFIG_KEY_0", "core.abbrev")
-	t.Setenv("GIT_CONFIG_VALUE_0", "12")
-	log := cloner.RecordGit(t, nil)
-
-	_, err := cloner.CloneRepos(t.Context(), []ghapi.RepoInfo{repo}, f.tokenOpts())
-
-	require.NoError(t, err)
-	var clone cloner.GitCall
-	for _, c := range log.Calls() {
-		if subcommand(c) == "clone" {
-			clone = c
-		}
+	tests := []struct {
+		name    string
+		entries [][2]string // key, value
+	}{
+		{"one entry", [][2]string{{"core.abbrev", "12"}}},
+		{"three entries, as a Claude Code runner exports", [][2]string{
+			{"credential.interactive", "false"},
+			{"url.https://github.com/.insteadOf", "git@github.com:"},
+			{"url.https://github.com/.insteadOf", "ssh://git@github.com/"},
+		}},
 	}
-	count, _ := envValue(clone.Env, "GIT_CONFIG_COUNT")
-	assert.Equal(t, "2", count)
-	userKey, _ := envValue(clone.Env, "GIT_CONFIG_KEY_0")
-	assert.Equal(t, "core.abbrev", userKey, "the user's entry is still there")
-	key, _ := envValue(clone.Env, "GIT_CONFIG_KEY_1")
-	assert.Equal(t, headerKey, key, "the header comes after it")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := httpsFixture(t)
+			repo := f.httpsRepo(t, "app")
+			t.Setenv("GIT_CONFIG_COUNT", strconv.Itoa(len(tt.entries)))
+			for i, e := range tt.entries {
+				t.Setenv("GIT_CONFIG_KEY_"+strconv.Itoa(i), e[0])
+				t.Setenv("GIT_CONFIG_VALUE_"+strconv.Itoa(i), e[1])
+			}
+			log := cloner.RecordGit(t, nil)
+
+			_, err := cloner.CloneRepos(t.Context(), []ghapi.RepoInfo{repo}, f.tokenOpts())
+
+			require.NoError(t, err)
+			var clone cloner.GitCall
+			for _, c := range log.Calls() {
+				if subcommand(c) == "clone" {
+					clone = c
+				}
+			}
+			n := len(tt.entries)
+			count, _ := envValue(clone.Env, "GIT_CONFIG_COUNT")
+			assert.Equal(t, strconv.Itoa(n+1), count)
+			for i, e := range tt.entries {
+				key, _ := envValue(clone.Env, "GIT_CONFIG_KEY_"+strconv.Itoa(i))
+				value, _ := envValue(clone.Env, "GIT_CONFIG_VALUE_"+strconv.Itoa(i))
+				assert.Equal(t, e, [2]string{key, value}, "the user's entry %d is still there", i)
+			}
+			key, _ := envValue(clone.Env, "GIT_CONFIG_KEY_"+strconv.Itoa(n))
+			assert.Equal(t, headerKey, key, "the header comes after them")
+			value, _ := envValue(clone.Env, "GIT_CONFIG_VALUE_"+strconv.Itoa(n))
+			assert.Equal(t, "AUTHORIZATION: basic "+basic, value)
+		})
+	}
 }
 
 func TestCloneRepos_MasksTheTokenInFailureDetails(t *testing.T) {

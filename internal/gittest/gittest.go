@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -19,13 +20,32 @@ import (
 
 // Isolate keeps git from reading the runner's system and global config for
 // the rest of the test, so settings like pull.rebase or commit.gpgsign can't
-// change the behaviour under test. It uses t.Setenv, so the calling test can't
-// run in parallel.
+// change the behaviour under test. It also unsets any GIT_CONFIG_COUNT,
+// GIT_CONFIG_KEY_<n> and GIT_CONFIG_VALUE_<n> the runner exports (Claude Code
+// cloud runners set three), since ghx numbers its own entries after them. It
+// uses t.Setenv, so the calling test can't run in parallel.
 func Isolate(t *testing.T) {
 	t.Helper()
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	t.Setenv("GIT_TERMINAL_PROMPT", "0")
+	for _, kv := range os.Environ() {
+		name, _, _ := strings.Cut(kv, "=")
+		upper := strings.ToUpper(name) // Windows names are case-insensitive
+		if upper == "GIT_CONFIG_COUNT" ||
+			strings.HasPrefix(upper, "GIT_CONFIG_KEY_") ||
+			strings.HasPrefix(upper, "GIT_CONFIG_VALUE_") {
+			unsetenv(t, name)
+		}
+	}
+}
+
+// unsetenv removes name for the rest of the test. t.Setenv first, so the
+// variable comes back when the test ends.
+func unsetenv(t *testing.T, name string) {
+	t.Helper()
+	t.Setenv(name, "")
+	require.NoError(t, os.Unsetenv(name))
 }
 
 // RewriteURL makes git fetch any URL that starts with prefix, such as
