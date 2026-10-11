@@ -13,7 +13,8 @@ or promoted before the branch merges.
 
 - **unattended**, confirmed 2026-10-10 in session
   `98cba6b5-3f71-4517-9cdd-ab4709007e5a` (proposed gated; harness=claude-code,
-  runner=none). An unattended record counts only in the session that
+  runner=none), and re-confirmed by Kickoff prompt paste in session
+  `43a767ca-8b50-41c3-9808-49159f0ef9f6` (same harness and runner). An unattended record counts only in the session that
   confirmed it, or in a new session started by pasting the Kickoff prompt
   with the same harness and runner.
 - Guard: 3x the expected total, min $50 (limit ~$54). Fix-up cap: 2 per group.
@@ -40,7 +41,7 @@ or promoted before the branch merges.
 
 ## Next
 
-- Wave 1 `[exec]` ghx m1 s1-s3 (the canary of the orchestrating session).
+- Wave 1 `[exec]` ghx m1 s1-s3 (the canary of session `43a767ca`), launching now.
 
 ## Pending question
 

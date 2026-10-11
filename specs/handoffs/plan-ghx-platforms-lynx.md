@@ -3,7 +3,7 @@
 
   Status: 0/4 groups done | last review: — | current: m1 s1-s3 [exec] | updated 2026-10-10
 
-  mode: unattended | proposed gated (harness=claude-code runner=none; workstation, no runner signal) | guard 3x min $50 | fixups 2 | confirmed 2026-10-10 session 98cba6b5-3f71-4517-9cdd-ab4709007e5a: unattended
+  mode: unattended | proposed gated (harness=claude-code runner=none; workstation, no runner signal) | guard 3x min $50 | fixups 2 | confirmed 2026-10-10 session 43a767ca-8b50-41c3-9808-49159f0ef9f6 by Kickoff prompt: Run in unattended mode.
 
   review: every-wave (log-only)
 
