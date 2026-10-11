@@ -5,3 +5,5 @@
 coverage.out
 
 .cursor/rules/personal-*.mdc
+.scratch/
+.gitignore
