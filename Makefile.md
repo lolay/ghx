@@ -22,6 +22,9 @@ graph LR
     bump
     snapshot
     release-check
+    publish-formula
+    publish-scoop
+    release
 ```
 
 Solid arrows are hard prerequisites, run in order (`build`, then `lint`, then
@@ -74,6 +77,27 @@ unchanged; update it by copying the template again, not by editing it here.
 `GORELEASER` (default `goreleaser`) names the command, so a machine without the
 tool can pass the `go run` form:
 `make snapshot GORELEASER="go run github.com/goreleaser/goreleaser/v2@v2.18.3"`.
+
+### Danger
+
+These change something outside the working tree, so each refuses to run until
+its `CONFIRM_*` variable is set, and prints what to re-run with. Humans and
+agents hit the refusal; the Release workflow sets the variable inline. There is
+no `tag` target: tags come from the Release workflow.
+
+| Target | Confirm | Description |
+|--------|---------|-------------|
+| `publish-formula` | `CONFIRM_PUBLISH_FORMULA=1` | `scripts/publish-formula.sh $(VERSION) dist`: renders `Formula/ghx.rb` from `dist/checksums.txt` and pushes it to `lolay/homebrew-tap` as `ghx-release-bot`. `VERSION=x.y.z` is required, and `HOMEBREW_TAP_TOKEN` comes from the environment |
+| `publish-scoop` | `CONFIRM_PUBLISH_SCOOP=1` | `scripts/publish-scoop.sh $(VERSION) dist`: the same for `bucket/ghx.json` in `lolay/scoop-bucket`, with `SCOOP_BUCKET_TOKEN` |
+| `release` | `CONFIRM_RELEASE=1` | `goreleaser release --clean` for the tag at `HEAD`, uploading the archives and `checksums.txt` to the GitHub release; `GITHUB_TOKEN` comes from the environment |
+
+Both publish scripts take `DRY_RUN=1` to print the rendered file and exit
+without cloning or pushing; run them that way after `make snapshot`, passing
+the snapshot's version (`<release>+<sha>`), to check a template change. The
+rendered sha256 values come from `dist/checksums.txt`, and the templates are
+`scripts/ghx.rb.tmpl` and `scripts/ghx.json.tmpl`. A token is never written to
+a file or a clone URL: the scripts give it to `git` as an `http.extraheader`
+through its environment.
 
 ## The build version
 

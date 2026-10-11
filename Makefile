@@ -17,7 +17,8 @@ SHELL := bash
 .DEFAULT_GOAL := help
 
 .PHONY: help init doctor build lint format test vuln ci pre-commit clean \
-        gh-runs-list gh-runs-watch gh-runs-status bump snapshot release-check
+        gh-runs-list gh-runs-watch gh-runs-status bump snapshot release-check \
+        publish-formula publish-scoop release
 
 # Binary coordinates.
 BINARY  := ghx
@@ -59,6 +60,17 @@ LDFLAGS       := -X $(BUILDINFO_PKG).Version=$(RELEASE) \
 # goreleaser; a runner without it installed passes the pinned `go run` form,
 # e.g. GORELEASER="go run github.com/goreleaser/goreleaser/v2@v2.18.3".
 GORELEASER ?= goreleaser
+
+# VERSION names the release (x.y.z, no v prefix) for the publish-* targets.
+VERSION ?=
+
+# Remote-mutating targets sit under `##@ Danger` and refuse to run until their
+# CONFIRM_* variable is set; the Release workflow sets it inline, a human or an
+# agent hits the refusal. Usage: $(call confirm,CONFIRM_NAME,what it does)
+confirm = @if [ -z "$($(1))" ]; then \
+  printf 'Refusing to run "make %s": %s\nRe-run with %s=1.\n' "$@" "$(2)" "$(1)"; \
+  exit 1; \
+fi
 
 # LEVEL picks the bump for `make bump` (patch | minor | major).
 LEVEL ?=
@@ -181,3 +193,19 @@ snapshot: ## Build every release archive and checksums.txt into dist/ without pu
 
 release-check: ## Validate .goreleaser.yaml (goreleaser check)
 	$(GORELEASER) check
+
+##@ Danger
+
+publish-formula: ## Push Formula/ghx.rb to lolay/homebrew-tap from dist/ (VERSION=x.y.z CONFIRM_PUBLISH_FORMULA=1; needs HOMEBREW_TAP_TOKEN)
+	$(call confirm,CONFIRM_PUBLISH_FORMULA,it commits to lolay/homebrew-tap)
+	@test -n "$(VERSION)" || { echo "VERSION=x.y.z required" >&2; exit 1; }
+	scripts/publish-formula.sh "$(VERSION)" $(DIST_DIR)
+
+publish-scoop: ## Push bucket/ghx.json to lolay/scoop-bucket from dist/ (VERSION=x.y.z CONFIRM_PUBLISH_SCOOP=1; needs SCOOP_BUCKET_TOKEN)
+	$(call confirm,CONFIRM_PUBLISH_SCOOP,it commits to lolay/scoop-bucket)
+	@test -n "$(VERSION)" || { echo "VERSION=x.y.z required" >&2; exit 1; }
+	scripts/publish-scoop.sh "$(VERSION)" $(DIST_DIR)
+
+release: ## Publish the GitHub release for the current tag with goreleaser (CONFIRM_RELEASE=1; needs GITHUB_TOKEN)
+	$(call confirm,CONFIRM_RELEASE,it publishes a GitHub release for the current tag)
+	RELEASE="$(RELEASE)" SHA="$(SHA)" BUILD_CODE="$(BUILD_CODE)" $(GORELEASER) release --clean
