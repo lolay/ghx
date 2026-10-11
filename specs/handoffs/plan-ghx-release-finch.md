@@ -1,9 +1,9 @@
 ```
 --- KICKOFF: begin orchestration at [deep] ---
 
-  Status: 0/4 groups done | last review: — | current: m1 s1 [deep] | BLOCKED at gate mode | updated 2026-10-11
+  Status: 0/4 groups done | last review: — | current: m1 s1 [deep] | updated 2026-10-11
 
-  mode: pending | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch claude/stoic-planck-qfqg75) | guard 3x min $50 | fixups 2
+  mode: unattended | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch claude/stoic-planck-qfqg75) | guard 3x min $50 | fixups 2 | confirmed 2026-10-11 session 49ac3a33-e356-58b6-9971-24a023142f66: yes, unattended
 
   review: every-wave (log-only)
 
@@ -14,6 +14,7 @@
   Prompt to paste into the next chat:
     In lolay/ghx, read specs/handoffs/plan-ghx-release-finch.md. The plan is already tagged.
     On branch claude/stoic-planck-qfqg75 (task branch): subagents commit each finished step.
+    Run in unattended mode.
     Run the orch-spike-plan-orchestrate skill from the top: walk to
     each tier boundary, dispatch subagents per the skill's
     procedure, and pause only where the recorded mode stops. Do not
