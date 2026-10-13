@@ -2,15 +2,16 @@
 
 - **Branch:** `claude/magical-ride-7h4rhi` in `lolay/ghx` (assigned by the cloud
   session; cut from `main` at d984df8).
-- **Plan:** `specs/handoffs/plan-cli-ux-sparkling.md` (re-opened for wave 3).
+- **Plan:** `specs/handoffs/plan-cli-ux-sparkling.md` (complete after wave 3 and its fix-up).
 - **Mode:** unattended (confirmed 2026-10-13; runner=cloud).
 - **Done:** wave 1 [exec] `ghx s1-s5`, 56d21d8..33a21fd, review PASS. No fix-ups,
   retries or checkpoints.
   Wave 2 [exec] `ghx s6-s7` (re-plan), 7ee0a3c..0592684, review PASS.
-- **Spend:** ~$17.3 of ~$4.6 expected (Token log in the plan).
+- **Spend:** ~$19.1 of ~$4.6 expected (Token log in the plan).
   Wave 3 [exec] `ghx s8-s10`, c7bf5b6..4a5e995, review CONCERNS (live-area box
   drawing: the column-closing rule sits above the in-flight rows, not above the footer).
-- **Next unit:** fix-up 3-fix (automatic, 1 of 2), then merge `origin/main`
+  Fix-up 3-fix 683d367, review PASS.
+- **Next:** merge `origin/main`
   (ee8d164, fetch-first sync and failure handling, lolay/ghx#6) as Gary asked;
   expect conflicts in `internal/cloner/cloner.go`, `action.go`, `internal/ui/ui.go`.
 - **Later:** Gary picks a renderer; a follow-up keeps it, deletes the rest and

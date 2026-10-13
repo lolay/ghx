@@ -1,7 +1,7 @@
 ```
---- KICKOFF: begin orchestration at [deep] ---
+--- KICKOFF: plan complete ---
 
-  Status: 3/3 groups done | last review: wave-3 CONCERNS | current: ghx s8-s10 [exec] fix-up 3-fix | updated 2026-10-13 | over expected: ~$17.6 of ~$4.6
+  Status: 3/3 groups done | completed 2026-10-13 | over expected: ~$19.1 of ~$4.6
 
   mode: unattended | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch claude/magical-ride-7h4rhi) | guard 3x min $50 | fixups 2 | confirmed 2026-10-13 session bd9c01f5-fe1c-5a92-ab0c-95720d491a10: unattended
 
@@ -33,10 +33,10 @@
 |---|---|---|---|---|
 | 1 [exec] ghx s1-s5 | ~4.6M | ~$1.8 | ~11M (output est.) | ~$4.2 (output est.) |
 | 2 [exec] ghx s6-s7 | — | — | ~6.2M (output est.) | ~$2.6 (output est.) |
-| 3 [exec] ghx s8-s10 | — | — | — | — |
-| 3-fix [exec] ghx s8-s10 | — | — | — | — |
-| orchestrator | ~3.1M | ~$2.8 | ~14M | ~$6.0 |
-| **Total** | ~7.7M | ~$4.6 | ~31M | ~$12.8 |
+| 3 [exec] ghx s8-s10 | — | — | ~8.9M (output est.) | ~$3.5 (output est.) |
+| 3-fix [exec] ghx s8-s10 | — | — | ~1.3M (output est.) | ~$0.85 (output est.) |
+| orchestrator | ~3.1M | ~$2.8 | ~19M | ~$8.0 |
+| **Total** | ~7.7M | ~$4.6 | ~47M | ~$19.1 |
 
 Expected values are estimates, good to about 2-3× per wave.
 
@@ -352,6 +352,7 @@ removed or promoted before the branch merges.
 review wave-1 (ghx s1,s2,s3,s4,s5) 56d21d8..33a21fd: PASS - make ci green (lint 0 issues, race tests x3); interface, fang wrap and three renderers match spec; minor: waitFor asserts off the test goroutine, testing.md cli coverage says ~92% (now 94.1%) - 2026-10-13
 review wave-2 (ghx s6,s7) 7ee0a3c..0592684: PASS - make ci green (race x3 on ui and cli); symbols via copies of pterm.Success, no pterm globals assigned; table renderer windows, drops columns, prints the full table once from run.go; removed/too-large notes now print before the live table - 2026-10-13
 review wave-3 (ghx s8,s9,s10) c7bf5b6..4a5e995: CONCERNS - live area box drawing is wrong: the ┴ rule sits above the in-flight rows (closing columns the rows still use) instead of between them and the footer, and on the first frame it sits right under the header separator (two separators in a row); progress_table.go frameLocked concatenates [l.rule, rows..., footer, bottom] and progress_table_test.go:385-395 locks that order in; the rule belongs directly above the merged footer - 2026-10-13
+review wave-3-fix (ghx s8,s9,s10) c7bf5b6..683d367: PASS - live area is now in-flight rows, ┴ rule, footer, border; rule omitted when nothing sits above it; tests lock the order; make ci green; checked in a pty at 70x14; passed unattended: gate 1 (fix-up 1 of 2) - 2026-10-13
 
 ## Token log
 
@@ -372,6 +373,9 @@ tokens review-wave-2 ghx-s6-s7 (claude-opus-5-5): input ~26 / cache read ~500k /
 tokens orchestrator-wave-2 ghx-s6-s7 (claude-opus-5-5): input ~20 / cache read ~2.7M / cache write ~0 5m + ~41k 1h / output ~17k | ~$1.20 API-equiv
 tokens wave-3 ghx-s8-s9-s10 (claude-sonnet-5-5): input ~100 / cache read ~8.5M / cache write ~240k / output ~51k | ~$2.79 API-equiv (output est.) session bd9c01f5-fe1c-5a92-ab0c-95720d491a10
 tokens review-wave-3 ghx-s8-s9-s10 (claude-opus-5-5): input ~30 / cache read ~630k / cache write ~68k / output ~14k | ~$0.75 API-equiv (output est.) session bd9c01f5-fe1c-5a92-ab0c-95720d491a10
+tokens orchestrator-wave-3 ghx-s8-s9-s10 (claude-opus-5-5): input ~22 / cache read ~2.9M / cache write ~0 5m + ~26k 1h / output ~11k | ~$1.00 API-equiv
+tokens wave-3-fix ghx-s8-s9-s10 (claude-sonnet-5-5): input ~28 / cache read ~1M / cache write ~47k / output ~14k | ~$0.47 API-equiv (output est.) session bd9c01f5-fe1c-5a92-ab0c-95720d491a10
+tokens review-wave-3-fix ghx-s8-s9-s10 (claude-opus-5-5): input ~20 / cache read ~220k / cache write ~27k / output ~10k | ~$0.38 API-equiv (output est.) session bd9c01f5-fe1c-5a92-ab0c-95720d491a10
 
 ## Completion summary (wave 1)
 
@@ -387,3 +391,10 @@ tokens review-wave-3 ghx-s8-s9-s10 (claude-opus-5-5): input ~30 / cache read ~63
 - Decisions: `ui.RepoLister` (SetRepos, PrintTable); run.go prints the final full table once after the last pass (and via defer on error or cancel); Stop erases the live area; a row running at Stop shows `interrupted`; the bar counts per pass.
 - Behaviour change to know: with `GHX_PROGRESS=table`, the "Changes for removed/archived repos" and "Repos skipped (too large)" notes print before the live table.
 - Follow-ups: as wave 1's, minus the testing.md items (done in s7). Not run against a real org.
+
+## Completion summary (wave 3)
+
+- Wave 3 [exec] `ghx s8-s10` (re-plan): c7bf5b6..4a5e995, review CONCERNS (live-area rule placement); automatic fix-up 3-fix 683d367, review PASS. Range c7bf5b6..683d367.
+- Cost: plan total ~$19.1 API-equiv against ~$4.6 expected (three re-plans).
+- Decisions: widths fixed at SetRepos; finished rows stream into scrollback in finish order; FinishTable closes the table; footer and rules hand-drawn from StyleLight characters; `ui.PrintSummaryLists` under the table renderer; archived-pass and --delete notes kept out of the table.
+- Next, outside the plan: merge `origin/main` (ee8d164) as Gary asked.
