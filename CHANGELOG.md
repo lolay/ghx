@@ -7,6 +7,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [v0.2.0] - 2026-10-13
+
 ### Security
 - Hardening: ghx no longer puts the token in HTTPS clone URLs. It gives `git`
   the token through `git`'s environment for the length of each clone or pull
