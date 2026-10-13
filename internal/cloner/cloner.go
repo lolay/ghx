@@ -269,7 +269,8 @@ func tipsBeforeFetch(ctx context.Context, git gitRunner, dest, defaultBranch, cu
 }
 
 // updateTarget moves HEAD, which is on b, to origin's b when nothing local can
-// be lost. oldTip is origin/b before the fetch, "" when it wasn't there.
+// be lost. oldTip is origin/b before the fetch, "" when it wasn't there; the
+// reflog of origin/b covers force-pushes an earlier fetch already saw.
 func updateTarget(ctx context.Context, git gitRunner, dest, b, oldTip string, dirty bool) (Action, string) {
 	target := originRef(b)
 	if dirty {
@@ -292,14 +293,33 @@ func updateTarget(ctx context.Context, git gitRunner, dest, b, oldTip string, di
 		}
 		return ActionPulled, ""
 	}
-	if oldTip != "" && !git.isAncestor(ctx, dest, oldTip, target) && git.isAncestor(ctx, dest, head, oldTip) {
+	// oldTip only sees a force-push this run's fetch brought in. The fork point
+	// also sees one an earlier fetch brought in (a failed pull, a manual
+	// fetch): HEAD being its own fork point means every commit on it was once
+	// on origin, so nothing is unpushed.
+	fp, hasFP := git.forkPoint(ctx, dest, target, head)
+	if (hasFP && fp == head) ||
+		(oldTip != "" && !git.isAncestor(ctx, dest, oldTip, target) && git.isAncestor(ctx, dest, head, oldTip)) {
 		return followForcePush(ctx, git, dest, b, head)
 	}
-	count := git.run(ctx, dest, "rev-list", "--count", target+"..HEAD")
-	if n := strings.TrimSpace(count.Stdout); count.Success() && n != "" {
+	if hasFP && !git.isAncestor(ctx, dest, fp, target) {
+		// Commits origin dropped aren't the user's work, so only those after
+		// the fork point are counted.
+		if n, ok := countCommits(ctx, git, dest, fp+"..HEAD"); ok {
+			return ActionFetchedOnly, fmt.Sprintf("%s local commit(s) on top of a force-pushed origin/%s", n, b)
+		}
+	}
+	if n, ok := countCommits(ctx, git, dest, target+"..HEAD"); ok {
 		return ActionFetchedOnly, fmt.Sprintf("%s local commit(s) not on origin/%s", n, b)
 	}
 	return ActionFetchedOnly, "local commits not on origin/" + b
+}
+
+// countCommits returns how many commits rangeSpec holds, as git prints it.
+func countCommits(ctx context.Context, git gitRunner, dest, rangeSpec string) (string, bool) {
+	r := git.run(ctx, dest, "rev-list", "--count", rangeSpec)
+	n := strings.TrimSpace(r.Stdout)
+	return n, r.Success() && n != ""
 }
 
 // followForcePush moves b, checked out at head with no local changes or

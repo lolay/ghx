@@ -33,7 +33,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   instead of failing on every run.
 - A force-pushed default branch is followed when the clone has no unpushed
   work, with the old tip kept under `refs/ghx/forced/<branch>/<timestamp>`,
-  instead of being skipped on every run.
+  instead of being skipped on every run. That includes a force-push an earlier
+  fetch already brought in (such as the failed `pull --ff-only` of earlier
+  versions), found through the reflog of `origin/<branch>`, and the fetched-only
+  count of local commits leaves out the ones the force-push dropped.
 - A default branch renamed on GitHub is switched to when nothing would be lost.
 - A clone on a feature branch or a detached HEAD is fetched, and reported as
   fetched only with the reason, instead of failing its pull.

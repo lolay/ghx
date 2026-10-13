@@ -80,6 +80,11 @@ func (g Git) RevParse(ctx context.Context, dir, ref string) (string, bool) {
 	return g.g.revParse(ctx, dir, ref)
 }
 
+// ForkPoint calls gitRunner.forkPoint.
+func (g Git) ForkPoint(ctx context.Context, dir, ref, commit string) (string, bool) {
+	return g.g.forkPoint(ctx, dir, ref, commit)
+}
+
 // IsAncestor calls gitRunner.isAncestor.
 func (g Git) IsAncestor(ctx context.Context, dir, a, b string) bool {
 	return g.g.isAncestor(ctx, dir, a, b)
