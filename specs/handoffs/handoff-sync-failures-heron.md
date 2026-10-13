@@ -3,15 +3,15 @@
 Plan: `specs/handoffs/plan-sync-failures-heron.md` (personal-plan-orchestrate run).
 
 - **Branch:** `claude/ecstatic-archimedes-2dxtun` (assigned by the cloud session; task branch).
-- **Mode:** pending. The kickoff question proposes `unattended` (harness=claude-code runner=cloud).
-- **Done:** nothing yet. Kickoff written; the plan is tagged and split into 3 waves.
+- **Mode:** unattended, confirmed 2026-10-13 in session 8e4630de-74dd-5cb4-9a70-cd78dd6ff4a2 (harness=claude-code runner=cloud).
+- **Done:** nothing yet. Kickoff answered; wave 1 launching.
 - **Next unit:** wave 1 [exec] ghx m1 s1 (git probes and network-command plumbing).
 - **Spend:** $0 of ~$10 expected (guard: $50).
 - **Resume:** paste the plan's Kickoff prompt into a new session on this branch.
 
 ## Pending question (verbatim)
 
-The kickoff question: reply `unattended` or `gated` (see the chat, or the plan's Kickoff block for the waves, cost and gates).
+None.
 
 ## Review log verdicts
 
