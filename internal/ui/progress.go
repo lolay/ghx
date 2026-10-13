@@ -25,6 +25,8 @@ func NewProgress() cloner.Progress {
 		return newBuildxProgress(Out)
 	case "indicatif":
 		return newIndicatifProgress(Out)
+	case "pterm":
+		return newPtermProgress(Out)
 	default:
 		return newGoPrettyProgress(Out)
 	}

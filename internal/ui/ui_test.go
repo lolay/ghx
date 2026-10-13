@@ -163,6 +163,20 @@ func TestSetupTerminal_DrawsProgressOnlyOnATerminal(t *testing.T) {
 	}
 }
 
+func TestNewProgress_NoRendererDrawsOnAFile(t *testing.T) {
+	captureOut(t)
+	t.Cleanup(ui.ResetTerminal)
+	file, err := os.Create(filepath.Join(t.TempDir(), "log.txt"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = file.Close() })
+	ui.SetupTerminal(file)
+
+	for _, name := range []string{"", "gopretty", "buildx", "indicatif", "pterm"} {
+		t.Setenv("GHX_PROGRESS", name)
+		assert.Equal(t, cloner.NoProgress{}, ui.NewProgress(), "GHX_PROGRESS=%q on a file", name)
+	}
+}
+
 func TestNewProgress_RendererNames(t *testing.T) {
 	captureOut(t)
 	t.Cleanup(ui.ResetTerminal)
