@@ -382,6 +382,52 @@ func TestGitProbes_IsAncestor(t *testing.T) {
 	}
 }
 
+func TestGitProbes_ForkPoint(t *testing.T) {
+	git := cloner.NewGit(gitPath(t), "")
+	const ref = "refs/remotes/origin/main"
+	// rewritten clones an upstream, force-pushes it, and fetches the rewrite,
+	// returning the clone and its HEAD from before the force-push.
+	rewritten := func(t *testing.T, keepReflog bool) (string, string) {
+		bare := gittest.NewBareRepo(t, t.TempDir(), "up", "main")
+		dir := cloneOf(t, bare)
+		old := strings.TrimSpace(gittest.Git(t, dir, "rev-parse", "HEAD"))
+		forcePush(t, bare, "main", "NEWS.md", "news\n")
+		if !keepReflog {
+			gittest.Git(t, dir, "config", "core.logAllRefUpdates", "false")
+			require.NoError(t, os.RemoveAll(filepath.Join(dir, ".git", "logs", "refs", "remotes")))
+		}
+		gittest.Git(t, dir, "fetch", "origin")
+		return dir, old
+	}
+
+	t.Run("a commit once on origin is its own fork point", func(t *testing.T) {
+		dir, old := rewritten(t, true)
+		sha, ok := git.ForkPoint(t.Context(), dir, ref, old)
+		assert.True(t, ok)
+		assert.Equal(t, old, sha)
+	})
+	t.Run("a local commit forks from the old tip", func(t *testing.T) {
+		dir, old := rewritten(t, true)
+		commitFile(t, dir, "mine.txt", "mine")
+		sha, ok := git.ForkPoint(t.Context(), dir, ref, "HEAD")
+		assert.True(t, ok)
+		assert.Equal(t, old, sha)
+	})
+	t.Run("without a reflog the old tip is forgotten", func(t *testing.T) {
+		dir, old := rewritten(t, false)
+		sha, ok := git.ForkPoint(t.Context(), dir, ref, old)
+		assert.NotEqual(t, old, sha)
+		if ok {
+			assert.NotEmpty(t, sha)
+		}
+	})
+	t.Run("not a repository", func(t *testing.T) {
+		sha, ok := git.ForkPoint(t.Context(), t.TempDir(), ref, "HEAD")
+		assert.False(t, ok)
+		assert.Empty(t, sha)
+	})
+}
+
 func TestGitProbes_UpstreamTrack(t *testing.T) {
 	tests := []struct {
 		name         string

@@ -256,7 +256,11 @@ token and network access.
     incoming file would overwrite one.
   - A force-pushed default branch is followed when the local branch has no
     unpushed work: it is reset to the new tip, never overwriting files, and the
-    old tip is kept under `refs/ghx/forced/<branch>/<timestamp>`.
+    old tip is kept under `refs/ghx/forced/<branch>/<timestamp>`. That holds
+    even when an earlier fetch (a failed pull, or `git fetch` by hand) already
+    brought in the rewrite: ghx checks the history of `origin/<branch>` that
+    git keeps in its reflog. Commits only the force-push dropped aren't counted
+    as local work.
   - If the default branch was renamed on GitHub, ghx switches to the new name
     when nothing would be lost.
   - A repo whose HEAD names a branch that doesn't exist is checked out on

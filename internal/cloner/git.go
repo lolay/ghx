@@ -354,6 +354,19 @@ func (g gitRunner) revParse(ctx context.Context, dir, ref string) (sha string, o
 	return strings.TrimSpace(res.Stdout), true
 }
 
+// forkPoint returns where commit forked from any version of ref its reflog
+// remembers, so a branch that was once all on origin still reads that way
+// after an earlier fetch saw origin rewritten. ok is false when there's no
+// such point, such as when reflogs are off.
+func (g gitRunner) forkPoint(ctx context.Context, dir, ref, commit string) (sha string, ok bool) {
+	res := g.run(ctx, dir, "merge-base", "--fork-point", ref, commit)
+	sha = strings.TrimSpace(res.Stdout)
+	if !res.Success() || sha == "" {
+		return "", false
+	}
+	return sha, true
+}
+
 // isAncestor reports whether commit a is reachable from commit b (or is b).
 // Any failure, such as a commit that doesn't exist, reads as false.
 func (g gitRunner) isAncestor(ctx context.Context, dir, a, b string) bool {

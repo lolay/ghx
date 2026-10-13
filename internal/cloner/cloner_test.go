@@ -735,8 +735,60 @@ func TestCloneRepos_SyncsAnExistingClone(t *testing.T) {
 				}
 			},
 			want: cloner.ActionFetchedOnly,
-			// The local commit, and the upstream commit the force-push dropped.
-			detail: `^2 local commit\(s\) not on origin/main$`,
+			// Only the local commit: the one the force-push dropped isn't the
+			// user's.
+			detail: `^1 local commit\(s\) on top of a force-pushed origin/main$`,
+		},
+		{
+			name: "a force-push an earlier fetch saw is followed",
+			setup: func(t *testing.T, w *syncWorld) func(t *testing.T) {
+				old := rev(t, w.dest, "HEAD")
+				forcePush(t, w.bare, "main", "NEWS.md", "news\n")
+				// As the pull --ff-only of ghx before 0.3 did: the fetch moves
+				// origin/main, then the fast-forward is refused.
+				gittest.Git(t, w.dest, "fetch", "origin")
+				return func(t *testing.T) {
+					assert.Equal(t, w.upstream(t, "main"), rev(t, w.dest, "HEAD"))
+					backups := w.backups(t)
+					require.Len(t, backups, 1)
+					for _, sha := range backups {
+						assert.Equal(t, old, sha, "the old tip is kept")
+					}
+				}
+			},
+			want:   cloner.ActionPulled,
+			detail: `^origin/main was force-pushed; old tip kept at refs/ghx/forced/main/\d{8}T\d{6}Z$`,
+		},
+		{
+			name: "a force-push an earlier fetch saw, under a local commit, is only fetched",
+			setup: func(t *testing.T, w *syncWorld) func(t *testing.T) {
+				commitFile(t, w.dest, "mine.txt", "mine")
+				local := rev(t, w.dest, "HEAD")
+				forcePush(t, w.bare, "main", "NEWS.md", "news\n")
+				gittest.Git(t, w.dest, "fetch", "origin")
+				return func(t *testing.T) {
+					assert.Equal(t, local, rev(t, w.dest, "HEAD"), "the local commit is intact")
+					assert.Empty(t, w.backups(t))
+				}
+			},
+			want:   cloner.ActionFetchedOnly,
+			detail: `^1 local commit\(s\) on top of a force-pushed origin/main$`,
+		},
+		{
+			name: "a force-push an earlier fetch saw, with no reflog to prove it, is only fetched",
+			setup: func(t *testing.T, w *syncWorld) func(t *testing.T) {
+				old := rev(t, w.dest, "HEAD")
+				forcePush(t, w.bare, "main", "NEWS.md", "news\n")
+				gittest.Git(t, w.dest, "config", "core.logAllRefUpdates", "false")
+				require.NoError(t, os.RemoveAll(filepath.Join(w.dest, ".git", "logs", "refs", "remotes")))
+				gittest.Git(t, w.dest, "fetch", "origin")
+				return func(t *testing.T) {
+					assert.Equal(t, old, rev(t, w.dest, "HEAD"))
+					assert.Empty(t, w.backups(t))
+				}
+			},
+			want:   cloner.ActionFetchedOnly,
+			detail: `^1 local commit\(s\) not on origin/main$`,
 		},
 		{
 			name: "a force-push that would overwrite an untracked file is only fetched",
