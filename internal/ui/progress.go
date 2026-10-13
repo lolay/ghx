@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"fmt"
 	"os"
+	"time"
 
 	"github.com/lolay/ghx/internal/cloner"
 )
@@ -19,7 +21,18 @@ func NewProgress() cloner.Progress {
 		return cloner.NoProgress{}
 	}
 	switch os.Getenv(progressEnv) {
+	case "buildx":
+		return newBuildxProgress(Out)
 	default:
 		return newGoPrettyProgress(Out)
 	}
+}
+
+// formatSeconds shows d as tenths of a second ("1.2s"), or as minutes and
+// seconds from a minute on ("1m15s").
+func formatSeconds(d time.Duration) string {
+	if d >= time.Minute {
+		return d.Round(time.Second).String()
+	}
+	return fmt.Sprintf("%.1fs", d.Seconds())
 }
