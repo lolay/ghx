@@ -67,9 +67,7 @@ arm64) and `checksums.txt` from the
 [Releases page](https://github.com/lolay/ghx/releases), check the archive's
 sha256 against `checksums.txt`, and put `ghx` on your `PATH`.
 
-The Homebrew, Scoop and GitHub Releases installs are available from the first
-release; until then, build from source. Releases are cut as
-[`specs/releasing.md`](./specs/releasing.md) describes.
+Releases are cut as [`specs/releasing.md`](./specs/releasing.md) describes.
 
 ### From source
 
@@ -89,9 +87,8 @@ go install github.com/lolay/ghx/cmd/ghx@latest
 ghx --help
 ```
 
-Until the first release, `@latest` resolves to the newest commit on `main`, so
-this works once the module rename (see [`CHANGELOG.md`](./CHANGELOG.md)) has
-merged there.
+`@latest` resolves to the newest release tag. A `go install` build isn't
+stamped, so `ghx --version` prints `ghx dev`.
 
 `go install` puts the `ghx` binary in `$GOBIN`, or `$(go env GOPATH)/bin`
 (typically `~/go/bin`) when `GOBIN` is unset. Make sure that directory is on your
@@ -107,8 +104,6 @@ To install somewhere else, such as `~/.local/bin`, set `GOBIN` for the install:
 mkdir -p ~/.local/bin
 GOBIN=$HOME/.local/bin go install github.com/lolay/ghx/cmd/ghx@latest
 ```
-
-Homebrew and Scoop packages come with the first release.
 
 ## Authentication
 
