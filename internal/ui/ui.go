@@ -135,32 +135,52 @@ func orDash(s string) string {
 
 // repoTable builds the "Repos to export" table from the columns of
 // repoColumns that cols names, in that order. A non-nil status adds a Status
-// column after them, one cell per repo.
-func repoTable(cols []int, repos []ghapi.RepoInfo, status []string) table.Writer {
+// column after them, one cell per repo. A non-nil widths fixes the width of
+// each column (cols in order, then Status) and cuts a cell that is wider with
+// "…", so what is drawn never changes the table's width.
+func repoTable(cols []int, repos []ghapi.RepoInfo, status []string, widths []int) table.Writer {
 	tw := table.NewWriter()
 	tw.SetTitle("Repos to export")
 	header := make(table.Row, 0, len(cols)+1)
 	var configs []table.ColumnConfig
+	fix := func(cfg table.ColumnConfig, n int) table.ColumnConfig {
+		if widths != nil {
+			cfg.WidthMin, cfg.WidthMax = widths[n], widths[n]
+			// The header is laid out with no rows (see tableLayout), where
+			// go-pretty has no cells to take its alignment from.
+			cfg.AlignHeader = cfg.Align
+			if cfg.Align == text.AlignDefault {
+				cfg.AlignHeader = text.AlignLeft
+			}
+		}
+		return cfg
+	}
 	for n, c := range cols {
 		header = append(header, repoColumns[c].title)
+		cfg := table.ColumnConfig{Number: n + 1}
 		if repoColumns[c].right {
-			configs = append(configs, table.ColumnConfig{Number: n + 1, Align: text.AlignRight})
+			cfg.Align = text.AlignRight
 		}
+		configs = append(configs, fix(cfg, n))
+	}
+	cell := func(v any, n int) any {
+		if widths == nil {
+			return v
+		}
+		return truncate(fmt.Sprint(v), widths[n])
 	}
 	if status != nil {
 		header = append(header, "Status")
-		// A floor keeps the column from jumping as "queued" gives way to a
-		// spinner and a time.
-		configs = append(configs, table.ColumnConfig{Number: len(cols) + 1, WidthMin: statusWidth})
+		configs = append(configs, fix(table.ColumnConfig{Number: len(cols) + 1}, len(cols)))
 	}
 	tw.AppendHeader(header)
 	for i, r := range repos {
 		row := make(table.Row, 0, len(cols)+1)
-		for _, c := range cols {
-			row = append(row, repoColumns[c].cell(r))
+		for n, c := range cols {
+			row = append(row, cell(repoColumns[c].cell(r), n))
 		}
 		if status != nil {
-			row = append(row, status[i])
+			row = append(row, cell(status[i], len(cols)))
 		}
 		tw.AppendRow(row)
 	}
@@ -181,7 +201,7 @@ func allColumns() []int {
 // PrintRepoTable renders the "Repos to export" table shown before
 // cloning begins.
 func PrintRepoTable(repos []ghapi.RepoInfo) {
-	tw := repoTable(allColumns(), repos, nil)
+	tw := repoTable(allColumns(), repos, nil, nil)
 	tw.SetOutputMirror(Out)
 
 	Println()

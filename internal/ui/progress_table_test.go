@@ -2,6 +2,7 @@ package ui_test
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -45,11 +46,12 @@ func newTable(t *testing.T, width, height int, repos []ghapi.RepoInfo) (cloner.P
 }
 
 // lastFrame is the live area as drawn last: everything from the last table
-// title, with the escape codes removed. A frame in progress is cut short, so
-// a test waits for what it expects rather than reading it once.
+// top, with the escape codes removed. The renderer writes a frame in one call,
+// so what follows a top border is a whole frame; a test still waits for what
+// it expects rather than reading once.
 func lastFrame(buf *lockedBuffer) string {
 	out := stripANSI(buf.String())
-	return out[max(strings.LastIndex(out, "Repos to export"), 0):]
+	return out[max(strings.LastIndex(out, "┌"), 0):]
 }
 
 // waitForFrame blocks until the last live frame holds every one of wants.
@@ -150,14 +152,16 @@ func TestTableProgress_ATallListShowsAWindowAndAFooter(t *testing.T) {
 
 		// The window is the in-flight rows and the latest finished ones that
 		// fit. Of the 18 lines a 20-line terminal leaves, the table's title,
-		// borders and header take 6, the footer and the bar 2, so there is room
-		// for 10 rows: 3 running and the last 7 finished.
-		frame := waitForFrame(t, buf, "… 13 done, 37 queued")
-		assert.Contains(t, frame, "Syncing repos")
-		for i := 13; i < 23; i++ {
+		// borders and header take 5, the rule, the progress footer and the
+		// closing border 3, and the window's footer 1, so there is room for 9
+		// rows: 3 running and the last 6 finished.
+		frame := waitForFrame(t, buf, "… 14 done, 37 queued")
+		assert.Contains(t, frame, "Syncing 20/60")
+		assert.Contains(t, frame, "3 running · 37 queued")
+		for i := 14; i < 23; i++ {
 			assert.Contains(t, frame, fmt.Sprintf("repo-%02d", i))
 		}
-		for _, hidden := range []string{"repo-00", "repo-12", "repo-23", "repo-59"} {
+		for _, hidden := range []string{"repo-00", "repo-13", "repo-23", "repo-59"} {
 			assert.NotContains(t, frame, hidden)
 		}
 		assert.Contains(t, frame, "cloned 1.0s")
@@ -178,8 +182,116 @@ func TestTableProgress_AShortListShowsEveryRow(t *testing.T) {
 		for i := range total {
 			assert.Contains(t, frame, fmt.Sprintf("repo-%02d", i))
 		}
-		assert.NotContains(t, frame, "…", "nothing is left out, so no footer")
-		assert.Equal(t, total-1, strings.Count(frame, "queued"))
+		assert.NotContains(t, frame, "…", "nothing is left out, so no window footer")
+		assert.Equal(t, total-1, strings.Count(frame, "│ queued"), "a queued row's Status cell")
+		assert.Contains(t, frame, "1 running · 7 queued")
+	})
+}
+
+// longestStatus is the finished repo whose Status cell is the widest: the
+// action with the longest text, after the longest time.
+func longestStatus() (cloner.Action, time.Duration) {
+	longest := cloner.AllActions[0]
+	for _, a := range cloner.AllActions {
+		if len(ui.ActionText(a, 779*time.Second)) > len(ui.ActionText(longest, 779*time.Second)) {
+			longest = a
+		}
+	}
+	return longest, 779 * time.Second // 12m59s
+}
+
+func TestTableProgress_NoFrameChangesTheTablesWidth(t *testing.T) {
+	repos := tableRepos(10)
+	repos[7].Name = "a-repository-with-a-name-longer-than-the-rest"
+	repos[8].Language = "Objective-C++"
+	action, took := longestStatus()
+	p, _, buf := newTable(t, 200, 40, repos)
+
+	var frames []string
+	capture := func(wants ...string) {
+		frame := waitForFrame(t, buf, wants...)
+		frames = append(frames, frame)
+	}
+	within(t, func() {
+		p.Start(len(repos))
+		defer p.Stop()
+		capture("Syncing 0/10", "10 queued")
+
+		p.RepoStarted("repo-00", cloner.ProgressClone)
+		capture("1 running")
+		time.Sleep(120 * time.Millisecond)
+		p.RepoStarted("repo-01", cloner.ProgressPull)
+		p.RepoStarted(repos[7].Name, cloner.ProgressClone)
+		capture("3 running · 7 queued")
+
+		// A finished row with the longest action and the longest time.
+		p.RepoDone(cloner.RepoResult{Name: repos[7].Name, Action: action}, took)
+		p.RepoDone(cloner.RepoResult{Name: "repo-00", Action: cloner.ActionCloned}, time.Second)
+		capture("Syncing 2/10", ui.ActionText(action, took))
+
+		for i := 1; i < 10; i++ {
+			name := fmt.Sprintf("repo-%02d", i)
+			if i != 7 {
+				p.RepoDone(cloner.RepoResult{Name: name, Action: cloner.ActionPulled}, 2*time.Minute)
+			}
+		}
+		capture("Syncing 10/10")
+	})
+
+	require.NotEmpty(t, frames)
+	want := widest(frames[0])
+	for i, frame := range frames {
+		for _, line := range strings.Split(strings.TrimRight(frame, "\n"), "\n") {
+			assert.Equal(t, want, text.StringWidthWithoutEscSequences(line), "frame %d, line %q", i, line)
+		}
+	}
+}
+
+func TestTableProgress_TheFooterCountsEveryRepoAcrossBothPasses(t *testing.T) {
+	p, _, buf := newTable(t, 120, 40, tableRepos(4))
+	// The footer reads "Syncing 2/4 [====>---] 50% 3s · 0 running · 2 queued".
+	footerLine := func(frame string) string {
+		for _, line := range strings.Split(frame, "\n") {
+			if strings.Contains(line, "Syncing") {
+				return line
+			}
+		}
+		return ""
+	}
+	counts := regexp.MustCompile(`Syncing (\d+)/4 \[[=>-]+\] (\d+)% \d+s · (\d+) running · (\d+) queued`)
+
+	within(t, func() {
+		p.Start(2)
+		frame := waitForFrame(t, buf, "Syncing 0/4", "0 running · 4 queued")
+		assert.Regexp(t, `\[>-+\] 0% `, footerLine(frame))
+
+		p.RepoStarted("repo-00", cloner.ProgressClone)
+		p.RepoStarted("repo-01", cloner.ProgressClone)
+		waitForFrame(t, buf, "2 running · 2 queued")
+		p.RepoDone(cloner.RepoResult{Name: "repo-00", Action: cloner.ActionCloned}, time.Second)
+		p.RepoDone(cloner.RepoResult{Name: "repo-01", Action: cloner.ActionCloned}, time.Second)
+		frame = waitForFrame(t, buf, "Syncing 2/4")
+		assert.Regexp(t, `\[=+>-+\] 50% `, footerLine(frame))
+		assert.Contains(t, footerLine(frame), "0 running · 2 queued")
+		p.Stop()
+
+		// The second pass starts from the first one's count, not from zero.
+		p.Start(2)
+		frame = waitForFrame(t, buf, "Syncing 2/4")
+		assert.Contains(t, footerLine(frame), "0 running · 2 queued")
+		p.RepoStarted("repo-02", cloner.ProgressClone)
+		waitForFrame(t, buf, "1 running · 1 queued")
+		p.RepoDone(cloner.RepoResult{Name: "repo-02", Action: cloner.ActionCloned}, time.Second)
+		p.RepoStarted("repo-03", cloner.ProgressClone)
+		p.RepoDone(cloner.RepoResult{Name: "repo-03", Action: cloner.ActionFailed}, time.Second)
+		frame = waitForFrame(t, buf, "Syncing 4/4")
+		line := footerLine(frame)
+		assert.Regexp(t, `\[=+\] 100% `, line)
+		assert.Contains(t, line, "0 running · 0 queued")
+		m := counts.FindStringSubmatch(line)
+		require.NotNil(t, m, line)
+		assert.Equal(t, []string{"4", "100", "0", "0"}, m[1:])
+		p.Stop()
 	})
 }
 
@@ -215,7 +327,7 @@ func TestTableProgress_ANarrowTerminalDropsColumnsInOrder(t *testing.T) {
 				within(t, func() {
 					p.Start(3)
 					if run == "live" {
-						out = waitForFrame(t, buf, "queued", "Syncing repos")
+						out = waitForFrame(t, buf, "queued", "Syncing")
 					}
 					p.Stop()
 					if run == "final" {
@@ -279,7 +391,7 @@ func TestTableProgress_ATerminalTooShortForTheTableShowsTheFooterAndTheBar(t *te
 	within(t, func() {
 		p.Start(10)
 		defer p.Stop()
-		frame := waitForFrame(t, buf, "… 10 queued", "Syncing repos")
+		frame := waitForFrame(t, buf, "… 10 queued", "Syncing 0/10")
 		assert.NotContains(t, frame, "repo-00")
 	})
 }
