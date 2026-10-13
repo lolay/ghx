@@ -23,8 +23,8 @@ const ptermRepaint = 100 * time.Millisecond
 const ptermShown = 3
 
 // ptermProgress draws pterm's default look: a progress bar for the overall
-// count under a spinner naming the repos in flight, and one SUCCESS, ERROR or
-// WARNING line above them for each repo that finishes.
+// count under a spinner naming the repos in flight, and one line above them for
+// each repo that finishes, led by a status symbol (see statusMark).
 //
 // pterm's MultiPrinter can't print a line above its area, so the bar and the
 // spinner each write into a buffer of their own, and a pterm AreaPrinter
@@ -187,17 +187,17 @@ func (p *ptermProgress) RepoDone(r cloner.RepoResult, elapsed time.Duration) {
 	_, _ = p.area.Start(p.contentLocked())
 }
 
-// printEntry writes the line for a finished repo in pterm's own look.
+// printEntry writes the line for a finished repo: a coloured status symbol,
+// then the name and what happened. Each printer is a copy of pterm's Success
+// printer with its own prefix, so pterm's package-level printers stay as they
+// are.
 func printEntry(w io.Writer, r cloner.RepoResult, elapsed time.Duration) {
-	action := string(r.Action)
-	switch {
-	case r.Action == cloner.ActionFailed:
-		pterm.Error.WithWriter(w).Println(fmt.Sprintf("%s %s %s", r.Name, action, formatSeconds(elapsed)))
-	case strings.HasPrefix(action, "skipped"):
-		pterm.Warning.WithWriter(w).Println(fmt.Sprintf("%s %s", r.Name, action))
-	default:
-		pterm.Success.WithWriter(w).Println(fmt.Sprintf("%s %s %s", r.Name, action, formatSeconds(elapsed)))
-	}
+	symbol, color := statusMark(r.Action)
+	printer := pterm.Success.
+		WithPrefix(pterm.Prefix{Text: symbol, Style: pterm.NewStyle(color)}).
+		WithMessageStyle(pterm.NewStyle()).
+		WithWriter(w)
+	printer.Println(r.Name + " " + actionText(r.Action, elapsed))
 }
 
 // flightTextLocked is the spinner's line. The caller holds p.mu.

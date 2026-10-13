@@ -3,6 +3,7 @@ package ui_test
 import (
 	"bytes"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -33,6 +34,13 @@ func (b *lockedBuffer) String() string {
 	defer b.mu.Unlock()
 	return b.buf.String()
 }
+
+// ansiCodes matches the colour and cursor escape sequences a renderer writes.
+var ansiCodes = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
+
+// stripANSI removes the escape sequences from s, so a test reads the text a
+// terminal would show.
+func stripANSI(s string) string { return ansiCodes.ReplaceAllString(s, "") }
 
 // renderers lists the GHX_PROGRESS names the smoke tests cover, and whether
 // each also prints a line for a repo that finishes (a one-line bar names only
