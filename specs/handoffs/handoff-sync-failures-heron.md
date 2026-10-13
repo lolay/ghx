@@ -4,19 +4,20 @@ Plan: `specs/handoffs/plan-sync-failures-heron.md` (personal-plan-orchestrate ru
 
 - **Branch:** `claude/ecstatic-archimedes-2dxtun` (assigned by the cloud session; task branch).
 - **Mode:** unattended, confirmed 2026-10-13 in session 8e4630de-74dd-5cb4-9a70-cd78dd6ff4a2 (harness=claude-code runner=cloud).
-- **Done:** wave 1 [exec] ghx m1 s1, 32a86d9..38bcf57, review PASS; wave 2 [deep] ghx m1 s2, aafde10..f4532de, review PASS; wave 3 [exec] ghx m1 s3-s5, c057053..0a7d343, review CONCERNS (three README defects).
-- **Next unit:** fix-up 3-fix [exec] ghx m1 s3-s5 (the three README findings in the wave-3 Review log line).
-- **Spend:** ~$11 of ~$10 expected, over expected (guard: $50); the kickoff parent was ~$4.52 of that.
+- **Done:** wave 1 [exec] ghx m1 s1, 32a86d9..38bcf57, review PASS; wave 2 [deep] ghx m1 s2, aafde10..f4532de, review PASS; wave 3 [exec] ghx m1 s3-s5, c057053..0a7d343, review CONCERNS (three README defects); fix-up 3-fix, c057053..0ed8ddd, review PASS. Plan complete.
+- **Next unit:** none. The plan is complete; waiting on Gary for the PR decision.
+- **Spend:** ~$12.48 of ~$10 expected, over expected (guard: $50); the kickoff parent was ~$4.52 of that.
 - **Resume:** paste the plan's Kickoff prompt into a new session on this branch.
 
 ## Pending question (verbatim)
 
-None.
+Open a PR for `claude/ecstatic-archimedes-2dxtun` into `main`? Before merge, a cleanup commit removes `specs/handoffs/plan-sync-failures-heron.md` and this handoff (nothing here needs promoting to `specs/`; `specs/testing.md` already carries the durable test notes).
 
 ## Review log verdicts
 
 - wave-1 (ghx m1 s1) 32a86d9..38bcf57: PASS.
 - wave-2 (ghx m1 s2) aafde10..f4532de: PASS.
+- wave-3-fix (ghx m1 s3-s5) c057053..0ed8ddd: PASS.
 - wave-3 (ghx m1 s3-s5) c057053..0a7d343: CONCERNS, three README defects (60-minute limit omitted, stale "Safe with local work" bullet, wrong git-lfs claim).
 
 ## Fix-ups, retries and checkpoints
@@ -52,3 +53,7 @@ None.
 - env: The installed Go 1.26.2 lacked the `covdata` tool (`go: no such tool "covdata"` under `make test`). The parent ran `go install cmd/covdata`. A new container needs this again.
 - env: `.go-version` pins 1.27.2 while the container has 1.26.2 (`make doctor` flags it). `go.mod`'s minimum is 1.26.2, so `make ci` passes on 1.26.2 with the two fixes above.
 - env: `make ci` passes at baseline `d984df8`.
+
+## Completion summary
+
+See the plan's `## Completion summary` (same content).
