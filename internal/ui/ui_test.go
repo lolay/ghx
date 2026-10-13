@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jedib0t/go-pretty/v6/text"
+	"github.com/pterm/pterm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -21,9 +22,14 @@ import (
 )
 
 // TestMain turns go-pretty's ANSI colors off so output compares as plain
-// text whatever terminal or CI runner the tests run under.
+// text whatever terminal or CI runner the tests run under. It also gives pterm
+// a terminal of 1000 by 1000 before any test starts a renderer: pterm's area
+// printer wraps its lines at the width of os.Stdout, which under `go test` is
+// a pipe or whatever terminal the developer has, and the table renderer's
+// tests set the width of their own terminal.
 func TestMain(m *testing.M) {
 	text.DisableColors()
+	pterm.SetForcedTerminalSize(1000, 1000)
 	os.Exit(m.Run())
 }
 
@@ -171,7 +177,7 @@ func TestNewProgress_NoRendererDrawsOnAFile(t *testing.T) {
 	t.Cleanup(func() { _ = file.Close() })
 	ui.SetupTerminal(file)
 
-	for _, name := range []string{"", "gopretty", "buildx", "indicatif", "pterm"} {
+	for _, name := range []string{"", "gopretty", "buildx", "indicatif", "pterm", "table"} {
 		t.Setenv("GHX_PROGRESS", name)
 		assert.Equal(t, cloner.NoProgress{}, ui.NewProgress(), "GHX_PROGRESS=%q on a file", name)
 	}
@@ -195,6 +201,30 @@ func TestNewProgress_RendererNames(t *testing.T) {
 			p := ui.NewProgress()
 			assert.NotEqual(t, cloner.NoProgress{}, p)
 			assert.IsType(t, ui.NewProgress(), p, "the same renderer each time")
+		})
+	}
+}
+
+func TestNewProgress_OnlyTheTableRendererListsRepos(t *testing.T) {
+	captureOut(t)
+	t.Cleanup(ui.ResetTerminal)
+	ui.ResetTerminal()
+	tests := []struct {
+		env   string
+		lists bool
+	}{
+		{"", false},
+		{"gopretty", false},
+		{"buildx", false},
+		{"indicatif", false},
+		{"pterm", false},
+		{"table", true},
+	}
+	for _, tt := range tests {
+		t.Run("GHX_PROGRESS="+tt.env, func(t *testing.T) {
+			t.Setenv("GHX_PROGRESS", tt.env)
+			_, ok := ui.NewProgress().(ui.RepoLister)
+			assert.Equal(t, tt.lists, ok)
 		})
 	}
 }

@@ -88,47 +88,101 @@ func ObfuscateToken(tok string) string {
 	return tok[:4] + "****" + tok[len(tok)-4:]
 }
 
+// repoColumn is one column of the "Repos to export" table.
+type repoColumn struct {
+	title string
+	cell  func(ghapi.RepoInfo) any
+	right bool
+}
+
+// Indexes into repoColumns, for the columns the live table drops to fit.
+const (
+	columnLanguage = 2
+	columnBranch   = 4
+	columnArchived = 5
+	columnPushed   = 6
+)
+
+// repoColumns lists the table's columns in the order they are shown.
+var repoColumns = []repoColumn{
+	{title: "Name", cell: func(r ghapi.RepoInfo) any { return text.FgCyan.Sprint(r.Name) }},
+	{title: "Visibility", cell: func(r ghapi.RepoInfo) any {
+		if r.Private {
+			return "private"
+		}
+		return "public"
+	}},
+	{title: "Language", cell: func(r ghapi.RepoInfo) any { return orDash(r.Language) }},
+	{title: "Size (MB)", right: true, cell: func(r ghapi.RepoInfo) any {
+		return fmt.Sprintf("%.1f", float64(r.SizeKB)/1024)
+	}},
+	{title: "Default Branch", cell: func(r ghapi.RepoInfo) any { return r.DefaultBranch }},
+	{title: "Archived", cell: func(r ghapi.RepoInfo) any {
+		if r.Archived {
+			return "yes"
+		}
+		return "no"
+	}},
+	{title: "Last Pushed", cell: func(r ghapi.RepoInfo) any { return orDash(r.PushedAt) }},
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
+}
+
+// repoTable builds the "Repos to export" table from the columns of
+// repoColumns that cols names, in that order. A non-nil status adds a Status
+// column after them, one cell per repo.
+func repoTable(cols []int, repos []ghapi.RepoInfo, status []string) table.Writer {
+	tw := table.NewWriter()
+	tw.SetTitle("Repos to export")
+	header := make(table.Row, 0, len(cols)+1)
+	var configs []table.ColumnConfig
+	for n, c := range cols {
+		header = append(header, repoColumns[c].title)
+		if repoColumns[c].right {
+			configs = append(configs, table.ColumnConfig{Number: n + 1, Align: text.AlignRight})
+		}
+	}
+	if status != nil {
+		header = append(header, "Status")
+		// A floor keeps the column from jumping as "queued" gives way to a
+		// spinner and a time.
+		configs = append(configs, table.ColumnConfig{Number: len(cols) + 1, WidthMin: statusWidth})
+	}
+	tw.AppendHeader(header)
+	for i, r := range repos {
+		row := make(table.Row, 0, len(cols)+1)
+		for _, c := range cols {
+			row = append(row, repoColumns[c].cell(r))
+		}
+		if status != nil {
+			row = append(row, status[i])
+		}
+		tw.AppendRow(row)
+	}
+	tw.SetColumnConfigs(configs)
+	tw.SetStyle(table.StyleLight)
+	return tw
+}
+
+// allColumns is every column of the table, in order.
+func allColumns() []int {
+	cols := make([]int, len(repoColumns))
+	for i := range cols {
+		cols[i] = i
+	}
+	return cols
+}
+
 // PrintRepoTable renders the "Repos to export" table shown before
 // cloning begins.
 func PrintRepoTable(repos []ghapi.RepoInfo) {
-	tw := table.NewWriter()
+	tw := repoTable(allColumns(), repos, nil)
 	tw.SetOutputMirror(Out)
-	tw.SetTitle("Repos to export")
-	tw.AppendHeader(table.Row{
-		"Name", "Visibility", "Language", "Size (MB)",
-		"Default Branch", "Archived", "Last Pushed",
-	})
-	for _, r := range repos {
-		visibility := "public"
-		if r.Private {
-			visibility = "private"
-		}
-		language := r.Language
-		if language == "" {
-			language = "-"
-		}
-		pushed := r.PushedAt
-		if pushed == "" {
-			pushed = "-"
-		}
-		archived := "no"
-		if r.Archived {
-			archived = "yes"
-		}
-		tw.AppendRow(table.Row{
-			text.FgCyan.Sprint(r.Name),
-			visibility,
-			language,
-			fmt.Sprintf("%.1f", float64(r.SizeKB)/1024),
-			r.DefaultBranch,
-			archived,
-			pushed,
-		})
-	}
-	tw.SetColumnConfigs([]table.ColumnConfig{
-		{Number: 4, Align: text.AlignRight},
-	})
-	tw.SetStyle(table.StyleLight)
 
 	Println()
 	tw.Render()

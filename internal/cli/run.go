@@ -164,7 +164,21 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 		previousRepos = m.Repos
 	}
 
-	ui.PrintRepoTable(repos)
+	// A live renderer draws the repo table itself, with a Status column that
+	// follows each repo, so it gets the repos in place of the static table. A
+	// dry run, a pipe and a file print the static table: there is no sync to
+	// follow, or no terminal to follow it on.
+	progress := ui.NewProgress()
+	lister, drawsTable := progress.(ui.RepoLister)
+	if drawsTable && !dryRun {
+		lister.SetRepos(repos)
+		// The table is printed once the passes are over, here also when a
+		// cancel or an error ends the run early: PrintTable does nothing the
+		// second time.
+		defer lister.PrintTable()
+	} else {
+		ui.PrintRepoTable(repos)
+	}
 
 	var removalSummary cloner.SyncSummary
 	if len(previousRepos) > 0 {
@@ -212,7 +226,7 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 		GitAuthor:   gitAuthor,
 		GitEmail:    gitEmail,
 		GitPath:     gitPath,
-		Progress:    ui.NewProgress(),
+		Progress:    progress,
 	}
 
 	// Clones made by ghx before the token moved to git's environment hold it
@@ -250,6 +264,12 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 
 	summary.Extend(removalSummary)
 	summary.Results = append(summary.Results, skippedLargeResults...)
+
+	// Before the summary, and before the manifest is written: the table shows
+	// the sync, and the summary that follows counts it.
+	if drawsTable && !dryRun {
+		lister.PrintTable()
+	}
 
 	if err := manifest.Write(outputDir, org, allRepos); err != nil {
 		return fmt.Errorf("writing manifest: %w", err)

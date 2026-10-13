@@ -52,6 +52,7 @@ var renderers = []struct {
 	{"buildx", true},
 	{"indicatif", false},
 	{"pterm", true},
+	{"table", true},
 }
 
 // useRenderer makes ui.NewProgress return the named renderer, drawing into
