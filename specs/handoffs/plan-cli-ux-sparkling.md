@@ -1,9 +1,9 @@
 ```
 --- KICKOFF: begin orchestration at [deep] ---
 
-  Status: 0/1 groups done | last review: — | current: ghx s1-s5 [exec] | BLOCKED at gate mode | updated 2026-10-13
+  Status: 0/1 groups done | last review: — | current: ghx s1-s5 [exec] | updated 2026-10-13
 
-  mode: pending | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch claude/magical-ride-7h4rhi) | guard 3x min $50 | fixups 2
+  mode: unattended | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch claude/magical-ride-7h4rhi) | guard 3x min $50 | fixups 2 | confirmed 2026-10-13 session bd9c01f5-fe1c-5a92-ab0c-95720d491a10: unattended
 
   review: every-wave (log-only)
 
@@ -14,6 +14,7 @@
   Prompt to paste into the next chat:
     In lolay/ghx, read specs/handoffs/plan-cli-ux-sparkling.md. The plan is already tagged.
     On branch claude/magical-ride-7h4rhi (task branch): subagents commit each finished step.
+    Run in unattended mode.
     Run the personal-plan-orchestrate skill from the top: walk to
     each tier boundary, dispatch subagents per the skill's
     procedure, and pause only where the recorded mode stops. Do not

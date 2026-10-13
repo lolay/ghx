@@ -3,7 +3,7 @@
 - **Branch:** `claude/magical-ride-7h4rhi` in `lolay/ghx` (assigned by the cloud
   session; cut from `main` at d984df8).
 - **Plan:** `specs/handoffs/plan-cli-ux-sparkling.md`.
-- **Mode:** pending (proposed unattended; runner=cloud).
+- **Mode:** unattended (confirmed 2026-10-13; runner=cloud).
 - **Done:** nothing yet. Kickoff written.
 - **Spend:** ~$0 of ~$4.6 expected.
 - **Next unit:** wave 1 [exec], group `ghx s1-s5`, Sonnet high worker + Opus high reviewer.
@@ -11,8 +11,7 @@
 
 ## Pending question
 
-The kickoff question (mode: unattended or gated), posted in the chat that wrote
-this file.
+None. Kickoff answered "unattended"; wave 1 launching.
 
 ## Decisions so far
 
