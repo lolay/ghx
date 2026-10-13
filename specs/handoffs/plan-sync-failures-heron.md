@@ -1,7 +1,7 @@
 ```
 --- KICKOFF: begin orchestration at [deep] ---
 
-  Status: 2/3 groups done | last review: wave-2 PASS | current: ghx m1 s3-s5 [exec] | updated 2026-10-13 | passed unattended: gate 2 before wave 2
+  Status: 3/3 groups done | last review: wave-3 CONCERNS | current: 3-fix ghx m1 s3-s5 [exec] | updated 2026-10-13 | over expected: ~$11 of ~$10
 
   mode: unattended | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch claude/ecstatic-archimedes-2dxtun) | guard 3x min $50 | fixups 2 | confirmed 2026-10-13 session 8e4630de-74dd-5cb4-9a70-cd78dd6ff4a2: unattended
 
@@ -33,6 +33,7 @@
 | 1 [exec] ghx m1 s1 | ~2.0M | ~$0.89 |
 | 2 [deep] ghx m1 s2 | ~6.1M | ~$3.2 |
 | 3 [exec] ghx m1 s3-s5 | ~2.6M | ~$1.1 |
+| 3-fix [exec] ghx m1 s3-s5 | — | — |
 | orchestrator | ~5.7M | ~$5.0 |
 | **Total** | ~16M | ~$10 |
 
@@ -147,7 +148,7 @@ Tests in `cloner_test.go`, table-driven where shapes repeat, `gittest` bare repo
 Acceptance: `make ci` passes; every case above is covered by a test; no path runs `reset --hard`, `switch` or `branch -d` unless the guards above hold.
 
 --- WAVE 3 [exec] ---
-#### s3 - [exec] Wikis through the same sync and honest wiki errors
+#### s3 - [exec] Wikis through the same sync and honest wiki errors (done)
 
 Files: `internal/cloner/cloner.go` (`processWiki`), `internal/cloner/cloner_test.go`.
 
@@ -157,7 +158,7 @@ Files: `internal/cloner/cloner.go` (`processWiki`), `internal/cloner/cloner_test
 
 Acceptance: `make ci` passes.
 
-#### s4 - [exec] Summary glyphs and sections
+#### s4 - [exec] Summary glyphs and sections (done)
 
 Files: `internal/ui/ui.go`, `internal/ui/ui_test.go`.
 
@@ -174,7 +175,7 @@ Files: `internal/ui/ui.go`, `internal/ui/ui_test.go`.
 
 Acceptance: `make ci` passes.
 
-#### s5 - [exec] README and CHANGELOG
+#### s5 - [exec] README and CHANGELOG (done)
 
 Files: `README.md` ("How it works"), `CHANGELOG.md` (`## [Unreleased]`).
 
@@ -196,6 +197,7 @@ One commit per step on `claude/ecstatic-archimedes-2dxtun`, subject `m1.sN <impe
 
 review wave-1 (ghx m1 s1) 32a86d9..38bcf57: PASS - all six probes, pickBranch, network args/timeout, transient retry and Message() trimming match the spec; make ci green, cloner coverage 95.6%; accepted deviations: operationInProgress takes ctx, upstreamTrack returns the full ref, new withTimeout seam, credential_test real-clone assertion now checks the trimmed fatal line; optional: retry matches markers only, with no explicit not-found/auth exclusion - 2026-10-13
 review wave-2 (ghx m1 s2) aafde10..f4532de: PASS - decision table in spec order, every guard holds, every listed case tested (12-case SyncsAnExistingClone table asserts no tree-moving command in fetched-only cases); make ci green, cloner 94.5% / ui 98.8%, race x2 clean; accepted deviations: reset --keep instead of --hard (refuses to clobber an untracked file the new tip adds; backup ref removed on refusal), switch -c instead of -C for unborn HEAD, full refs/remotes/origin/<b> refs, update-ref with empty old value so a backup is never overwritten, currentBranch probed once before fetch, --untracked-files=no lives in git.go so wikis follow it; follow-ups: a clone kept after a failed checkout reads as local changes every run, a ctx cancelled between fetch and remoteBranches can report skipped (empty) without deleting anything; passed unattended: gate 2 - 2026-10-13
+review wave-3 (ghx m1 s3-s5) c057053..0a7d343: CONCERNS - s3 and s4 code and tests correct, make ci green (cloner 94.1%, ui 99.0%); three s5 README defects: (1) "How it works" says a transfer is aborted only when it stalls, but git.go:26 networkTimeout also caps every clone and fetch at 60 minutes (CHANGELOG already says so), so mention the limit or drop "only"; (2) README.md:16-17 feature bullet "Safe with local work... A repository with uncommitted changes is skipped, not pulled" contradicts the shipped fetch-first behavior (now fetched and listed as fetched only); (3) the "Not backed up" note claims a machine without git-lfs gets the repo as fetched only, but with no filter.lfs driver defined git writes pointer files and the clone reports cloned; cloneNew returns fetched only only on "Clone succeeded, but checkout failed" (e.g. filter.lfs.required=true without the binary), so state only that LFS content and submodules aren't backed up; accepted deviations: an existing wiki that comes back skipped (empty) stays quiet, failed wiki rows also get the glyph in counts - 2026-10-13
 
 ## Token log
 
@@ -213,3 +215,6 @@ tokens review-wave-1 ghx-m1-s1 (claude-opus-5-5): input ~20 / cache read ~220k /
 tokens orchestrator-wave-1 ghx-m1-s1 (claude-opus-5-5): input ~12 / cache read ~790k / cache write ~0 5m + ~20k 1h / output ~7.9k | ~$0.47 API-equiv
 tokens wave-2 ghx-m1-s2 (claude-opus-5-5): input ~68 / cache read ~4.5M / cache write ~180k / output ~34k | ~$2.49 API-equiv (output est.) session 8e4630de-74dd-5cb4-9a70-cd78dd6ff4a2
 tokens review-wave-2 ghx-m1-s2 (claude-opus-5-5): input ~18 / cache read ~290k / cache write ~61k / output ~9k | ~$0.54 API-equiv (output est.) session 8e4630de-74dd-5cb4-9a70-cd78dd6ff4a2
+tokens orchestrator-wave-2 ghx-m1-s2 (claude-opus-5-5): input ~12 / cache read ~890k / cache write ~0 5m + ~23k 1h / output ~8.3k | ~$0.53 API-equiv
+tokens wave-3 ghx-m1-s3-s5 (claude-sonnet-5-5): input ~54 / cache read ~2.7M / cache write ~85k / output ~27k | ~$1.03 API-equiv (output est.) session 8e4630de-74dd-5cb4-9a70-cd78dd6ff4a2
+tokens review-wave-3 ghx-m1-s3-s5 (claude-opus-5-5): input ~28 / cache read ~430k / cache write ~47k / output ~14k | ~$0.60 API-equiv (output est.) session 8e4630de-74dd-5cb4-9a70-cd78dd6ff4a2
