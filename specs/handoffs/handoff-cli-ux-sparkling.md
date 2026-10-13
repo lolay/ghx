@@ -2,17 +2,16 @@
 
 - **Branch:** `claude/magical-ride-7h4rhi` in `lolay/ghx` (assigned by the cloud
   session; cut from `main` at d984df8).
-- **Plan:** `specs/handoffs/plan-cli-ux-sparkling.md` (re-opened for wave 2).
+- **Plan:** `specs/handoffs/plan-cli-ux-sparkling.md` (complete after wave 2).
 - **Mode:** unattended (confirmed 2026-10-13; runner=cloud).
 - **Done:** wave 1 [exec] `ghx s1-s5`, 56d21d8..33a21fd, review PASS. No fix-ups,
   retries or checkpoints.
-- **Spend:** ~$8.0 of ~$4.6 expected (Token log in the plan).
-- **Next unit:** wave 2 [exec] `ghx s6-s7`: pterm status symbols, and a new
-  `GHX_PROGRESS=table` renderer that redraws the repo table in place.
+  Wave 2 [exec] `ghx s6-s7` (re-plan), 7ee0a3c..0592684, review PASS.
+- **Spend:** ~$12.8 of ~$4.6 expected (Token log in the plan).
 - **Later:** Gary picks a renderer; a follow-up keeps it, deletes the rest and
   `GHX_PROGRESS`, tidies `go.mod`, updates `specs/`, and removes or promotes this
   plan and handoff before the branch merges.
-- **Resume:** paste the plan's Kickoff prompt into a new session on this branch.
+- **Resume:** none needed for this plan; start the follow-up from this handoff.
 
 ## How to try it
 
@@ -20,14 +19,15 @@
     GHX_PROGRESS=gopretty  ./bin/ghx <org> <dir>   # original bar, also the default
     GHX_PROGRESS=buildx    ./bin/ghx <org> <dir>
     GHX_PROGRESS=indicatif ./bin/ghx <org> <dir>
-    GHX_PROGRESS=pterm     ./bin/ghx <org> <dir>
+    GHX_PROGRESS=pterm     ./bin/ghx <org> <dir>   # now with ✓ / ⚠ / ✗
+    GHX_PROGRESS=table     ./bin/ghx <org> <dir>   # live repo table with a Status column
     ./bin/ghx --help
 
 Run twice against the same dir to see pulls. Piped output gets no progress.
 
 ## Pending question
 
-None. Gary asked for wave 2 ("Yes, try it as a new variant table and keep pterm").
+Which renderer to keep (pterm, table, or other), and whether to open a PR now or after the clean-up.
 
 ## Decisions so far
 
@@ -39,6 +39,9 @@ None. Gary asked for wave 2 ("Yes, try it as a new variant table and keep pterm"
 - fang's `man` and `completion` are kept; an org named `help`, `completion` or
   `man` must follow `--` (README and CHANGELOG say so).
 - Under NO_COLOR, `execute` strips ANSI itself: fang still emits bold and reset.
+- Table renderer: `ui.RepoLister` (SetRepos, PrintTable); run.go prints the final
+  table once after the last pass and via defer; Stop erases the live area; a row
+  running at Stop shows `interrupted`; the bar counts per pass.
 - pterm renderer uses an AreaPrinter over private buffers, with the cursor target
   pointed at `Out` only between Start and Stop.
 
@@ -57,7 +60,7 @@ None. Gary asked for wave 2 ("Yes, try it as a new variant table and keep pterm"
 
 - Re-plan after wave 1: wave 2 (s6, s7) added at Gary's request; its Cost table row is unplanned (expected —).
 
-Wave 1 follow-ups: Follow-ups: `make vuln` not run on fang/mpb/pterm; no real-org or Windows
+Wave 1 follow-ups (testing.md items done in s7): `make vuln` not run on fang/mpb/pterm; no real-org or Windows
 console run; `specs/testing.md` lacks the renderer smoke tests and has a stale cli
 coverage figure (92% vs 94.1%); `waitFor` asserts off the test goroutine; pterm
 never unregisters stopped bars (small leak, pterm renderer only).
