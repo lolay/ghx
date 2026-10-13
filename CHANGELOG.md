@@ -8,6 +8,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Changed
+- An existing clone that had nothing new is counted as `up to date`, so
+  `pulled` counts only repos that took in new commits.
+- A clone fetched only for local changes names the first three changed files
+  (`local changes: app.py, data.csv (+2 more)`).
 - Clone and pull get a 60-minute limit (other git commands keep 5 minutes) and
   give up on a connection that stays under 1000 bytes a second for 60 seconds,
   so a stalled transfer fails in a minute instead of holding a worker.

@@ -240,7 +240,10 @@ func syncExisting(ctx context.Context, git gitRunner, dest string, repo ghapi.Re
 	}
 
 	if cur == b {
-		return result(updateTarget(ctx, git, dest, b, before[originRef(b)], dirty))
+		if dirty {
+			return result(ActionFetchedOnly, describeChanges(status.Stdout))
+		}
+		return result(updateTarget(ctx, git, dest, b, before[originRef(b)]))
 	}
 	return result(updateOther(ctx, git, dest, cur, b, dirty))
 }
@@ -268,14 +271,11 @@ func tipsBeforeFetch(ctx context.Context, git gitRunner, dest, defaultBranch, cu
 	return tips
 }
 
-// updateTarget moves HEAD, which is on b, to origin's b when nothing local can
-// be lost. oldTip is origin/b before the fetch, "" when it wasn't there; the
+// updateTarget moves HEAD, which is on b with no tracked changes, to origin's
+// b when nothing local can be lost. oldTip is origin/b before the fetch, "" when it wasn't there; the
 // reflog of origin/b covers force-pushes an earlier fetch already saw.
-func updateTarget(ctx context.Context, git gitRunner, dest, b, oldTip string, dirty bool) (Action, string) {
+func updateTarget(ctx context.Context, git gitRunner, dest, b, oldTip string) (Action, string) {
 	target := originRef(b)
-	if dirty {
-		return ActionFetchedOnly, "local changes"
-	}
 	head, born := git.revParse(ctx, dest, "HEAD")
 	if !born {
 		// An empty clone that has since gained commits. -c, not -C: it fails
@@ -286,6 +286,9 @@ func updateTarget(ctx context.Context, git gitRunner, dest, b, oldTip string, di
 		return ActionPulled, ""
 	}
 	if git.isAncestor(ctx, dest, head, target) {
+		if tip, _ := git.revParse(ctx, dest, target); tip == head {
+			return ActionUpToDate, ""
+		}
 		// git refuses, and changes nothing, when the merge would overwrite an
 		// untracked file or the index is locked.
 		if r := git.run(ctx, dest, "merge", "--ff-only", target); !r.Success() {
@@ -436,7 +439,7 @@ func syncWiki(ctx context.Context, git gitRunner, wikiDest string, repo ghapi.Re
 	result := syncExisting(ctx, git, wikiDest, wiki, opts)
 	result.Name = repo.Name + ".wiki"
 	switch result.Action {
-	case ActionPulled, ActionSkippedEmpty:
+	case ActionPulled, ActionUpToDate, ActionSkippedEmpty:
 		return nil
 	case ActionFailed:
 		result.Action = ActionFailedWiki

@@ -87,6 +87,8 @@ func TestPrintSummary_CountsActionsAndListsFailedAndFetchedOnly(t *testing.T) {
 		{Name: "a", Action: cloner.ActionCloned},
 		{Name: "b", Action: cloner.ActionCloned},
 		{Name: "c", Action: cloner.ActionPulled},
+		{Name: "g", Action: cloner.ActionUpToDate},
+		{Name: "h", Action: cloner.ActionUpToDate},
 		{Name: "d", Action: cloner.ActionFailed, Detail: "exit status 128"},
 		{Name: "e", Action: cloner.ActionFetchedOnly, Detail: "local changes"},
 		{Name: "f", Action: cloner.ActionFailed, Detail: "timeout"},
@@ -100,6 +102,7 @@ func TestPrintSummary_CountsActionsAndListsFailedAndFetchedOnly(t *testing.T) {
 	}{
 		{cloner.ActionCloned, "2"},
 		{cloner.ActionPulled, "1"},
+		{cloner.ActionUpToDate, "2"},
 		{cloner.ActionFailed, "2"},
 		{cloner.ActionFetchedOnly, "1"},
 	} {

@@ -99,6 +99,26 @@ func TestCheckGitVersion(t *testing.T) {
 	}
 }
 
+func TestDescribeChanges(t *testing.T) {
+	tests := []struct {
+		name      string
+		porcelain string
+		want      string
+	}{
+		{"one file", " M README.md\n", "local changes: README.md"},
+		{"CRLF line ends", " M a.go\r\nM  b.go\r\n", "local changes: a.go, b.go"},
+		{"a rename names its new path", "R  old.go -> new.go\n", "local changes: new.go"},
+		{"three are all named", " M a\n M b\n M c\n", "local changes: a, b, c"},
+		{"more than three are counted", " M a\n M b\n M c\n D d\n M e\n", "local changes: a, b, c (+2 more)"},
+		{"no parsable line", "\n", "local changes"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, cloner.DescribeChanges(tt.porcelain))
+		})
+	}
+}
+
 func TestHasChanges(t *testing.T) {
 	tests := []struct {
 		name      string
