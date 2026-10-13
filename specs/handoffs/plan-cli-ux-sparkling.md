@@ -1,7 +1,7 @@
 ```
---- KICKOFF: plan complete ---
+--- KICKOFF: begin orchestration at [deep] ---
 
-  Status: 1/1 groups done | completed 2026-10-13 | over expected: ~$8.0 of ~$4.6
+  Status: 1/2 groups done | last review: wave-1 PASS | current: ghx s6-s7 [exec] | updated 2026-10-13 | over expected: ~$8.0 of ~$4.6
 
   mode: unattended | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch claude/magical-ride-7h4rhi) | guard 3x min $50 | fixups 2 | confirmed 2026-10-13 session bd9c01f5-fe1c-5a92-ab0c-95720d491a10: unattended
 
@@ -32,6 +32,7 @@
 | wave | expected tokens | expected $ | actual tokens | actual $ |
 |---|---|---|---|---|
 | 1 [exec] ghx s1-s5 | ~4.6M | ~$1.8 | ~11M (output est.) | ~$4.2 (output est.) |
+| 2 [exec] ghx s6-s7 | — | — | — | — |
 | orchestrator | ~3.1M | ~$2.8 | ~7.9M | ~$3.8 |
 | **Total** | ~7.7M | ~$4.6 | ~19M | ~$8.0 |
 
@@ -177,6 +178,79 @@ Acceptance: as s3 (smoke test, `make ci`, scope). The artifact says how Gary
 tries each renderer: `make build`, then `GHX_PROGRESS=<name> ./bin/ghx <org>
 <dir>` against a real org with a few dozen repos, plus `./bin/ghx --help`.
 
+--- WAVE 2 [exec] ---
+
+Re-plan after wave 1 (2026-10-13): Gary tried the renderers, likes pterm, and
+asked for status symbols in it plus a new variant that updates the repo table in
+place. Keep every existing renderer.
+
+#### s6 - [exec] Status symbols in the pterm renderer
+
+In `internal/ui/progress_pterm.go`, replace pterm's `SUCCESS` / `WARNING` /
+`ERROR` prefixes on the finished-repo lines with symbols: green `✓` for a success
+(cloned, pulled, moved), yellow `⚠` for any `skipped (...)` action, red `✗` for
+`failed`. Build them as the renderer's own `pterm.PrefixPrinter` values (prefix
+text and style set on a copy), never by assigning `pterm.Success`,
+`pterm.Warning` or `pterm.Error`, so pterm's globals stay untouched. Keep the
+line text as it is (`name action 1.2s`, skipped lines without a time). Put the
+symbol-and-colour choice for an action in one small helper in `internal/ui` that
+s7 reuses.
+
+Acceptance: `make ci` passes; the pterm smoke test (or a new table-driven test of
+the helper) asserts each class of action gets its symbol; no assignment to a pterm
+package-level printer anywhere in the repo. No change outside `internal/ui`.
+
+#### s7 - [exec] Add the live repo-table renderer
+
+`internal/ui/progress_table.go`, selected by `GHX_PROGRESS=table`, built on pterm's
+`AreaPrinter` like s5. It redraws the "Repos to export" table in place with a
+Status column, and the overall pterm bar under the table.
+
+- **Owning the table.** Add an optional interface in `internal/ui`, e.g.
+  `RepoLister interface{ SetRepos([]ghapi.RepoInfo) }`. In `internal/cli/run.go`,
+  create the progress once (`progress := ui.NewProgress()`) before the table is
+  printed; when the run is not a dry run and `progress` implements the
+  interface, call `SetRepos(repos)` instead of `ui.PrintRepoTable(repos)`.
+  Otherwise print the table as today. A dry run, a pipe or a file (NoProgress)
+  behaves exactly as now. Pass the same `progress` to `baseOpts.Progress`.
+- **Rows and status.** Same columns, order and formatting as `PrintRepoTable`
+  (reuse its row-building code: factor it into a helper rather than copying),
+  plus a Status column: faint `queued`; a spinner frame plus `cloning` or
+  `pulling` and the running time while in flight; then the s6 symbol with the
+  action and time (`✓ pulled 1.2s`, `⚠ skipped (local changes)`, `✗ failed
+  0.4s`). Repos never started keep `queued`.
+- **Fitting the terminal.** Read the terminal size each repaint through a field
+  the tests can set (default: pterm's or `golang.org/x/term`'s size of `Out`,
+  falling back to 80x24). When the whole table plus the bar fits in height - 2
+  lines, draw it all. Otherwise draw a window: the header, every in-flight row,
+  then the most recent finished rows to fill the space, and a footer line like
+  `… 41 done, 18 queued`. When the table is wider than the terminal, drop
+  columns in this order until it fits: Last Pushed, Default Branch, Archived,
+  Language. Never let a line wrap.
+- **Two passes.** `run.go` calls `CloneRepos` for active repos, prints "Cloning N
+  archived repo(s)…", then calls it again for archived ones with the same
+  Progress. Keep every repo's row across both passes. Each `Stop` ends the live
+  area. The full table (all rows given to `SetRepos`, current statuses, no
+  window) prints once as ordinary output, at the first `Stop` after which no
+  row is still `queued`; if a run ends with rows still queued (a cancel, or
+  archived repos skipped under `--delete`), print it at that `Stop` anyway when
+  the context is done, else let `run.go` print it: pick the simplest rule that
+  prints it exactly once per run and document it. The sync summary that
+  follows stays as it is.
+- **Safety.** Same concurrency rules as the other renderers; `Stop` leaves the
+  terminal on a fresh line, also after a cancel; pterm globals untouched (the
+  cursor target only between Start and Stop, as s5 does).
+
+Acceptance: `make ci` passes; tests drive the renderer from several goroutines
+into a buffer with a fixed terminal size and assert (a) every repo name and its
+final status appear in the final table, (b) a tall list shows the window footer
+and not every row in the live frame, (c) a narrow width drops Last Pushed first;
+a `cli` test shows a dry run and a non-terminal run still print the static table.
+`specs/testing.md` gets a line for the renderer tests (the s3-s5 smoke tests and
+this one) and its `internal/cli` coverage figure is brought up to date. The
+artifact says how to try it: `GHX_PROGRESS=table ./bin/ghx <org> <dir>` in a tall
+and in a short terminal window.
+
 ## After the run (not part of the orchestrated waves)
 
 Gary tries the renderers and picks one. A follow-up then keeps the winner as the
@@ -203,7 +277,7 @@ tokens wave-1 ghx-s1-s2-s3-s4-s5 (claude-sonnet-5-5): input ~130 / cache read ~9
 tokens review-wave-1 ghx-s1-s2-s3-s4-s5 (claude-opus-5-5): input ~40 / cache read ~960k / cache write ~70k / output ~21k | ~$0.97 API-equiv (output est.) session bd9c01f5-fe1c-5a92-ab0c-95720d491a10
 tokens orchestrator-wave-1 ghx-s1-s2-s3-s4-s5 (claude-opus-5-5): input ~12 / cache read ~1.1M / cache write ~0 5m + ~23k 1h / output ~2k | ~$0.44 API-equiv
 
-## Completion summary
+## Completion summary (wave 1)
 
 - Wave 1 [exec] `ghx s1-s5`: 5 commits, 56d21d8..33a21fd, review PASS on the first pass. No fix-ups, retries or checkpoints.
 - Cost: ~$8.0 API-equiv against ~$4.6 expected. The kickoff (planning, research, plan-mode round trips) cost $3.4 of it; the worker's 9.8M cache reads ran about 2x the anchor.

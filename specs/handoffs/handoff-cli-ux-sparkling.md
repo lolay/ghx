@@ -2,15 +2,17 @@
 
 - **Branch:** `claude/magical-ride-7h4rhi` in `lolay/ghx` (assigned by the cloud
   session; cut from `main` at d984df8).
-- **Plan:** `specs/handoffs/plan-cli-ux-sparkling.md` (complete).
+- **Plan:** `specs/handoffs/plan-cli-ux-sparkling.md` (re-opened for wave 2).
 - **Mode:** unattended (confirmed 2026-10-13; runner=cloud).
 - **Done:** wave 1 [exec] `ghx s1-s5`, 56d21d8..33a21fd, review PASS. No fix-ups,
   retries or checkpoints.
 - **Spend:** ~$8.0 of ~$4.6 expected (Token log in the plan).
-- **Next:** Gary tries the renderers and picks one; then a follow-up keeps the
-  winner, deletes the rest and `GHX_PROGRESS`, tidies `go.mod`, updates `specs/`,
-  and removes or promotes this plan and handoff before the branch merges.
-- **Resume:** none needed for this plan; start the follow-up from this handoff.
+- **Next unit:** wave 2 [exec] `ghx s6-s7`: pterm status symbols, and a new
+  `GHX_PROGRESS=table` renderer that redraws the repo table in place.
+- **Later:** Gary picks a renderer; a follow-up keeps it, deletes the rest and
+  `GHX_PROGRESS`, tidies `go.mod`, updates `specs/`, and removes or promotes this
+  plan and handoff before the branch merges.
+- **Resume:** paste the plan's Kickoff prompt into a new session on this branch.
 
 ## How to try it
 
@@ -25,7 +27,7 @@ Run twice against the same dir to see pulls. Piped output gets no progress.
 
 ## Pending question
 
-Which renderer to keep, and whether to open a PR now or after the clean-up.
+None. Gary asked for wave 2 ("Yes, try it as a new variant table and keep pterm").
 
 ## Decisions so far
 
@@ -53,7 +55,9 @@ Which renderer to keep, and whether to open a PR now or after the clean-up.
 
 ## Deviations from plan
 
-None. Follow-ups: `make vuln` not run on fang/mpb/pterm; no real-org or Windows
+- Re-plan after wave 1: wave 2 (s6, s7) added at Gary's request; its Cost table row is unplanned (expected —).
+
+Wave 1 follow-ups: Follow-ups: `make vuln` not run on fang/mpb/pterm; no real-org or Windows
 console run; `specs/testing.md` lacks the renderer smoke tests and has a stale cli
 coverage figure (92% vs 94.1%); `waitFor` asserts off the test goroutine; pterm
 never unregisters stopped bars (small leak, pterm renderer only).
