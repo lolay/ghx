@@ -1,7 +1,7 @@
 ```
---- KICKOFF: begin orchestration at [deep] ---
+--- KICKOFF: plan complete ---
 
-  Status: 0/1 groups done | last review: — | current: ghx s1-s5 [exec] | updated 2026-10-13
+  Status: 1/1 groups done | completed 2026-10-13 | over expected: ~$8.0 of ~$4.6
 
   mode: unattended | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch claude/magical-ride-7h4rhi) | guard 3x min $50 | fixups 2 | confirmed 2026-10-13 session bd9c01f5-fe1c-5a92-ab0c-95720d491a10: unattended
 
@@ -29,11 +29,11 @@
 
 **Cost (API-equiv, Claude Code models)**
 
-| wave | expected tokens | expected $ |
-|---|---|---|
-| 1 [exec] ghx s1-s5 | ~4.6M | ~$1.8 |
-| orchestrator | ~3.1M | ~$2.8 |
-| **Total** | ~7.7M | ~$4.6 |
+| wave | expected tokens | expected $ | actual tokens | actual $ |
+|---|---|---|---|---|
+| 1 [exec] ghx s1-s5 | ~4.6M | ~$1.8 | ~11M (output est.) | ~$4.2 (output est.) |
+| orchestrator | ~3.1M | ~$2.8 | ~7.9M | ~$3.8 |
+| **Total** | ~7.7M | ~$4.6 | ~19M | ~$8.0 |
 
 Expected values are estimates, good to about 2-3× per wave.
 
@@ -107,7 +107,7 @@ testify, table-driven, doc comments on exported identifiers, three import blocks
 
 --- WAVE 1 [exec] ---
 
-#### s1 - [exec] Put the go-pretty tracker behind a Progress interface
+#### s1 - [exec] Put the go-pretty tracker behind a Progress interface (done)
 
 Pure refactor per "Design": add `cloner.Progress` and `cloner.NoProgress`, move
 the go-pretty tracker from `internal/cloner/cloner.go` into
@@ -121,7 +121,7 @@ when the context is cancelled; `ui` tests cover `NewProgress` returning
 `NoProgress` for a non-terminal; the progress rows of `specs/testing.md` describe
 the new seam; `internal/cloner` no longer imports go-pretty.
 
-#### s2 - [exec] Wrap the root command with fang
+#### s2 - [exec] Wrap the root command with fang (done)
 
 In `internal/cli/root.go` `Execute`, run the command through
 `fang.Execute(ctx, cmd, ...)` with `fang.WithVersion(buildinfo.String())`, keeping
@@ -140,7 +140,7 @@ example appear, and one asserts an unknown flag returns a non-zero code; with
 fang allows, else verify by hand and say so). The artifact holds the plain-text
 `--help` output and one error output.
 
-#### s3 - [exec] Add the buildx-style renderer
+#### s3 - [exec] Add the buildx-style renderer (done)
 
 `internal/ui/progress_buildx.go`, selected by `GHX_PROGRESS=buildx`, on
 `github.com/vbauerster/mpb/v8`: an overall bar at the bottom (`Syncing repos`,
@@ -155,7 +155,7 @@ Acceptance: `make ci` passes; a smoke test drives the renderer with
 asserts it returns without deadlock and the buffer names every repo. No change
 outside `internal/ui`, `go.mod` and `go.sum`.
 
-#### s4 - [exec] Add the indicatif-style renderer
+#### s4 - [exec] Add the indicatif-style renderer (done)
 
 `internal/ui/progress_indicatif.go`, selected by `GHX_PROGRESS=indicatif`, on
 mpb: a single line redrawn in place, `<spinner> Syncing repos [=====>----]
@@ -164,7 +164,7 @@ mpb: a single line redrawn in place, `<spinner> Syncing repos [=====>----]
 
 Acceptance: as s3 (smoke test, `make ci`, scope).
 
-#### s5 - [exec] Add the pterm renderer
+#### s5 - [exec] Add the pterm renderer (done)
 
 `internal/ui/progress_pterm.go`, selected by `GHX_PROGRESS=pterm`, on
 `github.com/pterm/pterm`: a pterm progress bar for the overall count plus a
@@ -186,6 +186,8 @@ removed or promoted before the branch merges.
 
 ## Review log
 
+review wave-1 (ghx s1,s2,s3,s4,s5) 56d21d8..33a21fd: PASS - make ci green (lint 0 issues, race tests x3); interface, fang wrap and three renderers match spec; minor: waitFor asserts off the test goroutine, testing.md cli coverage says ~92% (now 94.1%) - 2026-10-13
+
 ## Token log
 
 **Counting header (Claude Code)**
@@ -195,3 +197,15 @@ removed or promoted before the branch merges.
 - Rates by `<model>`, $ per Mtok input / cached / output: `claude-opus-5-5` 4.00 / 0.20 / 20.00; `claude-sonnet-5-5` 2.00 / 0.20 / 10.00.
 - `$C` = (input × in + cache read × cached + 5m write × in × 1.25 + 1h write × in × 2.00 + output × out) / 1M.
 - In another harness, or on a model not listed here, count and price per plan-execution.md "Token accounting" and "Model price table" instead.
+
+tokens orchestrator-kickoff plan-cli-ux-sparkling (claude-opus-5-5): input ~96 / cache read ~6.6M / cache write ~0 5m + ~170k 1h / output ~37k | ~$3.39 API-equiv
+tokens wave-1 ghx-s1-s2-s3-s4-s5 (claude-sonnet-5-5): input ~130 / cache read ~9.8M / cache write ~250k / output ~63k | ~$3.20 API-equiv (output est.) session bd9c01f5-fe1c-5a92-ab0c-95720d491a10
+tokens review-wave-1 ghx-s1-s2-s3-s4-s5 (claude-opus-5-5): input ~40 / cache read ~960k / cache write ~70k / output ~21k | ~$0.97 API-equiv (output est.) session bd9c01f5-fe1c-5a92-ab0c-95720d491a10
+tokens orchestrator-wave-1 ghx-s1-s2-s3-s4-s5 (claude-opus-5-5): input ~12 / cache read ~1.1M / cache write ~0 5m + ~23k 1h / output ~2k | ~$0.44 API-equiv
+
+## Completion summary
+
+- Wave 1 [exec] `ghx s1-s5`: 5 commits, 56d21d8..33a21fd, review PASS on the first pass. No fix-ups, retries or checkpoints.
+- Cost: ~$8.0 API-equiv against ~$4.6 expected. The kickoff (planning, research, plan-mode round trips) cost $3.4 of it; the worker's 9.8M cache reads ran about 2x the anchor.
+- Deviations from plan: none in scope. Worker decisions: RepoDone once per repo with its primary result; fang's `man` and `completion` kept (an org named `help`, `completion` or `man` needs `--`); `execute` strips ANSI itself under NO_COLOR because fang still emits bold and reset codes; pterm uses an AreaPrinter over private buffers.
+- Follow-ups: `make vuln` not run on the new dependency trees (fang, mpb, pterm); no renderer tried on a real org or a Windows console; `specs/testing.md` lacks a line for the renderer smoke tests and has a stale cli coverage figure; `waitFor` should assert on the test goroutine. Most of these fold into the pick-and-clean-up follow-up.

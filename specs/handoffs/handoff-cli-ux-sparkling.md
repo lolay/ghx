@@ -2,36 +2,58 @@
 
 - **Branch:** `claude/magical-ride-7h4rhi` in `lolay/ghx` (assigned by the cloud
   session; cut from `main` at d984df8).
-- **Plan:** `specs/handoffs/plan-cli-ux-sparkling.md`.
+- **Plan:** `specs/handoffs/plan-cli-ux-sparkling.md` (complete).
 - **Mode:** unattended (confirmed 2026-10-13; runner=cloud).
-- **Done:** nothing yet. Kickoff written.
-- **Spend:** ~$0 of ~$4.6 expected.
-- **Next unit:** wave 1 [exec], group `ghx s1-s5`, Sonnet high worker + Opus high reviewer.
-- **Resume:** paste the plan's Kickoff prompt into a new session on this branch.
+- **Done:** wave 1 [exec] `ghx s1-s5`, 56d21d8..33a21fd, review PASS. No fix-ups,
+  retries or checkpoints.
+- **Spend:** ~$8.0 of ~$4.6 expected (Token log in the plan).
+- **Next:** Gary tries the renderers and picks one; then a follow-up keeps the
+  winner, deletes the rest and `GHX_PROGRESS`, tidies `go.mod`, updates `specs/`,
+  and removes or promotes this plan and handoff before the branch merges.
+- **Resume:** none needed for this plan; start the follow-up from this handoff.
+
+## How to try it
+
+    make build
+    GHX_PROGRESS=gopretty  ./bin/ghx <org> <dir>   # original bar, also the default
+    GHX_PROGRESS=buildx    ./bin/ghx <org> <dir>
+    GHX_PROGRESS=indicatif ./bin/ghx <org> <dir>
+    GHX_PROGRESS=pterm     ./bin/ghx <org> <dir>
+    ./bin/ghx --help
+
+Run twice against the same dir to see pulls. Piped output gets no progress.
 
 ## Pending question
 
-None. Kickoff answered "unattended"; wave 1 launching.
+Which renderer to keep, and whether to open a PR now or after the clean-up.
 
 ## Decisions so far
 
 - fang module path is `github.com/charmbracelet/fang` (v1.0.0); `charm.land/fang`
   serves a go.mod declaring the github path, so don't use the alias.
 - Kong was considered and dropped: it changes code shape, not the experience.
+- RepoDone fires once per repo with its primary result (wikis add none); an
+  unusable name gets RepoDone with no RepoStarted; Stop is deferred after Start.
+- fang's `man` and `completion` are kept; an org named `help`, `completion` or
+  `man` must follow `--` (README and CHANGELOG say so).
+- Under NO_COLOR, `execute` strips ANSI itself: fang still emits bold and reset.
+- pterm renderer uses an AreaPrinter over private buffers, with the cursor target
+  pointed at `Out` only between Start and Stop.
 
 ## Environment notes
 
 - env: The container has Go 1.26.2; `.go-version` wants 1.27.2. Run every Go and
-  make command with `GOTOOLCHAIN=go1.27.2` exported (the toolchain downloads
-  through the proxy and works).
+  make command with `GOTOOLCHAIN=go1.27.2` exported.
 - env: `/usr/local/bin/golangci-lint` is v2.5.0 built with go1.25 and fails on
-  this module ("Go language version (go1.25) used to build golangci-lint is lower
-  than the targeted Go version"). The Makefile pins v2.14.0. Don't install it
-  globally. Instead put a shim in the gitignored `.scratch/bin/golangci-lint`
-  (`#!/bin/sh` then `exec go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 "$@"`,
-  chmod +x) and run the gate as
-  `PATH="$PWD/.scratch/bin:$PATH" GOTOOLCHAIN=go1.27.2 make ci`.
+  this module. Shim in the gitignored `.scratch/bin/golangci-lint`
+  (`exec go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 "$@"`)
+  and run `PATH="$PWD/.scratch/bin:$PATH" GOTOOLCHAIN=go1.27.2 make ci`.
+- env: a `script` pty has 0 rows and mpb draws nothing; use
+  `script -qc "stty rows 30 cols 100; cmd" /dev/null`.
 
 ## Deviations from plan
 
-None yet.
+None. Follow-ups: `make vuln` not run on fang/mpb/pterm; no real-org or Windows
+console run; `specs/testing.md` lacks the renderer smoke tests and has a stale cli
+coverage figure (92% vs 94.1%); `waitFor` asserts off the test goroutine; pterm
+never unregisters stopped bars (small leak, pterm renderer only).
