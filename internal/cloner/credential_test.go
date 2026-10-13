@@ -124,7 +124,7 @@ func TestCloneRepos_GivesGitTheTokenOnlyThroughItsEnvironment(t *testing.T) {
 	second, err := cloner.CloneRepos(t.Context(), []ghapi.RepoInfo{repo}, opts)
 	require.NoError(t, err)
 	require.Equal(t, []cloner.Action{cloner.ActionPulled}, actionsByName(second)["app"])
-	assert.FileExists(t, filepath.Join(f.out, "app", "NEWS.md"), "the pull went through the HTTPS URL")
+	assert.FileExists(t, filepath.Join(f.out, "app", "NEWS.md"), "the fetch went through the HTTPS URL")
 
 	fetches := map[string]int{}
 	for _, c := range log.Calls() {
@@ -133,7 +133,7 @@ func TestCloneRepos_GivesGitTheTokenOnlyThroughItsEnvironment(t *testing.T) {
 			assert.NotContains(t, arg, basic, "git argument in %v", c.Args)
 		}
 		sub := subcommand(c)
-		if sub != "clone" && sub != "pull" {
+		if sub != "clone" && sub != "fetch" && sub != "pull" {
 			assert.Nil(t, c.Env, "%v inherits the environment and gets no token", c.Args)
 			continue
 		}
@@ -145,7 +145,8 @@ func TestCloneRepos_GivesGitTheTokenOnlyThroughItsEnvironment(t *testing.T) {
 		value, _ := envValue(c.Env, "GIT_CONFIG_VALUE_0")
 		assert.Equal(t, "AUTHORIZATION: basic "+basic, value)
 	}
-	assert.Equal(t, map[string]int{"clone": 2, "pull": 2}, fetches, "repo and wiki, cloned then pulled")
+	assert.Equal(t, map[string]int{"clone": 2, "fetch": 2}, fetches,
+		"repo and wiki cloned, then both fetched")
 
 	for path, cfg := range gitConfigs(t, f.out) {
 		assert.NotContains(t, cfg, token, path)
@@ -178,7 +179,7 @@ func TestCloneRepos_RewritesATokenBearingOriginBeforeAPull(t *testing.T) {
 	assert.Equal(t, []cloner.Action{cloner.ActionPulled}, actionsByName(summary)["app"])
 	assert.Equal(t, "https://github.com/acme/app.git", origin(t, dest))
 	assert.Equal(t, "https://github.com/acme/app.wiki.git", origin(t, wikiDest))
-	assert.FileExists(t, filepath.Join(dest, "NEWS.md"), "the pull ran on the cleaned URL")
+	assert.FileExists(t, filepath.Join(dest, "NEWS.md"), "the fetch ran on the cleaned URL")
 	assert.FileExists(t, filepath.Join(wikiDest, "Home.md"))
 	for path, cfg := range gitConfigs(t, f.out) {
 		assert.NotContains(t, cfg, token, path)
@@ -285,7 +286,10 @@ func TestCloneRepos_MasksTheTokenInFailureDetails(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, summary.Results, 1)
 		assert.Equal(t, cloner.ActionFailed, summary.Results[0].Action)
-		assert.Contains(t, summary.Results[0].Detail, "ghost-***", "git quoted the URL, and the token in it was masked")
+		// The detail is git's last fatal: line, which no longer quotes the
+		// URL; the masking of a quoted token is covered by the case above and
+		// by TestGitResult_Message.
+		assert.Contains(t, summary.Results[0].Detail, "fatal:")
 		assert.NotContains(t, summary.Results[0].Detail, token)
 	})
 }

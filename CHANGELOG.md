@@ -7,6 +7,40 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- Clone and pull get a 60-minute limit (other git commands keep 5 minutes) and
+  give up on a connection that stays under 1000 bytes a second for 60 seconds,
+  so a stalled transfer fails in a minute instead of holding a worker.
+- A clone or pull that fails on a dropped connection, a DNS or timeout error,
+  a rate limit or a server error is tried once more after 2 seconds.
+  "Repository not found" and authentication failures are never retried.
+- A failed repo's detail is git's last `fatal:` or `error:` line, not its
+  progress output and `hint:` blocks.
+- Every existing clone is fetched on every run, so every remote branch is
+  backed up whatever state the working tree is in. `fetched only`, with the
+  reason, replaces `skipped (local changes)` for a clone whose working tree
+  couldn't be updated. Wikis are synced the same way.
+- The summary marks each kind of result with a glyph beside its words: `✗`
+  failed, `⚠` fetched only, `∅` skipped (empty). A "Skipped (empty)" section
+  lists empty repos, and a "Notes" section lists clones and pulls that carry a
+  detail (a branch fallback, a reset after a force-push, a rename switch).
+
+### Fixed
+- A repo whose HEAD names a branch that doesn't exist, which GitHub reports for
+  an empty repo or one whose pushes never made `main`, is cloned and checked
+  out on `main`, else `master`, else its newest branch, instead of failing.
+- An empty repo is skipped (`skipped (empty)`) and its empty clone removed,
+  instead of failing on every run.
+- A force-pushed default branch is followed when the clone has no unpushed
+  work, with the old tip kept under `refs/ghx/forced/<branch>/<timestamp>`,
+  instead of being skipped on every run.
+- A default branch renamed on GitHub is switched to when nothing would be lost.
+- A clone on a feature branch or a detached HEAD is fetched, and reported as
+  fetched only with the reason, instead of failing its pull.
+- A big clone is no longer killed at 5 minutes.
+- A wiki that fails to clone for a reason other than "not found" is reported as
+  `failed wiki` with git's message, not as not found.
+
 ## [v0.2.0] - 2026-10-13
 
 ### Security

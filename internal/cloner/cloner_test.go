@@ -2,10 +2,13 @@ package cloner_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -69,23 +72,6 @@ func TestCloneRepos_ClonesThenPullsNewCommits(t *testing.T) {
 	assert.FileExists(t, filepath.Join(dest, "NEWS.md"), "the second run pulled the new upstream commit")
 }
 
-func TestCloneRepos_SkipsADirtyWorkingTree(t *testing.T) {
-	f := newFixture(t)
-	repo := f.repo(t, "app", "main")
-	_, err := cloner.CloneRepos(t.Context(), []ghapi.RepoInfo{repo}, f.opts())
-	require.NoError(t, err)
-
-	dest := filepath.Join(f.out, "app")
-	require.NoError(t, os.WriteFile(filepath.Join(dest, "scratch.txt"), []byte("mine\n"), 0o644))
-	gittest.AddCommit(t, repo.CloneURL, "main", "NEWS.md", "news\n")
-
-	summary, err := cloner.CloneRepos(t.Context(), []ghapi.RepoInfo{repo}, f.opts())
-	require.NoError(t, err)
-	assert.Equal(t, []cloner.Action{cloner.ActionSkippedDirty}, actionsByName(summary)["app"])
-	assert.NoFileExists(t, filepath.Join(dest, "NEWS.md"), "a dirty tree must not be pulled into")
-	assert.FileExists(t, filepath.Join(dest, "scratch.txt"))
-}
-
 func TestCloneRepos_ReportsAFailedClone(t *testing.T) {
 	f := newFixture(t)
 	repo := ghapi.RepoInfo{Name: "ghost", CloneURL: filepath.Join(f.upstream, "ghost.git"), DefaultBranch: "main"}
@@ -95,20 +81,6 @@ func TestCloneRepos_ReportsAFailedClone(t *testing.T) {
 	require.Len(t, summary.Results, 1)
 	assert.Equal(t, cloner.ActionFailed, summary.Results[0].Action)
 	assert.NotEmpty(t, summary.Results[0].Detail, "git's message explains the failure")
-}
-
-func TestCloneRepos_ReportsAFailedPull(t *testing.T) {
-	f := newFixture(t)
-	repo := f.repo(t, "app", "main")
-	_, err := cloner.CloneRepos(t.Context(), []ghapi.RepoInfo{repo}, f.opts())
-	require.NoError(t, err)
-
-	require.NoError(t, os.RemoveAll(repo.CloneURL), "the upstream disappears")
-	summary, err := cloner.CloneRepos(t.Context(), []ghapi.RepoInfo{repo}, f.opts())
-	require.NoError(t, err)
-	require.Len(t, summary.Results, 1)
-	assert.Equal(t, cloner.ActionFailed, summary.Results[0].Action)
-	assert.NotEmpty(t, summary.Results[0].Detail)
 }
 
 func TestCloneRepos_WritesGitIdentity(t *testing.T) {
@@ -256,11 +228,90 @@ func TestCloneRepos_Wikis(t *testing.T) {
 		repo.HasWiki = true // GitHub says so, but the wiki was never created
 		opts := f.opts()
 		opts.CloneWiki = true
+		cloner.RecordGit(t, func(cmd *exec.Cmd) error {
+			if !slices.Contains(cmd.Args, "clone") || !strings.HasSuffix(cmd.Args[len(cmd.Args)-1], "app.wiki") {
+				return cmd.Run()
+			}
+			_, _ = fmt.Fprintf(cmd.Stderr, "remote: Repository not found.\nfatal: repository 'https://github.com/acme/app.wiki.git/' not found\n")
+			return errors.New("exit status 128")
+		})
 
 		summary, err := cloner.CloneRepos(t.Context(), []ghapi.RepoInfo{repo}, opts)
 		require.NoError(t, err)
 		assert.ElementsMatch(t, []cloner.Action{cloner.ActionCloned, cloner.ActionSkippedWiki}, actionsByName(summary)["app"])
 		assert.NoDirExists(t, filepath.Join(f.out, "app.wiki"))
+	})
+
+	t.Run("reports any other wiki clone failure as failed wiki with git's message", func(t *testing.T) {
+		f := newFixture(t)
+		repo := f.repo(t, "app", "main")
+		repo.HasWiki = true
+		opts := f.opts()
+		opts.CloneWiki = true
+		cloner.RecordGit(t, func(cmd *exec.Cmd) error {
+			if !slices.Contains(cmd.Args, "clone") || !strings.HasSuffix(cmd.Args[len(cmd.Args)-1], "app.wiki") {
+				return cmd.Run()
+			}
+			_, _ = fmt.Fprintf(cmd.Stderr, "Cloning into 'app.wiki'...\nfatal: unable to access 'https://github.com/acme/app.wiki.git/': Could not resolve host: github.com\n")
+			return errors.New("exit status 128")
+		})
+
+		summary, err := cloner.CloneRepos(t.Context(), []ghapi.RepoInfo{repo}, opts)
+		require.NoError(t, err)
+		assert.Equal(t, []cloner.Action{cloner.ActionCloned}, actionsByName(summary)["app"])
+		require.Equal(t, []cloner.Action{cloner.ActionFailedWiki}, actionsByName(summary)["app.wiki"],
+			"the failure is named for the wiki, not the repo")
+		for _, r := range summary.Results {
+			if r.Action == cloner.ActionFailedWiki {
+				assert.Contains(t, r.Detail, "Could not resolve host")
+			}
+		}
+	})
+
+	t.Run("removes the clone of an empty wiki and reports nothing", func(t *testing.T) {
+		f := newFixture(t)
+		repo := f.repo(t, "app", "main")
+		repo.HasWiki = true
+		bare := filepath.Join(f.upstream, "app.wiki.git")
+		gittest.Git(t, f.upstream, "init", "--bare", bare)
+		opts := f.opts()
+		opts.CloneWiki = true
+
+		summary, err := cloner.CloneRepos(t.Context(), []ghapi.RepoInfo{repo}, opts)
+		require.NoError(t, err)
+		assert.Equal(t, []cloner.Action{cloner.ActionCloned}, actionsByName(summary)["app"])
+		assert.NoDirExists(t, filepath.Join(f.out, "app.wiki"))
+	})
+
+	t.Run("reports an existing wiki that diverged as fetched only", func(t *testing.T) {
+		f := newFixture(t)
+		repo := f.repo(t, "app", "main")
+		repo.HasWiki = true
+		wiki := gittest.NewBareRepo(t, f.upstream, "app.wiki", "master")
+		opts := f.opts()
+		opts.CloneWiki = true
+		_, err := cloner.CloneRepos(t.Context(), []ghapi.RepoInfo{repo}, opts)
+		require.NoError(t, err)
+		wikiDest := filepath.Join(f.out, "app.wiki")
+		require.NoError(t, os.WriteFile(filepath.Join(wikiDest, "Mine.md"), []byte("mine\n"), 0o644))
+		gittest.Git(t, wikiDest, "add", "Mine.md")
+		gittest.Git(t, wikiDest, "commit", "-m", "Local page")
+		gittest.AddCommit(t, wiki, "master", "Theirs.md", "theirs\n")
+
+		summary, err := cloner.CloneRepos(t.Context(), []ghapi.RepoInfo{repo}, opts)
+		require.NoError(t, err)
+		var wikiResults []cloner.RepoResult
+		for _, r := range summary.Results {
+			if r.Action != cloner.ActionPulled {
+				wikiResults = append(wikiResults, r)
+			}
+		}
+		require.Len(t, wikiResults, 1)
+		assert.Equal(t, cloner.ActionFetchedOnly, wikiResults[0].Action)
+		assert.Equal(t, "app.wiki", wikiResults[0].Name)
+		assert.Contains(t, wikiResults[0].Detail, "local commit(s) not on origin/master")
+		assert.NoFileExists(t, filepath.Join(wikiDest, "Theirs.md"), "the working tree is left alone")
+		assert.Equal(t, rev(t, wiki, "refs/heads/master"), rev(t, wikiDest, "refs/remotes/origin/master"), "the fetch still backed it up")
 	})
 
 	t.Run("pulls an existing wiki clone and leaves a dirty one alone", func(t *testing.T) {
@@ -281,11 +332,13 @@ func TestCloneRepos_Wikis(t *testing.T) {
 			"an existing wiki adds no result of its own")
 		assert.FileExists(t, filepath.Join(wikiDest, "Home.md"))
 
-		require.NoError(t, os.WriteFile(filepath.Join(wikiDest, "draft.md"), []byte("wip\n"), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(wikiDest, "Home.md"), []byte("wip\n"), 0o644))
 		gittest.AddCommit(t, wiki, "master", "More.md", "more\n")
-		_, err = cloner.CloneRepos(t.Context(), []ghapi.RepoInfo{repo}, opts)
+		summary, err = cloner.CloneRepos(t.Context(), []ghapi.RepoInfo{repo}, opts)
 		require.NoError(t, err)
-		assert.NoFileExists(t, filepath.Join(wikiDest, "More.md"), "a dirty wiki is not pulled into")
+		assert.NoFileExists(t, filepath.Join(wikiDest, "More.md"), "a wiki with tracked changes is not pulled into")
+		assert.ElementsMatch(t, []cloner.Action{cloner.ActionPulled, cloner.ActionFetchedOnly}, slices.Concat(actionsByName(summary)["app"], actionsByName(summary)["app.wiki"]),
+			"the wiki that was left alone is listed")
 	})
 
 	t.Run("ignores wikis unless asked", func(t *testing.T) {
@@ -386,4 +439,483 @@ func TestDeleteRepo(t *testing.T) {
 	t.Run("treats a missing directory as success", func(t *testing.T) {
 		require.NoError(t, cloner.DeleteRepo(filepath.Join(t.TempDir(), "nope")))
 	})
+}
+
+// newEmptyBare creates <parent>/<name>.git as a bare repository with no
+// commits, whose HEAD names main, as GitHub makes a new empty repository.
+func newEmptyBare(t *testing.T, parent, name string) string {
+	t.Helper()
+	bare := filepath.Join(parent, name+".git")
+	require.NoError(t, os.MkdirAll(bare, 0o755))
+	gittest.Git(t, bare, "init", "--bare", "--initial-branch", "main")
+	return bare
+}
+
+// pushCommit pushes a new root commit to branch of bare, which may be empty.
+func pushCommit(t *testing.T, bare, branch string) {
+	t.Helper()
+	seed := t.TempDir()
+	gittest.Git(t, seed, "init")
+	commitFile(t, seed, "README.md", branch)
+	gittest.Git(t, seed, "push", bare, "HEAD:refs/heads/"+branch)
+}
+
+// rev resolves ref in the repo at dir.
+func rev(t *testing.T, dir, ref string) string {
+	t.Helper()
+	return strings.TrimSpace(gittest.Git(t, dir, "rev-parse", "--verify", ref))
+}
+
+// currentBranch names the branch checked out in dir.
+func currentBranch(t *testing.T, dir string) string {
+	t.Helper()
+	return strings.TrimSpace(gittest.Git(t, dir, "branch", "--show-current"))
+}
+
+// syncOne runs CloneRepos for repo alone and returns its one result.
+func syncOne(t *testing.T, f fixture, repo ghapi.RepoInfo) cloner.RepoResult {
+	t.Helper()
+	summary, err := cloner.CloneRepos(t.Context(), []ghapi.RepoInfo{repo}, f.opts())
+	require.NoError(t, err)
+	require.Len(t, summary.Results, 1)
+	return summary.Results[0]
+}
+
+func TestCloneRepos_EmptyRepos(t *testing.T) {
+	t.Run("a new clone is removed and skipped, then cloned once it has a commit", func(t *testing.T) {
+		f := newFixture(t)
+		bare := newEmptyBare(t, f.upstream, "app")
+		repo := ghapi.RepoInfo{Name: "app", CloneURL: bare, DefaultBranch: "main"}
+		dest := filepath.Join(f.out, "app")
+
+		got := syncOne(t, f, repo)
+		assert.Equal(t, cloner.ActionSkippedEmpty, got.Action)
+		assert.Equal(t, "empty repository", got.Detail)
+		assert.NoDirExists(t, dest, "an empty clone is not kept")
+
+		pushCommit(t, bare, "main")
+		got = syncOne(t, f, repo)
+		assert.Equal(t, cloner.RepoResult{Name: "app", Action: cloner.ActionCloned}, got)
+		assert.Equal(t, "main", currentBranch(t, dest))
+		assert.FileExists(t, filepath.Join(dest, "README.md"))
+	})
+
+	t.Run("an existing clone of a repo that is still empty is skipped and kept", func(t *testing.T) {
+		f := newFixture(t)
+		bare := newEmptyBare(t, f.upstream, "app")
+		dest := filepath.Join(f.out, "app")
+		gittest.Git(t, "", "clone", bare, dest)
+
+		got := syncOne(t, f, ghapi.RepoInfo{Name: "app", CloneURL: bare, DefaultBranch: "main"})
+		assert.Equal(t, cloner.ActionSkippedEmpty, got.Action)
+		assert.DirExists(t, filepath.Join(dest, ".git"))
+	})
+
+	t.Run("an existing empty clone checks out the first commit", func(t *testing.T) {
+		f := newFixture(t)
+		bare := newEmptyBare(t, f.upstream, "app")
+		dest := filepath.Join(f.out, "app")
+		gittest.Git(t, "", "clone", bare, dest)
+		pushCommit(t, bare, "main")
+
+		got := syncOne(t, f, ghapi.RepoInfo{Name: "app", CloneURL: bare, DefaultBranch: "main"})
+		assert.Equal(t, cloner.RepoResult{Name: "app", Action: cloner.ActionPulled}, got)
+		assert.Equal(t, rev(t, bare, "refs/heads/main"), rev(t, dest, "HEAD"))
+		assert.Equal(t, "origin/main", strings.TrimSpace(gittest.Git(t, dest, "rev-parse", "--abbrev-ref", "main@{upstream}")))
+	})
+}
+
+func TestCloneRepos_RemoteHEADNamesAMissingBranch(t *testing.T) {
+	tests := []struct {
+		name     string
+		branches []string // oldest commit first
+		want     string
+	}{
+		{"master is the fallback after main", []string{"master", "dev"}, "master"},
+		{"otherwise the branch with the newest commit", []string{"feature", "dev"}, "dev"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFixture(t)
+			bare := newEmptyBare(t, f.upstream, "app") // HEAD names main
+			for i, b := range tt.branches {
+				t.Setenv("GIT_COMMITTER_DATE", fmt.Sprintf("20%02d-01-01T00:00:00Z", 10+i))
+				pushCommit(t, bare, b)
+			}
+			dest := filepath.Join(f.out, "app")
+
+			got := syncOne(t, f, ghapi.RepoInfo{Name: "app", CloneURL: bare, DefaultBranch: "main"})
+
+			assert.Equal(t, cloner.ActionCloned, got.Action)
+			assert.Equal(t, "remote HEAD names main, which doesn't exist; checked out "+tt.want, got.Detail)
+			assert.Equal(t, tt.want, currentBranch(t, dest))
+			assert.Equal(t, "origin/"+tt.want, strings.TrimSpace(gittest.Git(t, dest, "rev-parse", "--abbrev-ref", "@{upstream}")))
+		})
+	}
+}
+
+func TestCloneRepos_LeavesADestinationThatIsNotAClone(t *testing.T) {
+	f := newFixture(t)
+	repo := f.repo(t, "app", "main")
+	dest := filepath.Join(f.out, "app")
+	require.NoError(t, os.MkdirAll(dest, 0o755))
+	notes := filepath.Join(dest, "notes.txt")
+	require.NoError(t, os.WriteFile(notes, []byte("mine\n"), 0o644))
+	log := cloner.RecordGit(t, nil)
+
+	got := syncOne(t, f, repo)
+
+	assert.Equal(t, cloner.ActionFailed, got.Action)
+	assert.Equal(t, dest+" exists and isn't a git clone; move it aside", got.Detail)
+	for _, c := range log.Calls() {
+		assert.Equal(t, "version", subcommand(c), "git never runs against someone else's directory: %v", c.Args)
+	}
+	data, err := os.ReadFile(notes)
+	require.NoError(t, err)
+	assert.Equal(t, "mine\n", string(data))
+	assert.NoDirExists(t, filepath.Join(dest, ".git"))
+}
+
+func TestCloneRepos_KeepsACloneWhoseCheckoutFailed(t *testing.T) {
+	f := newFixture(t)
+	repo := f.repo(t, "app", "main")
+	gittest.AddCommit(t, repo.CloneURL, "main", ".gitattributes", "README.md filter=broken\n")
+	// What a missing git-lfs does to an LFS repo: the smudge filter that
+	// writes the working tree fails after every object has come down.
+	t.Setenv("GIT_CONFIG_COUNT", "2")
+	t.Setenv("GIT_CONFIG_KEY_0", "filter.broken.smudge")
+	t.Setenv("GIT_CONFIG_VALUE_0", "exit 1")
+	t.Setenv("GIT_CONFIG_KEY_1", "filter.broken.required")
+	t.Setenv("GIT_CONFIG_VALUE_1", "true")
+	dest := filepath.Join(f.out, "app")
+
+	got := syncOne(t, f, repo)
+
+	assert.Equal(t, cloner.ActionFetchedOnly, got.Action)
+	assert.Regexp(t, `^fatal: [^\n]*smudge filter broken failed$`, got.Detail)
+	tip := rev(t, repo.CloneURL, "refs/heads/main")
+	assert.Equal(t, tip, rev(t, dest, "HEAD"))
+	gittest.Git(t, dest, "cat-file", "-e", tip+"^{tree}") // the objects are there
+}
+
+func TestCloneRepos_ReportsAFailedFetch(t *testing.T) {
+	tests := []struct {
+		name    string
+		breakIt func(t *testing.T, bare, dest string)
+	}{
+		{"the upstream disappears", func(t *testing.T, bare, _ string) {
+			require.NoError(t, os.RemoveAll(bare))
+		}},
+		{"origin points nowhere", func(t *testing.T, _, dest string) {
+			gittest.Git(t, dest, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "nowhere.git"))
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFixture(t)
+			repo := f.repo(t, "app", "main")
+			_, err := cloner.CloneRepos(t.Context(), []ghapi.RepoInfo{repo}, f.opts())
+			require.NoError(t, err)
+			tt.breakIt(t, repo.CloneURL, filepath.Join(f.out, "app"))
+
+			got := syncOne(t, f, repo)
+
+			assert.Equal(t, cloner.ActionFailed, got.Action)
+			assert.Regexp(t, `^fatal: [^\n]+$`, got.Detail, "git's one line of reason, without the hints")
+		})
+	}
+}
+
+// syncWorld is an upstream repo and ghx's clone of it, made by a first sync.
+type syncWorld struct {
+	f    fixture
+	repo ghapi.RepoInfo
+	bare string
+	dest string
+}
+
+func newSyncWorld(t *testing.T, branch string) *syncWorld {
+	t.Helper()
+	f := newFixture(t)
+	repo := f.repo(t, "app", branch)
+	w := &syncWorld{f: f, repo: repo, bare: repo.CloneURL, dest: filepath.Join(f.out, "app")}
+	require.Equal(t, cloner.ActionCloned, syncOne(t, f, repo).Action)
+	return w
+}
+
+// upstream resolves branch in the upstream repo.
+func (w *syncWorld) upstream(t *testing.T, branch string) string {
+	t.Helper()
+	return rev(t, w.bare, "refs/heads/"+branch)
+}
+
+// write puts content in file in the clone, without committing it.
+func (w *syncWorld) write(t *testing.T, file, content string) {
+	t.Helper()
+	require.NoError(t, os.WriteFile(filepath.Join(w.dest, file), []byte(content), 0o644))
+}
+
+// read returns file's content in the clone.
+func (w *syncWorld) read(t *testing.T, file string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(w.dest, file))
+	require.NoError(t, err)
+	return string(data)
+}
+
+// backups lists the refs ghx kept under refs/ghx/forced/, with what each names.
+func (w *syncWorld) backups(t *testing.T) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for line := range strings.Lines(gittest.Git(t, w.dest, "for-each-ref", "--format=%(refname) %(objectname)", "refs/ghx/forced")) {
+		ref, sha, _ := strings.Cut(strings.TrimSpace(line), " ")
+		out[ref] = sha
+	}
+	return out
+}
+
+// forcePush rewrites the tip of branch upstream: the upstream commit is
+// amended to also add file, and force-pushed.
+func forcePush(t *testing.T, bare, branch, file, content string) {
+	t.Helper()
+	work := t.TempDir()
+	gittest.Git(t, work, "clone", "--branch", branch, bare, ".")
+	require.NoError(t, os.WriteFile(filepath.Join(work, file), []byte(content), 0o644))
+	gittest.Git(t, work, "add", file)
+	gittest.Git(t, work, "commit", "--amend", "-m", "Rewritten")
+	gittest.Git(t, work, "push", "--force", "origin", branch)
+}
+
+// treeCommands are the git subcommands that move a working tree or a
+// checked-out branch.
+var treeCommands = []string{"switch", "checkout", "merge", "reset", "branch", "rebase", "pull"}
+
+func TestCloneRepos_SyncsAnExistingClone(t *testing.T) {
+	tests := []struct {
+		name   string
+		branch string // upstream's default branch; main when empty
+		// setup changes the clone and the upstream, and returns what to check
+		// afterwards.
+		setup  func(t *testing.T, w *syncWorld) (check func(t *testing.T))
+		want   cloner.Action
+		detail string // a regular expression
+		// refused is the one command that moves the working tree a fetched-only
+		// case may run, because git is expected to refuse it.
+		refused string
+	}{
+		{
+			name: "a force-push is followed when nothing is unpushed",
+			setup: func(t *testing.T, w *syncWorld) func(t *testing.T) {
+				old := rev(t, w.dest, "HEAD")
+				forcePush(t, w.bare, "main", "NEWS.md", "news\n")
+				return func(t *testing.T) {
+					assert.Equal(t, w.upstream(t, "main"), rev(t, w.dest, "HEAD"))
+					assert.FileExists(t, filepath.Join(w.dest, "NEWS.md"))
+					backups := w.backups(t)
+					require.Len(t, backups, 1)
+					for ref, sha := range backups {
+						assert.Regexp(t, `^refs/ghx/forced/main/\d{8}T\d{6}Z$`, ref)
+						assert.Equal(t, old, sha, "the old tip is kept")
+					}
+				}
+			},
+			want:   cloner.ActionPulled,
+			detail: `^origin/main was force-pushed; old tip kept at refs/ghx/forced/main/\d{8}T\d{6}Z$`,
+		},
+		{
+			name: "a force-push over an unpushed commit is only fetched",
+			setup: func(t *testing.T, w *syncWorld) func(t *testing.T) {
+				commitFile(t, w.dest, "mine.txt", "mine")
+				local := rev(t, w.dest, "HEAD")
+				forcePush(t, w.bare, "main", "NEWS.md", "news\n")
+				return func(t *testing.T) {
+					assert.Equal(t, local, rev(t, w.dest, "HEAD"), "the local commit is intact")
+					assert.Equal(t, w.upstream(t, "main"), rev(t, w.dest, "refs/remotes/origin/main"))
+					assert.Empty(t, w.backups(t))
+				}
+			},
+			want: cloner.ActionFetchedOnly,
+			// The local commit, and the upstream commit the force-push dropped.
+			detail: `^2 local commit\(s\) not on origin/main$`,
+		},
+		{
+			name: "a force-push that would overwrite an untracked file is only fetched",
+			setup: func(t *testing.T, w *syncWorld) func(t *testing.T) {
+				old := rev(t, w.dest, "HEAD")
+				w.write(t, "NEWS.md", "mine\n")
+				forcePush(t, w.bare, "main", "NEWS.md", "news\n")
+				return func(t *testing.T) {
+					assert.Equal(t, "mine\n", w.read(t, "NEWS.md"))
+					assert.Equal(t, old, rev(t, w.dest, "HEAD"))
+					assert.Empty(t, w.backups(t), "a backup for a reset that didn't happen is removed")
+				}
+			},
+			want:    cloner.ActionFetchedOnly,
+			detail:  `^(fatal|error): [^\n]+$`,
+			refused: "reset",
+		},
+		{
+			name: "local commits on a branch that moved on are only fetched",
+			setup: func(t *testing.T, w *syncWorld) func(t *testing.T) {
+				commitFile(t, w.dest, "mine.txt", "mine")
+				local := rev(t, w.dest, "HEAD")
+				gittest.AddCommit(t, w.bare, "main", "NEWS.md", "news\n")
+				return func(t *testing.T) {
+					assert.Equal(t, local, rev(t, w.dest, "HEAD"))
+					assert.Equal(t, w.upstream(t, "main"), rev(t, w.dest, "refs/remotes/origin/main"))
+				}
+			},
+			want:   cloner.ActionFetchedOnly,
+			detail: `^1 local commit\(s\) not on origin/main$`,
+		},
+		{
+			name: "a tracked change is kept and only fetched",
+			setup: func(t *testing.T, w *syncWorld) func(t *testing.T) {
+				w.write(t, "README.md", "edited\n")
+				gittest.AddCommit(t, w.bare, "main", "NEWS.md", "news\n")
+				return func(t *testing.T) {
+					assert.Equal(t, "edited\n", w.read(t, "README.md"))
+					assert.NoFileExists(t, filepath.Join(w.dest, "NEWS.md"))
+					assert.Equal(t, w.upstream(t, "main"), rev(t, w.dest, "refs/remotes/origin/main"))
+				}
+			},
+			want:   cloner.ActionFetchedOnly,
+			detail: `^local changes$`,
+		},
+		{
+			name: "an untracked file doesn't block a fast-forward",
+			setup: func(t *testing.T, w *syncWorld) func(t *testing.T) {
+				w.write(t, "scratch.txt", "mine\n")
+				gittest.AddCommit(t, w.bare, "main", "NEWS.md", "news\n")
+				return func(t *testing.T) {
+					assert.FileExists(t, filepath.Join(w.dest, "NEWS.md"))
+					assert.Equal(t, "mine\n", w.read(t, "scratch.txt"))
+				}
+			},
+			want:   cloner.ActionPulled,
+			detail: `^$`,
+		},
+		{
+			name: "an untracked file the incoming commit adds is kept and only fetched",
+			setup: func(t *testing.T, w *syncWorld) func(t *testing.T) {
+				old := rev(t, w.dest, "HEAD")
+				w.write(t, "NEWS.md", "mine\n")
+				gittest.AddCommit(t, w.bare, "main", "NEWS.md", "news\n")
+				return func(t *testing.T) {
+					assert.Equal(t, "mine\n", w.read(t, "NEWS.md"))
+					assert.Equal(t, old, rev(t, w.dest, "HEAD"))
+					assert.Equal(t, w.upstream(t, "main"), rev(t, w.dest, "refs/remotes/origin/main"))
+				}
+			},
+			want:    cloner.ActionFetchedOnly,
+			detail:  `^error: [^\n]+$`,
+			refused: "merge",
+		},
+		{
+			name: "a feature branch stays checked out and local main fast-forwards",
+			setup: func(t *testing.T, w *syncWorld) func(t *testing.T) {
+				gittest.Git(t, w.dest, "switch", "-c", "x")
+				gittest.AddCommit(t, w.bare, "main", "NEWS.md", "news\n")
+				return func(t *testing.T) {
+					assert.Equal(t, "x", currentBranch(t, w.dest))
+					assert.Equal(t, w.upstream(t, "main"), rev(t, w.dest, "refs/heads/main"))
+					assert.NoFileExists(t, filepath.Join(w.dest, "NEWS.md"))
+				}
+			},
+			want:   cloner.ActionFetchedOnly,
+			detail: `^on branch x$`,
+		},
+		{
+			name: "a detached HEAD is only fetched",
+			setup: func(t *testing.T, w *syncWorld) func(t *testing.T) {
+				gittest.Git(t, w.dest, "checkout", "--detach")
+				old := rev(t, w.dest, "HEAD")
+				gittest.AddCommit(t, w.bare, "main", "NEWS.md", "news\n")
+				return func(t *testing.T) {
+					assert.Equal(t, old, rev(t, w.dest, "HEAD"))
+					assert.Equal(t, w.upstream(t, "main"), rev(t, w.dest, "refs/remotes/origin/main"))
+				}
+			},
+			want:   cloner.ActionFetchedOnly,
+			detail: `^detached HEAD$`,
+		},
+		{
+			name: "a rebase stopped on a conflict is only fetched",
+			setup: func(t *testing.T, w *syncWorld) func(t *testing.T) {
+				commitFile(t, w.dest, "README.md", "local")
+				gittest.AddCommit(t, w.bare, "main", "README.md", "upstream\n")
+				gittest.Git(t, w.dest, "fetch", "origin")
+				gitFails(t, w.dest, "rebase", "origin/main")
+				return func(t *testing.T) {
+					assert.Equal(t, "rebase", cloner.NewGit(gitPath(t), "").OperationInProgress(t.Context(), w.dest),
+						"the rebase is still there to finish")
+				}
+			},
+			want:   cloner.ActionFetchedOnly,
+			detail: `^rebase in progress$`,
+		},
+		{
+			name:   "a renamed default branch is switched to and the old one deleted",
+			branch: "master",
+			setup: func(t *testing.T, w *syncWorld) func(t *testing.T) {
+				renameUpstream(t, w)
+				return func(t *testing.T) {
+					assert.Equal(t, "main", currentBranch(t, w.dest))
+					assert.Equal(t, "origin/main", strings.TrimSpace(gittest.Git(t, w.dest, "rev-parse", "--abbrev-ref", "@{upstream}")))
+					assert.Empty(t, gittest.Git(t, w.dest, "branch", "--list", "master"), "master is deleted")
+				}
+			},
+			want:   cloner.ActionPulled,
+			detail: `^switched from master to main$`,
+		},
+		{
+			name:   "a renamed default branch with an unpushed commit keeps the old branch",
+			branch: "master",
+			setup: func(t *testing.T, w *syncWorld) func(t *testing.T) {
+				commitFile(t, w.dest, "mine.txt", "mine")
+				local := rev(t, w.dest, "HEAD")
+				renameUpstream(t, w)
+				return func(t *testing.T) {
+					assert.Equal(t, "master", currentBranch(t, w.dest))
+					assert.Equal(t, local, rev(t, w.dest, "refs/heads/master"))
+					assert.Equal(t, w.upstream(t, "main"), rev(t, w.dest, "refs/remotes/origin/main"))
+				}
+			},
+			want:   cloner.ActionFetchedOnly,
+			detail: `^on branch master$`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			branch := tt.branch
+			if branch == "" {
+				branch = "main"
+			}
+			w := newSyncWorld(t, branch)
+			check := tt.setup(t, w)
+			log := cloner.RecordGit(t, nil)
+
+			got := syncOne(t, w.f, w.repo)
+
+			assert.Equal(t, tt.want, got.Action)
+			assert.Regexp(t, tt.detail, got.Detail)
+			check(t)
+			if tt.want == cloner.ActionFetchedOnly {
+				for _, c := range log.Calls() {
+					if sub := subcommand(c); sub != tt.refused {
+						assert.NotContains(t, treeCommands, sub, "a fetched-only repo ran %v", c.Args)
+					}
+				}
+			}
+		})
+	}
+}
+
+// renameUpstream renames the upstream's master to main, as GitHub's branch
+// rename does, and tells ghx main is the default branch now.
+func renameUpstream(t *testing.T, w *syncWorld) {
+	t.Helper()
+	gittest.Git(t, w.bare, "branch", "-m", "master", "main")
+	gittest.Git(t, w.bare, "symbolic-ref", "HEAD", "refs/heads/main")
+	w.repo.DefaultBranch = "main"
 }

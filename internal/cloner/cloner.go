@@ -127,72 +127,309 @@ func processRepo(ctx context.Context, git gitRunner, repo ghapi.RepoInfo, opts O
 		return []RepoResult{{Name: repo.Name, Action: ActionSkippedName, Detail: err.Error()}}
 	}
 
-	var results []RepoResult
 	dest := filepath.Join(opts.OutputDir, repo.Name)
-	url := resolveURL(repo, opts.UseSSH)
-
+	var result RepoResult
 	if hasGitDir(dest) {
-		git.setIdentity(ctx, dest, opts.GitAuthor, opts.GitEmail)
-		dirty, status := git.status(ctx, dest)
-		switch {
-		case !status.Success():
-			results = append(results, RepoResult{Name: repo.Name, Action: ActionFailed, Detail: status.Message()})
-		case dirty:
-			results = append(results, RepoResult{Name: repo.Name, Action: ActionSkippedDirty})
-		default:
-			if err := git.cleanOrigin(ctx, dest); err != nil {
-				results = append(results, RepoResult{Name: repo.Name, Action: ActionFailed, Detail: err.Error()})
-				break
-			}
-			// The header is scoped to the HTTPS clone URL's host even in SSH
-			// mode, so a clone first made over HTTPS keeps pulling; an SSH
-			// origin never sends it.
-			r := git.fetch(ctx, dest, repo.CloneURL, "pull", "--ff-only")
-			if r.Success() {
-				results = append(results, RepoResult{Name: repo.Name, Action: ActionPulled})
-			} else {
-				results = append(results, RepoResult{Name: repo.Name, Action: ActionFailed, Detail: r.Message()})
-			}
-		}
+		result = syncExisting(ctx, git, dest, repo, opts)
 	} else {
-		args := slices.Concat([]string{"clone"}, platformCloneArgs, []string{"--branch", repo.DefaultBranch, url, dest})
-		r := git.fetch(ctx, "", url, args...)
-		if r.Success() {
-			git.setIdentity(ctx, dest, opts.GitAuthor, opts.GitEmail)
-			results = append(results, RepoResult{Name: repo.Name, Action: ActionCloned})
-		} else {
-			results = append(results, RepoResult{Name: repo.Name, Action: ActionFailed, Detail: r.Message()})
-		}
+		result = cloneNew(ctx, git, dest, repo, opts)
 	}
 
-	if opts.CloneWiki && repo.HasWiki && results[len(results)-1].Action != ActionFailed {
+	results := []RepoResult{result}
+	if opts.CloneWiki && repo.HasWiki && result.Action != ActionFailed {
 		results = append(results, processWiki(ctx, git, repo, opts)...)
 	}
 	return results
 }
 
+// cloneNew clones repo into dest, which has no .git directory. It clones
+// without --branch, so git follows the remote's HEAD. When that HEAD names a
+// branch that doesn't exist (GitHub reports "main" for an empty repo, or for
+// one whose pushes never made main), git clones every branch and checks out
+// nothing, and cloneNew picks a branch itself.
+func cloneNew(ctx context.Context, git gitRunner, dest string, repo ghapi.RepoInfo, opts Options) RepoResult {
+	result := resultFor(repo.Name)
+	if _, err := os.Lstat(dest); err == nil {
+		// Someone else's files: clone would refuse a non-empty directory
+		// anyway, and nothing here is ghx's to move or delete.
+		return result(ActionFailed, dest+" exists and isn't a git clone; move it aside")
+	}
+
+	url := resolveURL(repo, opts.UseSSH)
+	args := slices.Concat([]string{"clone"}, platformCloneArgs, []string{url, dest})
+	r := git.fetch(ctx, "", url, args...)
+	if !r.Success() {
+		if hasGitDir(dest) && strings.Contains(r.Stderr, "Clone succeeded, but checkout failed") {
+			// Every object is down, which is the backup; only the working tree
+			// is missing (typically Git LFS without git-lfs installed).
+			git.setIdentity(ctx, dest, opts.GitAuthor, opts.GitEmail)
+			return result(ActionFetchedOnly, r.Message())
+		}
+		return result(ActionFailed, r.Message())
+	}
+
+	if _, born := git.revParse(ctx, dest, "HEAD"); born {
+		git.setIdentity(ctx, dest, opts.GitAuthor, opts.GitEmail)
+		return result(ActionCloned, "")
+	}
+	branches := git.remoteBranches(ctx, dest)
+	if len(branches) == 0 {
+		if err := ctx.Err(); err != nil {
+			// The probes failed because the run stopped, not because the repo
+			// is empty: keep the clone.
+			return result(ActionFailed, err.Error())
+		}
+		// An empty clone holds nothing to back up; removing it keeps the
+		// output tree to real repos, and the next run clones it again.
+		if err := DeleteRepo(dest); err != nil {
+			return result(ActionFailed, fmt.Sprintf("removing the clone of an empty repository: %v", err))
+		}
+		return result(ActionSkippedEmpty, "empty repository")
+	}
+	git.setIdentity(ctx, dest, opts.GitAuthor, opts.GitEmail)
+	b := pickBranch(repo.DefaultBranch, branches)
+	if sw := git.run(ctx, dest, "switch", "--track", "-c", b, originRef(b)); !sw.Success() {
+		return result(ActionFetchedOnly, sw.Message())
+	}
+	return result(ActionCloned, fmt.Sprintf("remote HEAD names %s, which doesn't exist; checked out %s", repo.DefaultBranch, b))
+}
+
+// syncExisting brings an existing clone up to date. It always fetches first:
+// a fetch never touches the working tree, so every remote branch is backed up
+// each run, whatever state the clone is in. The checkout then moves only when
+// no local work can be lost; otherwise the result is ActionFetchedOnly with
+// the reason.
+func syncExisting(ctx context.Context, git gitRunner, dest string, repo ghapi.RepoInfo, opts Options) RepoResult {
+	result := resultFor(repo.Name)
+	git.setIdentity(ctx, dest, opts.GitAuthor, opts.GitEmail)
+	if err := git.cleanOrigin(ctx, dest); err != nil {
+		return result(ActionFailed, err.Error())
+	}
+
+	cur, detached, curErr := git.currentBranch(ctx, dest)
+	before := tipsBeforeFetch(ctx, git, dest, repo.DefaultBranch, cur)
+	// The header is scoped to the HTTPS clone URL's host even in SSH mode, so
+	// a clone first made over HTTPS keeps fetching; an SSH origin never sends
+	// it.
+	if r := git.fetch(ctx, dest, repo.CloneURL, "fetch", "--prune", "--quiet", "origin"); !r.Success() {
+		return result(ActionFailed, r.Message())
+	}
+
+	branches := git.remoteBranches(ctx, dest)
+	if len(branches) == 0 {
+		return result(ActionSkippedEmpty, "empty repository")
+	}
+	b := pickBranch(repo.DefaultBranch, branches)
+	// Local only: keeps origin/HEAD naming the branch ghx follows.
+	git.run(ctx, dest, "symbolic-ref", "refs/remotes/origin/HEAD", originRef(b))
+
+	// In this order: a rebase stopped on a conflict also detaches HEAD, and
+	// "rebase in progress" is the reason that helps.
+	if op := git.operationInProgress(ctx, dest); op != "" {
+		return result(ActionFetchedOnly, op+" in progress")
+	}
+	switch {
+	case curErr != nil:
+		return result(ActionFailed, curErr.Error())
+	case detached:
+		return result(ActionFetchedOnly, "detached HEAD")
+	}
+	dirty, status := git.status(ctx, dest)
+	if !status.Success() {
+		return result(ActionFailed, status.Message())
+	}
+
+	if cur == b {
+		return result(updateTarget(ctx, git, dest, b, before[originRef(b)], dirty))
+	}
+	return result(updateOther(ctx, git, dest, cur, b, dirty))
+}
+
+// tipsBeforeFetch records, by full ref, where origin's copy of the default
+// branch and of the current branch's upstream pointed before the fetch, so
+// updateTarget can tell a force-push (the old tip is no longer in the new one)
+// from local commits.
+func tipsBeforeFetch(ctx context.Context, git gitRunner, dest, defaultBranch, cur string) map[string]string {
+	var refs []string
+	if defaultBranch != "" {
+		refs = append(refs, originRef(defaultBranch))
+	}
+	if cur != "" {
+		if upstream, _ := git.upstreamTrack(ctx, dest, cur); upstream != "" {
+			refs = append(refs, upstream)
+		}
+	}
+	tips := map[string]string{}
+	for _, ref := range refs {
+		if sha, ok := git.revParse(ctx, dest, ref); ok {
+			tips[ref] = sha
+		}
+	}
+	return tips
+}
+
+// updateTarget moves HEAD, which is on b, to origin's b when nothing local can
+// be lost. oldTip is origin/b before the fetch, "" when it wasn't there.
+func updateTarget(ctx context.Context, git gitRunner, dest, b, oldTip string, dirty bool) (Action, string) {
+	target := originRef(b)
+	if dirty {
+		return ActionFetchedOnly, "local changes"
+	}
+	head, born := git.revParse(ctx, dest, "HEAD")
+	if !born {
+		// An empty clone that has since gained commits. -c, not -C: it fails
+		// if b exists, so a probe that misread HEAD can't move a branch.
+		if r := git.run(ctx, dest, "switch", "--track", "-c", b, target); !r.Success() {
+			return ActionFetchedOnly, r.Message()
+		}
+		return ActionPulled, ""
+	}
+	if git.isAncestor(ctx, dest, head, target) {
+		// git refuses, and changes nothing, when the merge would overwrite an
+		// untracked file or the index is locked.
+		if r := git.run(ctx, dest, "merge", "--ff-only", target); !r.Success() {
+			return ActionFetchedOnly, r.Message()
+		}
+		return ActionPulled, ""
+	}
+	if oldTip != "" && !git.isAncestor(ctx, dest, oldTip, target) && git.isAncestor(ctx, dest, head, oldTip) {
+		return followForcePush(ctx, git, dest, b, head)
+	}
+	count := git.run(ctx, dest, "rev-list", "--count", target+"..HEAD")
+	if n := strings.TrimSpace(count.Stdout); count.Success() && n != "" {
+		return ActionFetchedOnly, fmt.Sprintf("%s local commit(s) not on origin/%s", n, b)
+	}
+	return ActionFetchedOnly, "local commits not on origin/" + b
+}
+
+// followForcePush moves b, checked out at head with no local changes or
+// unpushed commits, to origin's rewritten b. The old tip is kept under
+// refs/ghx/forced/, since a backup shouldn't lose history GitHub dropped.
+func followForcePush(ctx context.Context, git gitRunner, dest, b, head string) (Action, string) {
+	backup := "refs/ghx/forced/" + b + "/" + time.Now().UTC().Format("20060102T150405Z")
+	// The empty old value makes update-ref refuse to overwrite a backup.
+	if r := git.run(ctx, dest, "update-ref", backup, head, ""); !r.Success() {
+		return ActionFetchedOnly, r.Message()
+	}
+	// --keep, not --hard: with no tracked changes they move the same files,
+	// but --keep refuses to overwrite an untracked file the new tip adds.
+	if r := git.run(ctx, dest, "reset", "--keep", originRef(b)); !r.Success() {
+		git.run(ctx, dest, "update-ref", "-d", backup, head)
+		return ActionFetchedOnly, r.Message()
+	}
+	return ActionPulled, fmt.Sprintf("origin/%s was force-pushed; old tip kept at %s", b, backup)
+}
+
+// updateOther handles HEAD on cur, a branch other than the target b. When the
+// remote renamed its default branch (cur's upstream is gone or was never set)
+// and nothing can be lost, it does what GitHub documents after a rename:
+// switch to b and delete cur. Otherwise the working tree stays on cur, and a
+// local b is fast-forwarded without checking it out.
+func updateOther(ctx context.Context, git gitRunner, dest, cur, b string, dirty bool) (Action, string) {
+	target := originRef(b)
+	_, haveLocal := git.revParse(ctx, dest, "refs/heads/"+b)
+	upstream, gone := git.upstreamTrack(ctx, dest, cur)
+	if !haveLocal && !dirty && (upstream == "" || gone) {
+		head, born := git.revParse(ctx, dest, "HEAD")
+		if !born || git.isAncestor(ctx, dest, head, target) {
+			if r := git.run(ctx, dest, "switch", "--track", "-c", b, target); !r.Success() {
+				return ActionFetchedOnly, r.Message()
+			}
+			if born {
+				// -d refuses a branch holding unmerged work; that refusal
+				// just keeps the branch.
+				git.run(ctx, dest, "branch", "-d", cur)
+			}
+			return ActionPulled, fmt.Sprintf("switched from %s to %s", cur, b)
+		}
+	}
+	if haveLocal {
+		// fetch refuses anything but a fast-forward; a refusal leaves b as it
+		// was.
+		git.run(ctx, dest, "fetch", ".", target+":refs/heads/"+b)
+	}
+	return ActionFetchedOnly, "on branch " + cur
+}
+
+// resultFor returns a function that makes name's result from an action and its
+// detail, so a helper's (Action, string) return can be passed straight to it.
+func resultFor(name string) func(Action, string) RepoResult {
+	return func(a Action, detail string) RepoResult {
+		return RepoResult{Name: name, Action: a, Detail: detail}
+	}
+}
+
+// originRef is the full name of origin's copy of branch, which can't be
+// mistaken for a tag or a local branch that happens to be named origin/x.
+func originRef(branch string) string {
+	return "refs/remotes/origin/" + branch
+}
+
+// processWiki syncs repo's wiki clone, <repo>.wiki beside it. A wiki is
+// synced like any repo, so a diverged or dirty one is fetched only rather than
+// silently skipped. Its results are named after the repo, not the wiki
+// directory, so the summary reads as it always has, except that a failure or a
+// fetched-only wiki is named <repo>.wiki so it can't be mistaken for the repo.
 func processWiki(ctx context.Context, git gitRunner, repo ghapi.RepoInfo, opts Options) []RepoResult {
 	wikiDest := filepath.Join(opts.OutputDir, repo.Name+".wiki")
-	wikiURL := resolveWikiURL(repo, opts.UseSSH)
-
 	if hasGitDir(wikiDest) {
-		git.setIdentity(ctx, wikiDest, opts.GitAuthor, opts.GitEmail)
-		if dirty, status := git.status(ctx, wikiDest); status.Success() && !dirty {
-			// A wiki that can't be cleaned or pulled adds no result, as before;
-			// the next run tries again.
-			if git.cleanOrigin(ctx, wikiDest) == nil {
-				git.fetch(ctx, wikiDest, repo.CloneURL, "pull", "--ff-only")
-			}
-		}
-		return nil
+		return syncWiki(ctx, git, wikiDest, repo, opts)
 	}
+
+	wikiURL := resolveWikiURL(repo, opts.UseSSH)
 	args := slices.Concat([]string{"clone"}, platformCloneArgs, []string{wikiURL, wikiDest})
 	r := git.fetch(ctx, "", wikiURL, args...)
-	if r.Success() {
-		git.setIdentity(ctx, wikiDest, opts.GitAuthor, opts.GitEmail)
-		return []RepoResult{{Name: repo.Name, Action: ActionClonedWiki}}
+	if !r.Success() {
+		if wikiNotFound(r.Stderr) {
+			return []RepoResult{{Name: repo.Name, Action: ActionSkippedWiki}}
+		}
+		return []RepoResult{{Name: repo.Name + ".wiki", Action: ActionFailedWiki, Detail: r.Message()}}
 	}
-	return []RepoResult{{Name: repo.Name, Action: ActionSkippedWiki}}
+
+	git.setIdentity(ctx, wikiDest, opts.GitAuthor, opts.GitEmail)
+	if _, born := git.revParse(ctx, wikiDest, "HEAD"); !born {
+		branches := git.remoteBranches(ctx, wikiDest)
+		if len(branches) == 0 {
+			if ctx.Err() == nil {
+				// Nothing to back up, and the next run clones it again, so it
+				// adds no row to the summary.
+				_ = DeleteRepo(wikiDest)
+			}
+			return nil
+		}
+		b := pickBranch("", branches)
+		git.run(ctx, wikiDest, "switch", "--track", "-c", b, originRef(b))
+	}
+	return []RepoResult{{Name: repo.Name, Action: ActionClonedWiki}}
+}
+
+// syncWiki brings an existing wiki clone up to date through syncExisting. A
+// wiki has no default branch from the API, so it follows the branch origin/HEAD
+// names (the clone set it) and falls back to main, master, then the newest
+// branch. A quiet success stays quiet; fetched only and failures surface.
+func syncWiki(ctx context.Context, git gitRunner, wikiDest string, repo ghapi.RepoInfo, opts Options) []RepoResult {
+	wiki := repo
+	wiki.DefaultBranch = ""
+	if head := git.run(ctx, wikiDest, "symbolic-ref", "refs/remotes/origin/HEAD"); head.Success() {
+		wiki.DefaultBranch = strings.TrimPrefix(strings.TrimSpace(head.Stdout), originRef(""))
+	}
+	result := syncExisting(ctx, git, wikiDest, wiki, opts)
+	result.Name = repo.Name + ".wiki"
+	switch result.Action {
+	case ActionPulled, ActionSkippedEmpty:
+		return nil
+	case ActionFailed:
+		result.Action = ActionFailedWiki
+	}
+	return []RepoResult{result}
+}
+
+// wikiNotFound reports whether a wiki clone's stderr says the wiki doesn't
+// exist, which is ordinary: GitHub's HasWiki is true for a repo that never had
+// a page written. Any other failure is a real one.
+func wikiNotFound(stderr string) bool {
+	lower := strings.ToLower(stderr)
+	return strings.Contains(lower, "not found") || strings.Contains(lower, "error: 404")
 }
 
 func hasGitDir(repoDir string) bool {

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/jedib0t/go-pretty/v6/text"
@@ -20,6 +21,20 @@ import (
 
 // Out is the writer used for all UI output. Tests can override it.
 var Out io.Writer = os.Stdout
+
+// glyphs marks each action that needs attention, in the summary's counts table
+// and beside each repo it lists. The words always come with the glyph, so a
+// font without it, or output piped to a file, still reads.
+var glyphs = map[cloner.Action]string{
+	cloner.ActionFailed:       "✗",
+	cloner.ActionFailedWiki:   "✗",
+	cloner.ActionFetchedOnly:  "⚠",
+	cloner.ActionSkippedEmpty: "∅",
+	cloner.ActionSkippedName:  "⚠",
+}
+
+// noteGlyph marks a repo that synced but has something to say.
+const noteGlyph = "·"
 
 // animate is whether progress bars draw on Out; SetupTerminal decides.
 var animate = true
@@ -144,8 +159,10 @@ func PrintRepoTable(repos []ghapi.RepoInfo) {
 	Printf("\nTotal: %s repos\n", text.Bold.Sprint(len(repos)))
 }
 
-// PrintSummary renders the post-run summary: per-action counts, the
-// list of failed repos, and the list of skipped dirty repos.
+// PrintSummary renders the post-run summary: per-action counts, then a section
+// for each kind of repo that needs a look: failures, repos fetched without
+// updating their working tree, empty repos, unusable names, and notes on repos
+// that synced with something to say. A section with no rows isn't printed.
 func PrintSummary(summary cloner.SyncSummary) {
 	tw := table.NewWriter()
 	tw.SetOutputMirror(Out)
@@ -157,7 +174,13 @@ func PrintSummary(summary cloner.SyncSummary) {
 		if n == 0 {
 			continue
 		}
-		tw.AppendRow(table.Row{text.FgCyan.Sprint(string(a)), n})
+		label := string(a)
+		// The unusable-name rows keep their plain label, as the table's other
+		// quiet skips do; their glyph is on the lines below.
+		if g, ok := glyphs[a]; ok && a != cloner.ActionSkippedName {
+			label = g + " " + label
+		}
+		tw.AppendRow(table.Row{text.FgCyan.Sprint(label), n})
 	}
 	tw.SetColumnConfigs([]table.ColumnConfig{
 		{Number: 2, Align: text.AlignRight},
@@ -168,35 +191,57 @@ func PrintSummary(summary cloner.SyncSummary) {
 	tw.Render()
 	Println()
 
-	var failed, dirty, unusable []cloner.RepoResult
-	for _, r := range summary.Results {
-		switch r.Action {
-		case cloner.ActionFailed:
-			failed = append(failed, r)
-		case cloner.ActionSkippedDirty:
-			dirty = append(dirty, r)
-		case cloner.ActionSkippedName:
-			unusable = append(unusable, r)
+	printSection("Failed repos:", text.FgRed, summary.Results, "", cloner.ActionFailed, cloner.ActionFailedWiki)
+	printSection("Fetched only (working tree not updated):", text.FgYellow, summary.Results, "", cloner.ActionFetchedOnly)
+	printSection("Skipped (empty):", text.Faint, summary.Results, "empty repository, skipped", cloner.ActionSkippedEmpty)
+	printSection("Skipped (unusable name):", text.FgYellow, summary.Results, "", cloner.ActionSkippedName)
+	printNotes(summary.Results)
+}
+
+// printSection lists the results whose action is one of actions under a bold
+// heading, one "  <glyph> <name>  <detail>" line each, the heading and glyph in
+// color. A non-empty detail replaces each result's own.
+func printSection(heading string, color text.Color, results []cloner.RepoResult, detail string, actions ...cloner.Action) {
+	var rows []cloner.RepoResult
+	for _, r := range results {
+		if slices.Contains(actions, r.Action) {
+			rows = append(rows, r)
 		}
 	}
-	if len(failed) > 0 {
-		Println(text.FgRed.Sprint(text.Bold.Sprint("Failed repos:")))
-		for _, r := range failed {
-			Printf("  %s: %s\n", r.Name, r.Detail)
+	if len(rows) == 0 {
+		return
+	}
+	Println(color.Sprint(text.Bold.Sprint(heading)))
+	for _, r := range rows {
+		d := r.Detail
+		if detail != "" {
+			d = detail
+		}
+		printRow(color.Sprint(glyphs[r.Action]), r.Name, d)
+	}
+}
+
+// printNotes lists the clones and pulls that carry a detail (a branch
+// fallback, a reset after a force-push, a switch after a rename), so none of
+// them is silent.
+func printNotes(results []cloner.RepoResult) {
+	var rows []cloner.RepoResult
+	for _, r := range results {
+		if (r.Action == cloner.ActionCloned || r.Action == cloner.ActionPulled) && r.Detail != "" {
+			rows = append(rows, r)
 		}
 	}
-	if len(dirty) > 0 {
-		Println(text.FgYellow.Sprint(text.Bold.Sprint("Skipped (local changes):")))
-		for _, r := range dirty {
-			Printf("  %s\n", r.Name)
-		}
+	if len(rows) == 0 {
+		return
 	}
-	if len(unusable) > 0 {
-		Println(text.FgYellow.Sprint(text.Bold.Sprint("Skipped (unusable name):")))
-		for _, r := range unusable {
-			Printf("  %s: %s\n", r.Name, r.Detail)
-		}
+	Println(text.Bold.Sprint("Notes:"))
+	for _, r := range rows {
+		printRow(noteGlyph, r.Name, r.Detail)
 	}
+}
+
+func printRow(glyph, name, detail string) {
+	Printf("  %s %s  %s\n", glyph, name, detail)
 }
 
 func spaces(n int) string {
