@@ -1,7 +1,7 @@
 ```
 --- KICKOFF: begin orchestration at [deep] ---
 
-  Status: 1/3 groups done | last review: wave-1 PASS | current: ghx m1 s2 [deep] | updated 2026-10-13
+  Status: 2/3 groups done | last review: wave-2 PASS | current: ghx m1 s3-s5 [exec] | updated 2026-10-13 | passed unattended: gate 2 before wave 2
 
   mode: unattended | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch claude/ecstatic-archimedes-2dxtun) | guard 3x min $50 | fixups 2 | confirmed 2026-10-13 session 8e4630de-74dd-5cb4-9a70-cd78dd6ff4a2: unattended
 
@@ -96,7 +96,7 @@ Files: `internal/cloner/git.go`, `internal/cloner/git_test.go` (and `export_test
 Acceptance: `make ci` passes; no behavior change yet in `processRepo` beyond the network args, retry and message trimming.
 
 --- WAVE 2 [deep] ---
-#### s2 - [deep] Fetch-first decision table, clone fallback and empty skip
+#### s2 - [deep] Fetch-first decision table, clone fallback and empty skip (done)
 
 Files: `internal/cloner/cloner.go`, `internal/cloner/action.go`, `internal/cloner/cloner_test.go`, plus the minimum in `internal/ui/ui.go` and `internal/ui/ui_test.go` to keep `make ci` green (s4 does the presentation).
 
@@ -195,6 +195,7 @@ One commit per step on `claude/ecstatic-archimedes-2dxtun`, subject `m1.sN <impe
 ## Review log
 
 review wave-1 (ghx m1 s1) 32a86d9..38bcf57: PASS - all six probes, pickBranch, network args/timeout, transient retry and Message() trimming match the spec; make ci green, cloner coverage 95.6%; accepted deviations: operationInProgress takes ctx, upstreamTrack returns the full ref, new withTimeout seam, credential_test real-clone assertion now checks the trimmed fatal line; optional: retry matches markers only, with no explicit not-found/auth exclusion - 2026-10-13
+review wave-2 (ghx m1 s2) aafde10..f4532de: PASS - decision table in spec order, every guard holds, every listed case tested (12-case SyncsAnExistingClone table asserts no tree-moving command in fetched-only cases); make ci green, cloner 94.5% / ui 98.8%, race x2 clean; accepted deviations: reset --keep instead of --hard (refuses to clobber an untracked file the new tip adds; backup ref removed on refusal), switch -c instead of -C for unborn HEAD, full refs/remotes/origin/<b> refs, update-ref with empty old value so a backup is never overwritten, currentBranch probed once before fetch, --untracked-files=no lives in git.go so wikis follow it; follow-ups: a clone kept after a failed checkout reads as local changes every run, a ctx cancelled between fetch and remoteBranches can report skipped (empty) without deleting anything; passed unattended: gate 2 - 2026-10-13
 
 ## Token log
 
@@ -209,3 +210,6 @@ review wave-1 (ghx m1 s1) 32a86d9..38bcf57: PASS - all six probes, pickBranch, n
 tokens orchestrator-kickoff plan-sync-failures-heron (claude-opus-5-5): input ~84 / cache read ~6.4M / cache write ~0 5m + ~280k 1h / output ~49k | ~$4.52 API-equiv
 tokens wave-1 ghx-m1-s1 (claude-sonnet-5-5): input ~32 / cache read ~1.5M / cache write ~81k / output ~16k | ~$0.67 API-equiv (output est.) session 8e4630de-74dd-5cb4-9a70-cd78dd6ff4a2
 tokens review-wave-1 ghx-m1-s1 (claude-opus-5-5): input ~20 / cache read ~220k / cache write ~42k / output ~10k | ~$0.46 API-equiv (output est.) session 8e4630de-74dd-5cb4-9a70-cd78dd6ff4a2
+tokens orchestrator-wave-1 ghx-m1-s1 (claude-opus-5-5): input ~12 / cache read ~790k / cache write ~0 5m + ~20k 1h / output ~7.9k | ~$0.47 API-equiv
+tokens wave-2 ghx-m1-s2 (claude-opus-5-5): input ~68 / cache read ~4.5M / cache write ~180k / output ~34k | ~$2.49 API-equiv (output est.) session 8e4630de-74dd-5cb4-9a70-cd78dd6ff4a2
+tokens review-wave-2 ghx-m1-s2 (claude-opus-5-5): input ~18 / cache read ~290k / cache write ~61k / output ~9k | ~$0.54 API-equiv (output est.) session 8e4630de-74dd-5cb4-9a70-cd78dd6ff4a2

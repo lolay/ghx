@@ -4,9 +4,9 @@ Plan: `specs/handoffs/plan-sync-failures-heron.md` (personal-plan-orchestrate ru
 
 - **Branch:** `claude/ecstatic-archimedes-2dxtun` (assigned by the cloud session; task branch).
 - **Mode:** unattended, confirmed 2026-10-13 in session 8e4630de-74dd-5cb4-9a70-cd78dd6ff4a2 (harness=claude-code runner=cloud).
-- **Done:** wave 1 [exec] ghx m1 s1, 32a86d9..38bcf57, review PASS.
-- **Next unit:** wave 2 [deep] ghx m1 s2 (fetch-first decision table, clone fallback, empty skip); gate 2 passes as an unattended checkpoint.
-- **Spend:** ~$5.65 of ~$10 expected (guard: $50); the kickoff parent was ~$4.52 of that.
+- **Done:** wave 1 [exec] ghx m1 s1, 32a86d9..38bcf57, review PASS; wave 2 [deep] ghx m1 s2, aafde10..f4532de, review PASS.
+- **Next unit:** wave 3 [exec] ghx m1 s3-s5 (wikis, summary glyphs, README and CHANGELOG).
+- **Spend:** ~$9.16 of ~$10 expected (guard: $50); the kickoff parent was ~$4.52 of that.
 - **Resume:** paste the plan's Kickoff prompt into a new session on this branch.
 
 ## Pending question (verbatim)
@@ -16,15 +16,30 @@ None.
 ## Review log verdicts
 
 - wave-1 (ghx m1 s1) 32a86d9..38bcf57: PASS.
+- wave-2 (ghx m1 s2) aafde10..f4532de: PASS.
 
 ## Fix-ups, retries and checkpoints
 
-None yet.
+- Gate 2 (before wave 2 [deep], after wave 1 [exec]) passed as an unattended checkpoint.
+
+## Deviations from plan
+
+- Gate 2 before wave 2 was logged, not asked (unattended mode).
+
+## Follow-ups flagged (not in this plan)
+
+- A clone kept after its checkout failed (LFS) reads as `fetched only / local changes` on every later run, since every file shows deleted in the index.
+- A ctx cancelled between the fetch and `remoteBranches` can report `skipped (empty)`; nothing is deleted on that path.
+- Retry matches transient markers only, with no explicit `Repository not found` / auth exclusion; today's git output for those carries no marker.
+- From planning: Git LFS content isn't fetched, submodules aren't initialized, and a repo renamed on GitHub is re-cloned under its new name.
 
 ## Decisions so far
 
 - wave-1 (ghx m1 s1), review PASS: `operationInProgress(ctx, dir)` takes a ctx (the spec wrote `(dir)`); `upstreamTrack` returns the full ref (`refs/remotes/origin/x`), as `%(upstream)` prints it; a production seam `withTimeout` (package variable wrapping `context.WithTimeout`) lets `RecordGit(...).Timeouts()` show each command's timeout; fetch doesn't retry once ctx is done.
 - wave-1: `gitResult.Message()` now returns git's last `fatal:`/`error:` line, so `TestCloneRepos_MasksTheTokenInFailureDetails`' real-clone case asserts `Contains "fatal:"` plus no token rather than the quoted URL.
+- wave-2 (ghx m1 s2), review PASS: following a force-push uses `reset --keep refs/remotes/origin/<b>`, not `reset --hard` (it refuses to overwrite an untracked file the new tip adds; on refusal the backup ref is deleted and the result is fetched only). No path runs `reset --hard`. Docs (s5) should describe it as a reset that never overwrites files.
+- wave-2: `status` passes `--untracked-files=no` inside `git.go`, so the wiki path already follows the untracked-files rule; `syncExisting(ctx, git, dest, repo, opts) RepoResult` is the entry point s3 reuses, with helpers `updateTarget`, `followForcePush`, `updateOther`, `tipsBeforeFetch`; `cloneNew` holds the clone path.
+- wave-2: the backup ref is created with `update-ref <ref> <sha> ""`, so it never overwrites an earlier backup; after a force-push over one unpushed commit the detail counts 2 local commits (the local one plus the dropped upstream one).
 - wave-1: the worker already added an `## [Unreleased]` CHANGELOG entry and a `specs/testing.md` seams row for s1; later steps extend those entries rather than duplicating them.
 
 ## Environment notes
