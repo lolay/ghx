@@ -4,9 +4,9 @@ Plan: `specs/handoffs/plan-sync-failures-heron.md` (personal-plan-orchestrate ru
 
 - **Branch:** `claude/ecstatic-archimedes-2dxtun` (assigned by the cloud session; task branch).
 - **Mode:** unattended, confirmed 2026-10-13 in session 8e4630de-74dd-5cb4-9a70-cd78dd6ff4a2 (harness=claude-code runner=cloud).
-- **Done:** nothing yet. Kickoff answered; wave 1 launching.
-- **Next unit:** wave 1 [exec] ghx m1 s1 (git probes and network-command plumbing).
-- **Spend:** $0 of ~$10 expected (guard: $50).
+- **Done:** wave 1 [exec] ghx m1 s1, 32a86d9..38bcf57, review PASS.
+- **Next unit:** wave 2 [deep] ghx m1 s2 (fetch-first decision table, clone fallback, empty skip); gate 2 passes as an unattended checkpoint.
+- **Spend:** ~$5.65 of ~$10 expected (guard: $50); the kickoff parent was ~$4.52 of that.
 - **Resume:** paste the plan's Kickoff prompt into a new session on this branch.
 
 ## Pending question (verbatim)
@@ -15,7 +15,7 @@ None.
 
 ## Review log verdicts
 
-None yet.
+- wave-1 (ghx m1 s1) 32a86d9..38bcf57: PASS.
 
 ## Fix-ups, retries and checkpoints
 
@@ -23,7 +23,9 @@ None yet.
 
 ## Decisions so far
 
-None yet.
+- wave-1 (ghx m1 s1), review PASS: `operationInProgress(ctx, dir)` takes a ctx (the spec wrote `(dir)`); `upstreamTrack` returns the full ref (`refs/remotes/origin/x`), as `%(upstream)` prints it; a production seam `withTimeout` (package variable wrapping `context.WithTimeout`) lets `RecordGit(...).Timeouts()` show each command's timeout; fetch doesn't retry once ctx is done.
+- wave-1: `gitResult.Message()` now returns git's last `fatal:`/`error:` line, so `TestCloneRepos_MasksTheTokenInFailureDetails`' real-clone case asserts `Contains "fatal:"` plus no token rather than the quoted URL.
+- wave-1: the worker already added an `## [Unreleased]` CHANGELOG entry and a `specs/testing.md` seams row for s1; later steps extend those entries rather than duplicating them.
 
 ## Environment notes
 

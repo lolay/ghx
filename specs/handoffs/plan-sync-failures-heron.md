@@ -1,7 +1,7 @@
 ```
 --- KICKOFF: begin orchestration at [deep] ---
 
-  Status: 0/3 groups done | last review: — | current: ghx m1 s1 [exec] | updated 2026-10-13
+  Status: 1/3 groups done | last review: wave-1 PASS | current: ghx m1 s2 [deep] | updated 2026-10-13
 
   mode: unattended | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch claude/ecstatic-archimedes-2dxtun) | guard 3x min $50 | fixups 2 | confirmed 2026-10-13 session 8e4630de-74dd-5cb4-9a70-cd78dd6ff4a2: unattended
 
@@ -76,7 +76,7 @@ Expected result on a rerun of the user's sync: the four clone failures clone (or
 ## m1 - Fetch-first sync
 
 --- WAVE 1 [exec] ---
-#### s1 - [exec] Git probes and network-command plumbing
+#### s1 - [exec] Git probes and network-command plumbing (done)
 
 Files: `internal/cloner/git.go`, `internal/cloner/git_test.go` (and `export_test.go` if a test needs a new seam).
 
@@ -194,6 +194,8 @@ One commit per step on `claude/ecstatic-archimedes-2dxtun`, subject `m1.sN <impe
 
 ## Review log
 
+review wave-1 (ghx m1 s1) 32a86d9..38bcf57: PASS - all six probes, pickBranch, network args/timeout, transient retry and Message() trimming match the spec; make ci green, cloner coverage 95.6%; accepted deviations: operationInProgress takes ctx, upstreamTrack returns the full ref, new withTimeout seam, credential_test real-clone assertion now checks the trimmed fatal line; optional: retry matches markers only, with no explicit not-found/auth exclusion - 2026-10-13
+
 ## Token log
 
 **Counting header (Claude Code)**
@@ -203,3 +205,7 @@ One commit per step on `claude/ecstatic-archimedes-2dxtun`, subject `m1.sN <impe
 - Rates by `<model>`, $ per Mtok input / cached / output: `claude-opus-5-5` 4.00 / 0.20 / 20.00; `claude-sonnet-5-5` 2.00 / 0.20 / 10.00.
 - `$C` = (input × in + cache read × cached + 5m write × in × 1.25 + 1h write × in × 2.00 + output × out) / 1M.
 - In another harness, or on a model not listed here, count and price per plan-execution.md "Token accounting" and "Model price table" instead.
+
+tokens orchestrator-kickoff plan-sync-failures-heron (claude-opus-5-5): input ~84 / cache read ~6.4M / cache write ~0 5m + ~280k 1h / output ~49k | ~$4.52 API-equiv
+tokens wave-1 ghx-m1-s1 (claude-sonnet-5-5): input ~32 / cache read ~1.5M / cache write ~81k / output ~16k | ~$0.67 API-equiv (output est.) session 8e4630de-74dd-5cb4-9a70-cd78dd6ff4a2
+tokens review-wave-1 ghx-m1-s1 (claude-opus-5-5): input ~20 / cache read ~220k / cache write ~42k / output ~10k | ~$0.46 API-equiv (output est.) session 8e4630de-74dd-5cb4-9a70-cd78dd6ff4a2
