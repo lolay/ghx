@@ -250,7 +250,7 @@ token and network access.
   whatever state the working tree is in. The working tree fast-forwards when it
   is on the default branch with no changes to tracked files. Otherwise the
   summary lists the repo under "Fetched only" with the reason (local changes,
-  commits not on origin, another branch checked out, a detached HEAD, a rebase
+  naming the first few changed files, commits not on origin, another branch checked out, a detached HEAD, a rebase
   or merge in progress). Details:
   - Untracked files don't block an update; git itself refuses only when an
     incoming file would overwrite one.
@@ -282,7 +282,8 @@ token and network access.
 - Writes a `.ghx.json` manifest to the output directory after each run, used to
   detect removed and newly archived repos next time.
 
-The summary marks what needs a look: `✗` for failures, `⚠` for repos fetched
+The summary counts existing repos as `pulled` (new commits came in) or `up to
+date` (nothing new), and marks what needs a look: `✗` for failures, `⚠` for repos fetched
 only, `∅` for empty repos, and a "Notes" section for repos that were updated
 with something to say (a branch fallback, a reset after a force-push, a switch
 after a rename). The words always come with the glyph, so piped output reads.

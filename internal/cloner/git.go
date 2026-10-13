@@ -300,6 +300,36 @@ func hasChanges(porcelain string) bool {
 	return strings.TrimSpace(porcelain) != ""
 }
 
+// maxListedChanges is how many changed paths a "local changes" detail names
+// before it only counts the rest.
+const maxListedChanges = 3
+
+// describeChanges turns git status --porcelain output into a detail that
+// names the changed paths, so a fetched-only repo says what blocked it:
+// "local changes: a.go, b.go (+2 more)". A rename names its new path.
+func describeChanges(porcelain string) string {
+	var paths []string
+	for line := range strings.Lines(porcelain) {
+		line = strings.TrimRight(line, "\r\n")
+		if len(line) < 4 {
+			continue
+		}
+		path := line[3:]
+		if _, to, ok := strings.Cut(path, " -> "); ok {
+			path = to
+		}
+		paths = append(paths, path)
+	}
+	if len(paths) == 0 {
+		return "local changes"
+	}
+	detail := "local changes: " + strings.Join(paths[:min(len(paths), maxListedChanges)], ", ")
+	if extra := len(paths) - maxListedChanges; extra > 0 {
+		detail += fmt.Sprintf(" (+%d more)", extra)
+	}
+	return detail
+}
+
 // cleanOrigin rewrites an HTTPS origin URL that carries user info, as clones
 // made by ghx before the token moved to git's environment do, to the same URL
 // without it. SSH and local-path origins, and a repo with no origin, are left

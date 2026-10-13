@@ -302,7 +302,7 @@ func TestCloneRepos_Wikis(t *testing.T) {
 		require.NoError(t, err)
 		var wikiResults []cloner.RepoResult
 		for _, r := range summary.Results {
-			if r.Action != cloner.ActionPulled {
+			if r.Name == "app.wiki" {
 				wikiResults = append(wikiResults, r)
 			}
 		}
@@ -328,7 +328,7 @@ func TestCloneRepos_Wikis(t *testing.T) {
 		gittest.AddCommit(t, wiki, "master", "Home.md", "home\n")
 		summary, err := cloner.CloneRepos(t.Context(), []ghapi.RepoInfo{repo}, opts)
 		require.NoError(t, err)
-		assert.Equal(t, []cloner.Action{cloner.ActionPulled}, actionsByName(summary)["app"],
+		assert.Equal(t, []cloner.Action{cloner.ActionUpToDate}, actionsByName(summary)["app"],
 			"an existing wiki adds no result of its own")
 		assert.FileExists(t, filepath.Join(wikiDest, "Home.md"))
 
@@ -337,7 +337,7 @@ func TestCloneRepos_Wikis(t *testing.T) {
 		summary, err = cloner.CloneRepos(t.Context(), []ghapi.RepoInfo{repo}, opts)
 		require.NoError(t, err)
 		assert.NoFileExists(t, filepath.Join(wikiDest, "More.md"), "a wiki with tracked changes is not pulled into")
-		assert.ElementsMatch(t, []cloner.Action{cloner.ActionPulled, cloner.ActionFetchedOnly}, slices.Concat(actionsByName(summary)["app"], actionsByName(summary)["app.wiki"]),
+		assert.ElementsMatch(t, []cloner.Action{cloner.ActionUpToDate, cloner.ActionFetchedOnly}, slices.Concat(actionsByName(summary)["app"], actionsByName(summary)["app.wiki"]),
 			"the wiki that was left alone is listed")
 	})
 
@@ -821,6 +821,16 @@ func TestCloneRepos_SyncsAnExistingClone(t *testing.T) {
 			detail: `^1 local commit\(s\) not on origin/main$`,
 		},
 		{
+			name: "a clone with nothing new is up to date",
+			setup: func(t *testing.T, w *syncWorld) func(t *testing.T) {
+				head := rev(t, w.dest, "HEAD")
+				return func(t *testing.T) {
+					assert.Equal(t, head, rev(t, w.dest, "HEAD"))
+				}
+			},
+			want: cloner.ActionUpToDate,
+		},
+		{
 			name: "a tracked change is kept and only fetched",
 			setup: func(t *testing.T, w *syncWorld) func(t *testing.T) {
 				w.write(t, "README.md", "edited\n")
@@ -832,7 +842,7 @@ func TestCloneRepos_SyncsAnExistingClone(t *testing.T) {
 				}
 			},
 			want:   cloner.ActionFetchedOnly,
-			detail: `^local changes$`,
+			detail: `^local changes: README\.md$`,
 		},
 		{
 			name: "an untracked file doesn't block a fast-forward",
@@ -952,7 +962,8 @@ func TestCloneRepos_SyncsAnExistingClone(t *testing.T) {
 			assert.Equal(t, tt.want, got.Action)
 			assert.Regexp(t, tt.detail, got.Detail)
 			check(t)
-			if tt.want == cloner.ActionFetchedOnly {
+			// Neither moves the working tree.
+			if tt.want == cloner.ActionFetchedOnly || tt.want == cloner.ActionUpToDate {
 				for _, c := range log.Calls() {
 					if sub := subcommand(c); sub != tt.refused {
 						assert.NotContains(t, treeCommands, sub, "a fetched-only repo ran %v", c.Args)

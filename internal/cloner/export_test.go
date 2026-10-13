@@ -18,6 +18,7 @@ var (
 	CheckRepoNameOn = checkRepoName
 	CheckGitVersion = checkGitVersion
 	HasChanges      = hasChanges
+	DescribeChanges = describeChanges
 	StripUserInfo   = stripUserInfo
 	RetryWithin     = retryWithin
 	InterruptGit    = interruptGit
