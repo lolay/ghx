@@ -13,8 +13,10 @@ that were deleted or archived upstream out of the way. A `.ghx.json` manifest in
 the output directory records each run so the next one can tell what changed.
 
 - **Idempotent.** The first run clones; every later run updates.
-- **Safe with local work.** A repository with uncommitted changes is skipped, not
-  pulled.
+- **Safe with local work.** Every repository is fetched, so each remote branch
+  is backed up, but the working tree is only fast-forwarded when that loses
+  nothing. A repository with uncommitted changes is fetched, not updated, and
+  the summary lists it as fetched only.
 - **Filterable.** Select by type (`public`, `private`, `forks`, `sources`), by
   name regex, and by size.
 - **Previewable.** `--dry-run` shows what would happen and changes nothing.
@@ -266,9 +268,10 @@ token and network access.
     `main`, else `master`, else its newest branch, and the summary notes it.
   - An empty repo has nothing to back up: it is skipped (`∅`, listed under
     "Skipped (empty)") and cloned on the first run after it gains a commit.
-  - A big clone isn't capped at 5 minutes: a transfer is aborted only when it
-    stalls, below 1 KB/s for 60 seconds. A transient network error (a dropped
-    connection, a timeout, a rate limit) is retried once.
+  - A big clone isn't capped at 5 minutes: a transfer is aborted when it
+    stalls (below 1 KB/s for 60 seconds), and any clone or fetch is capped at
+    60 minutes. A transient network error (a dropped connection, a timeout, a
+    rate limit) is retried once.
   - With `--clone-wiki`, a wiki is synced the same way. A wiki that doesn't
     exist is reported as not found; any other wiki failure is `failed wiki`
     with git's message.
@@ -285,9 +288,7 @@ only, `∅` for empty repos, and a "Notes" section for repos that were updated
 with something to say (a branch fallback, a reset after a force-push, a switch
 after a rename). The words always come with the glyph, so piped output reads.
 
-**Not backed up:** Git LFS content (only the pointer files are cloned, and a
-machine without `git-lfs` gets the repo as fetched only) and submodules'
-contents.
+**Not backed up:** Git LFS content and submodules' contents.
 
 ## Platforms
 
