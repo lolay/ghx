@@ -7,9 +7,12 @@
 - **Done:** wave 1 [exec] `ghx s1-s5`, 56d21d8..33a21fd, review PASS. No fix-ups,
   retries or checkpoints.
   Wave 2 [exec] `ghx s6-s7` (re-plan), 7ee0a3c..0592684, review PASS.
-- **Spend:** ~$12.8 of ~$4.6 expected (Token log in the plan).
-- **Next unit:** wave 3 [exec] `ghx s8-s10`: fixed widths, footer progress, rows
-  streamed into scrollback, no duplicate summary counts.
+- **Spend:** ~$17.3 of ~$4.6 expected (Token log in the plan).
+  Wave 3 [exec] `ghx s8-s10`, c7bf5b6..4a5e995, review CONCERNS (live-area box
+  drawing: the column-closing rule sits above the in-flight rows, not above the footer).
+- **Next unit:** fix-up 3-fix (automatic, 1 of 2), then merge `origin/main`
+  (ee8d164, fetch-first sync and failure handling, lolay/ghx#6) as Gary asked;
+  expect conflicts in `internal/cloner/cloner.go`, `action.go`, `internal/ui/ui.go`.
 - **Later:** Gary picks a renderer; a follow-up keeps it, deletes the rest and
   `GHX_PROGRESS`, tidies `go.mod`, updates `specs/`, and removes or promotes this
   plan and handoff before the branch merges.
@@ -29,7 +32,7 @@ Run twice against the same dir to see pulls. Piped output gets no progress.
 
 ## Pending question
 
-None. Gary picked `table` and approved wave 3 with rows in completion order ("yes").
+None. Gary asked to merge `main` ("merge main as there was some handling changes for failure modes"); it runs after the fix-up.
 
 ## Decisions so far
 
@@ -41,9 +44,12 @@ None. Gary picked `table` and approved wave 3 with rows in completion order ("ye
 - fang's `man` and `completion` are kept; an org named `help`, `completion` or
   `man` must follow `--` (README and CHANGELOG say so).
 - Under NO_COLOR, `execute` strips ANSI itself: fang still emits bold and reset.
-- Table renderer: `ui.RepoLister` (SetRepos, PrintTable); run.go prints the final
-  table once after the last pass and via defer; Stop erases the live area; a row
-  running at Stop shows `interrupted`; the bar counts per pass.
+- Table renderer: `ui.RepoLister` is (SetRepos, FinishTable); widths fixed at
+  SetRepos (table_layout.go); finished rows stream above the live area in finish
+  order; FinishTable closes the table (unfinished rows, rule, totals footer,
+  border); footer, rule and border are hand-drawn from StyleLight's characters
+  because go-pretty's merged footer wraps at the first column; run.go skips the
+  archived-pass and --delete notes inside the table; `ui.PrintSummaryLists` under it.
 - pterm renderer uses an AreaPrinter over private buffers, with the cursor target
   pointed at `Out` only between Start and Stop.
 
@@ -60,6 +66,7 @@ None. Gary picked `table` and approved wave 3 with rows in completion order ("ye
 
 ## Deviations from plan
 
+- wave 3: automatic fix-up 3-fix for the review's CONCERNS (passed unattended: gate 1, fix-up 1 of 2).
 - Re-plan after wave 2: wave 3 (s8-s10) added at Gary's request; unplanned row.
 - Re-plan after wave 1: wave 2 (s6, s7) added at Gary's request; its Cost table row is unplanned (expected —).
 

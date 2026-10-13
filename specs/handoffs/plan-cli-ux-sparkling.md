@@ -1,7 +1,7 @@
 ```
 --- KICKOFF: begin orchestration at [deep] ---
 
-  Status: 2/3 groups done | last review: wave-2 PASS | current: ghx s8-s10 [exec] | updated 2026-10-13 | over expected: ~$12.8 of ~$4.6
+  Status: 3/3 groups done | last review: wave-3 CONCERNS | current: ghx s8-s10 [exec] fix-up 3-fix | updated 2026-10-13 | over expected: ~$17.6 of ~$4.6
 
   mode: unattended | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch claude/magical-ride-7h4rhi) | guard 3x min $50 | fixups 2 | confirmed 2026-10-13 session bd9c01f5-fe1c-5a92-ab0c-95720d491a10: unattended
 
@@ -34,6 +34,7 @@
 | 1 [exec] ghx s1-s5 | ~4.6M | ~$1.8 | ~11M (output est.) | ~$4.2 (output est.) |
 | 2 [exec] ghx s6-s7 | — | — | ~6.2M (output est.) | ~$2.6 (output est.) |
 | 3 [exec] ghx s8-s10 | — | — | — | — |
+| 3-fix [exec] ghx s8-s10 | — | — | — | — |
 | orchestrator | ~3.1M | ~$2.8 | ~14M | ~$6.0 |
 | **Total** | ~7.7M | ~$4.6 | ~31M | ~$12.8 |
 
@@ -261,7 +262,7 @@ table while it runs, as Claude's CLI allows. He accepted rows appearing in the
 order repos finish. Change `GHX_PROGRESS=table` in place; leave the other
 renderers alone.
 
-#### s8 - [exec] Fixed column widths and a progress footer in the table renderer
+#### s8 - [exec] Fixed column widths and a progress footer in the table renderer (done)
 
 In `internal/ui/progress_table.go`:
 - Measure every column once, when `SetRepos` gets the list: each column's width
@@ -288,7 +289,7 @@ the longest action) and asserts every frame's lines have the same width; a test
 asserts the footer text and counts across two `Start`/`Stop` passes; the narrow
 width test still drops Last Pushed first. No change outside `internal/ui`.
 
-#### s9 - [exec] Stream finished rows into scrollback
+#### s9 - [exec] Stream finished rows into scrollback (done)
 
 Rework the table renderer so only the bottom of the table is live, the way
 Claude's CLI keeps finished output in the terminal's scrollback:
@@ -325,7 +326,7 @@ a test covers a cancel (unfinished rows printed as `queued`/`interrupted`); a cl
 test shows the archived-pass message is absent with the table renderer and
 present with another renderer.
 
-#### s10 - [exec] Drop the duplicate summary counts under the table renderer
+#### s10 - [exec] Drop the duplicate summary counts under the table renderer (done)
 
 When the table renderer drew the table, the final footer already has the counts,
 so `ui.PrintSummary`'s "Sync Summary" counts table is a repeat. Under the table
@@ -350,6 +351,7 @@ removed or promoted before the branch merges.
 
 review wave-1 (ghx s1,s2,s3,s4,s5) 56d21d8..33a21fd: PASS - make ci green (lint 0 issues, race tests x3); interface, fang wrap and three renderers match spec; minor: waitFor asserts off the test goroutine, testing.md cli coverage says ~92% (now 94.1%) - 2026-10-13
 review wave-2 (ghx s6,s7) 7ee0a3c..0592684: PASS - make ci green (race x3 on ui and cli); symbols via copies of pterm.Success, no pterm globals assigned; table renderer windows, drops columns, prints the full table once from run.go; removed/too-large notes now print before the live table - 2026-10-13
+review wave-3 (ghx s8,s9,s10) c7bf5b6..4a5e995: CONCERNS - live area box drawing is wrong: the ┴ rule sits above the in-flight rows (closing columns the rows still use) instead of between them and the footer, and on the first frame it sits right under the header separator (two separators in a row); progress_table.go frameLocked concatenates [l.rule, rows..., footer, bottom] and progress_table_test.go:385-395 locks that order in; the rule belongs directly above the merged footer - 2026-10-13
 
 ## Token log
 
@@ -367,7 +369,9 @@ tokens review-wave-1 ghx-s1-s2-s3-s4-s5 (claude-opus-5-5): input ~40 / cache rea
 tokens orchestrator-wave-1 ghx-s1-s2-s3-s4-s5 (claude-opus-5-5): input ~54 / cache read ~6.4M / cache write ~0 5m + ~70k 1h / output ~27k | ~$2.37 API-equiv
 tokens wave-2 ghx-s6-s7 (claude-sonnet-5-5): input ~76 / cache read ~5.4M / cache write ~190k / output ~38k | ~$1.95 API-equiv (output est.) session bd9c01f5-fe1c-5a92-ab0c-95720d491a10
 tokens review-wave-2 ghx-s6-s7 (claude-opus-5-5): input ~26 / cache read ~500k / cache write ~53k / output ~14k | ~$0.64 API-equiv (output est.) session bd9c01f5-fe1c-5a92-ab0c-95720d491a10
-tokens orchestrator-wave-2 ghx-s6-s7 (claude-opus-5-5): input ~6 / cache read ~560k / cache write ~0 5m + ~20k 1h / output ~610 | ~$0.28 API-equiv
+tokens orchestrator-wave-2 ghx-s6-s7 (claude-opus-5-5): input ~20 / cache read ~2.7M / cache write ~0 5m + ~41k 1h / output ~17k | ~$1.20 API-equiv
+tokens wave-3 ghx-s8-s9-s10 (claude-sonnet-5-5): input ~100 / cache read ~8.5M / cache write ~240k / output ~51k | ~$2.79 API-equiv (output est.) session bd9c01f5-fe1c-5a92-ab0c-95720d491a10
+tokens review-wave-3 ghx-s8-s9-s10 (claude-opus-5-5): input ~30 / cache read ~630k / cache write ~68k / output ~14k | ~$0.75 API-equiv (output est.) session bd9c01f5-fe1c-5a92-ab0c-95720d491a10
 
 ## Completion summary (wave 1)
 
