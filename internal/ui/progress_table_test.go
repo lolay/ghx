@@ -382,20 +382,49 @@ func TestTableProgress_TheLiveAreaHoldsOnlyWhatIsInFlight(t *testing.T) {
 		for i := range 20 {
 			assert.Contains(t, lines[first+i], fmt.Sprintf("repo-%02d", i))
 		}
-		// The live area is the rule, the 3 in-flight rows, the footer and the
-		// closing border: nothing finished again, nothing queued.
+		// The live area is the 3 in-flight rows, the rule that closes their
+		// columns, the footer and the closing border: nothing finished again,
+		// nothing queued.
 		live := lines[first+20:]
 		require.Len(t, live, 6, strings.Join(live, "\n"))
-		assert.True(t, strings.HasPrefix(live[0], "├"))
 		for i, name := range []string{"repo-20", "repo-21", "repo-22"} {
-			assert.Contains(t, live[1+i], name)
-			assert.Regexp(t, `pulling \d+\.\ds`, live[1+i])
+			assert.Contains(t, live[i], name)
+			assert.Regexp(t, `pulling \d+\.\ds`, live[i])
 		}
+		assert.True(t, strings.HasPrefix(live[3], "├") && strings.Contains(live[3], "┴"), live[3])
 		assert.Contains(t, live[4], "Syncing 20/60")
 		assert.True(t, strings.HasPrefix(live[5], "└"))
 		assert.NotContains(t, scr, "repo-23", "a queued repo has no row yet")
 		assert.NotContains(t, scr, "done,", "the window footer is gone")
 		assert.LessOrEqual(t, len(live), height-2, "the area leaves two lines of the terminal")
+	})
+}
+
+func TestTableProgress_TheRuleSitsDirectlyAboveTheFooter(t *testing.T) {
+	needsANSICursor(t)
+	p, _, buf := newTable(t, 120, 20, tableRepos(10))
+
+	within(t, func() {
+		p.Start(10)
+		defer p.Stop()
+
+		// Nothing has run, so the header's separator is the line above the
+		// footer: one separator, not two in a row.
+		scr := waitForScreen(t, buf, "Syncing 0/10")
+		lines := strings.Split(scr, "\n")
+		require.GreaterOrEqual(t, len(lines), 3)
+		assert.True(t, strings.HasPrefix(lines[len(lines)-3], "├") && strings.Contains(lines[len(lines)-3], "┼"), scr)
+		assert.NotContains(t, strings.Join(lines, "\n"), "┴", "no rule yet")
+
+		// With a row in flight the rule closes it, right above the footer.
+		p.RepoStarted("repo-00", cloner.ProgressClone)
+		scr = waitForScreen(t, buf, "1 running")
+		lines = strings.Split(scr, "\n")
+		require.GreaterOrEqual(t, len(lines), 4)
+		assert.Contains(t, lines[len(lines)-4], "repo-00")
+		assert.True(t, strings.HasPrefix(lines[len(lines)-3], "├") && strings.Contains(lines[len(lines)-3], "┴"), scr)
+		assert.Contains(t, lines[len(lines)-2], "Syncing 0/10")
+		assert.True(t, strings.HasPrefix(lines[len(lines)-1], "└"))
 	})
 }
 
@@ -412,9 +441,12 @@ func TestTableProgress_TooManyInFlightShowTheFirstOnesAndCountTheRest(t *testing
 		}
 
 		// Of the 8 lines a 10-line terminal leaves, the rule, the footer and
-		// the closing border take 3, so 5 rows fit.
+		// the closing border take 3, so 5 rows fit, with the rule under them.
+
 		scr := waitForScreen(t, buf, "8 running · 52 queued · +3 more running")
-		live := strings.Join(emulate(buf.String())[len(tableLines(scr))-6:], "\n")
+		all := strings.Split(scr, "\n")
+		live := strings.Join(all[len(all)-8:], "\n")
+		assert.Contains(t, all[len(all)-3], "┴", "the rule is directly above the footer")
 		for i := range 5 {
 			assert.Contains(t, live, fmt.Sprintf("repo-%02d", i))
 		}

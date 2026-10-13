@@ -285,7 +285,12 @@ func (p *tableProgress) FinishTable() {
 	}
 	l := p.layoutLocked()
 	lines := p.rowLinesLocked(unfinished, time.Now())
-	lines = append(lines, l.rule, l.footer(p.totalsLocked()), l.bottom)
+	// With no rows at all the header's separator is the line above the footer,
+	// and a rule would be a second one.
+	if len(p.rows) > 0 {
+		lines = append(lines, l.rule)
+	}
+	lines = append(lines, l.footer(p.totalsLocked()), l.bottom)
 	p.printLocked(lines...)
 }
 
@@ -428,8 +433,8 @@ func (p *tableProgress) totalsLocked() string {
 	return strings.Join(parts, " · ")
 }
 
-// frameLocked is the live area: the in-flight rows, a rule and the progress
-// footer, each line ending in a newline. It is never taller than the terminal
+// frameLocked is the live area: the in-flight rows, a rule, the progress
+// footer and the closing border, each line ending in a newline. It is never taller than the terminal
 // less two lines, nor wider than the terminal. With too many repos in flight
 // for that, it shows the first ones and counts the rest in the footer. The
 // caller holds p.mu.
@@ -452,8 +457,14 @@ func (p *tableProgress) frameLocked(now time.Time) string {
 	var lines []string
 	if room >= 0 {
 		shown := running[:min(len(running), room)]
-		lines = slices.Concat([]string{l.rule}, p.rowLinesLocked(shown, now),
-			[]string{l.footer(p.progressLocked(now, len(running)-len(shown))), l.bottom})
+		lines = p.rowLinesLocked(shown, now)
+		// The rule closes the columns of the rows above it. With no row above
+		// (the header's separator is the line before), a rule would be a second
+		// separator in a row.
+		if done, _, _ := p.countsLocked(); done > 0 || len(shown) > 0 {
+			lines = append(lines, l.rule)
+		}
+		lines = append(lines, l.footer(p.progressLocked(now, len(running)-len(shown))), l.bottom)
 	} else {
 		lines = []string{l.footer(p.progressLocked(now, 0))}
 	}
