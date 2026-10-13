@@ -3,6 +3,7 @@ package ui_test
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -33,8 +34,16 @@ func (b *lockedBuffer) String() string {
 	return b.buf.String()
 }
 
-// renderers lists the GHX_PROGRESS names the smoke tests cover.
-var renderers = []string{"buildx"}
+// renderers lists the GHX_PROGRESS names the smoke tests cover, and whether
+// each also prints a line for a repo that finishes (a one-line bar names only
+// the repo that started last).
+var renderers = []struct {
+	name     string
+	logsDone bool
+}{
+	{"buildx", true},
+	{"indicatif", false},
+}
 
 // useRenderer makes ui.NewProgress return the named renderer, drawing into
 // the returned buffer.
@@ -48,6 +57,15 @@ func useRenderer(t *testing.T, name string) (cloner.Progress, *lockedBuffer) {
 	ui.ResetTerminal()
 	t.Setenv("GHX_PROGRESS", name)
 	return ui.NewProgress(), &buf
+}
+
+// waitFor blocks until the renderer has drawn name. A one-line renderer shows
+// only the repo that started last, so the test starts repos one at a time and
+// waits for each to be drawn before the next.
+func waitFor(t *testing.T, buf *lockedBuffer, name string) {
+	t.Helper()
+	require.Eventually(t, func() bool { return strings.Contains(buf.String(), name) },
+		10*time.Second, 5*time.Millisecond, "%s was never drawn", name)
 }
 
 // within fails the test if fn doesn't return in time: a renderer that
@@ -74,13 +92,14 @@ func TestRenderers_SurviveConcurrentCallsAndNameEveryRepo(t *testing.T) {
 	results := []cloner.Action{
 		cloner.ActionCloned, cloner.ActionPulled, cloner.ActionFailed, cloner.ActionSkippedDirty,
 	}
-	for _, name := range renderers {
-		t.Run(name, func(t *testing.T) {
-			p, buf := useRenderer(t, name)
+	for _, r := range renderers {
+		t.Run(r.name, func(t *testing.T) {
+			p, buf := useRenderer(t, r.name)
 			const repos = 12
 
 			within(t, func() {
 				p.Start(repos)
+				var starting sync.Mutex
 				var wg sync.WaitGroup
 				for i := range repos {
 					wg.Add(1)
@@ -91,7 +110,10 @@ func TestRenderers_SurviveConcurrentCallsAndNameEveryRepo(t *testing.T) {
 						if i%2 == 0 {
 							action = cloner.ProgressClone
 						}
+						starting.Lock()
 						p.RepoStarted(repo, action)
+						waitFor(t, buf, repo)
+						starting.Unlock()
 						time.Sleep(time.Duration(i%4) * 60 * time.Millisecond)
 						p.RepoDone(cloner.RepoResult{Name: repo, Action: results[i%len(results)]}, time.Duration(i)*time.Millisecond)
 					}()
@@ -113,26 +135,27 @@ func TestRenderers_SurviveConcurrentCallsAndNameEveryRepo(t *testing.T) {
 // RepoStarted with no RepoDone, a Stop before the count is reached, a Stop
 // with nothing started, and a second sync on the same value.
 func TestRenderers_ToleratePartialRuns(t *testing.T) {
-	for _, name := range renderers {
-		t.Run(name, func(t *testing.T) {
-			p, buf := useRenderer(t, name)
+	for _, r := range renderers {
+		t.Run(r.name, func(t *testing.T) {
+			p, buf := useRenderer(t, r.name)
 
 			within(t, func() {
 				p.Start(5)
 				p.RepoDone(cloner.RepoResult{Name: "bad-name", Action: cloner.ActionSkippedName}, 0)
 				p.RepoStarted("quick", cloner.ProgressClone)
+				waitFor(t, buf, "quick")
 				p.RepoDone(cloner.RepoResult{Name: "quick", Action: cloner.ActionCloned}, time.Millisecond)
 				p.RepoStarted("stuck", cloner.ProgressPull)
-				time.Sleep(150 * time.Millisecond)
+				waitFor(t, buf, "stuck")
 				p.Stop()
 
 				p.Start(1)
 				p.Stop()
 			})
 
-			out := buf.String()
-			assert.Contains(t, out, "bad-name")
-			assert.Contains(t, out, "quick")
+			if r.logsDone {
+				assert.Contains(t, buf.String(), "bad-name", "a repo that finished without starting is still logged")
+			}
 		})
 	}
 }

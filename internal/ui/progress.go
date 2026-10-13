@@ -23,6 +23,8 @@ func NewProgress() cloner.Progress {
 	switch os.Getenv(progressEnv) {
 	case "buildx":
 		return newBuildxProgress(Out)
+	case "indicatif":
+		return newIndicatifProgress(Out)
 	default:
 		return newGoPrettyProgress(Out)
 	}
