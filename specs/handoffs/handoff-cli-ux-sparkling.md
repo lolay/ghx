@@ -2,16 +2,18 @@
 
 - **Branch:** `claude/magical-ride-7h4rhi` in `lolay/ghx` (assigned by the cloud
   session; cut from `main` at d984df8).
-- **Plan:** `specs/handoffs/plan-cli-ux-sparkling.md` (complete after wave 2).
+- **Plan:** `specs/handoffs/plan-cli-ux-sparkling.md` (re-opened for wave 3).
 - **Mode:** unattended (confirmed 2026-10-13; runner=cloud).
 - **Done:** wave 1 [exec] `ghx s1-s5`, 56d21d8..33a21fd, review PASS. No fix-ups,
   retries or checkpoints.
   Wave 2 [exec] `ghx s6-s7` (re-plan), 7ee0a3c..0592684, review PASS.
 - **Spend:** ~$12.8 of ~$4.6 expected (Token log in the plan).
+- **Next unit:** wave 3 [exec] `ghx s8-s10`: fixed widths, footer progress, rows
+  streamed into scrollback, no duplicate summary counts.
 - **Later:** Gary picks a renderer; a follow-up keeps it, deletes the rest and
   `GHX_PROGRESS`, tidies `go.mod`, updates `specs/`, and removes or promotes this
   plan and handoff before the branch merges.
-- **Resume:** none needed for this plan; start the follow-up from this handoff.
+- **Resume:** paste the plan's Kickoff prompt into a new session on this branch.
 
 ## How to try it
 
@@ -27,7 +29,7 @@ Run twice against the same dir to see pulls. Piped output gets no progress.
 
 ## Pending question
 
-Which renderer to keep (pterm, table, or other), and whether to open a PR now or after the clean-up.
+None. Gary picked `table` and approved wave 3 with rows in completion order ("yes").
 
 ## Decisions so far
 
@@ -58,6 +60,7 @@ Which renderer to keep (pterm, table, or other), and whether to open a PR now or
 
 ## Deviations from plan
 
+- Re-plan after wave 2: wave 3 (s8-s10) added at Gary's request; unplanned row.
 - Re-plan after wave 1: wave 2 (s6, s7) added at Gary's request; its Cost table row is unplanned (expected —).
 
 Wave 1 follow-ups (testing.md items done in s7): `make vuln` not run on fang/mpb/pterm; no real-org or Windows

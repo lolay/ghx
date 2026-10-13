@@ -1,7 +1,7 @@
 ```
---- KICKOFF: plan complete ---
+--- KICKOFF: begin orchestration at [deep] ---
 
-  Status: 2/2 groups done | completed 2026-10-13 | over expected: ~$12.8 of ~$4.6
+  Status: 2/3 groups done | last review: wave-2 PASS | current: ghx s8-s10 [exec] | updated 2026-10-13 | over expected: ~$12.8 of ~$4.6
 
   mode: unattended | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch claude/magical-ride-7h4rhi) | guard 3x min $50 | fixups 2 | confirmed 2026-10-13 session bd9c01f5-fe1c-5a92-ab0c-95720d491a10: unattended
 
@@ -33,6 +33,7 @@
 |---|---|---|---|---|
 | 1 [exec] ghx s1-s5 | ~4.6M | ~$1.8 | ~11M (output est.) | ~$4.2 (output est.) |
 | 2 [exec] ghx s6-s7 | — | — | ~6.2M (output est.) | ~$2.6 (output est.) |
+| 3 [exec] ghx s8-s10 | — | — | — | — |
 | orchestrator | ~3.1M | ~$2.8 | ~14M | ~$6.0 |
 | **Total** | ~7.7M | ~$4.6 | ~31M | ~$12.8 |
 
@@ -250,6 +251,93 @@ a `cli` test shows a dry run and a non-terminal run still print the static table
 this one) and its `internal/cli` coverage figure is brought up to date. The
 artifact says how to try it: `GHX_PROGRESS=table ./bin/ghx <org> <dir>` in a tall
 and in a short terminal window.
+
+--- WAVE 3 [exec] ---
+
+Re-plan after wave 2 (2026-10-13): Gary picked the table renderer and asked for
+(1) column widths that don't change while it runs, (2) the progress inside a table
+footer, (3) a footer that shows more is coming, and (4) scrolling up through the
+table while it runs, as Claude's CLI allows. He accepted rows appearing in the
+order repos finish. Change `GHX_PROGRESS=table` in place; leave the other
+renderers alone.
+
+#### s8 - [exec] Fixed column widths and a progress footer in the table renderer
+
+In `internal/ui/progress_table.go`:
+- Measure every column once, when `SetRepos` gets the list: each column's width
+  is its widest value over all repos and its header; Status is as wide as its
+  longest possible value (the longest of the in-flight form `⠋ cloning 12m59s`,
+  `⠋ pulling 12m59s`, `interrupted`, `queued`, and `<symbol> <action> <time>` for
+  every `cloner.Action`). Fix those widths on the go-pretty columns
+  (`WidthMin` = `WidthMax`) so no frame changes the table's width. Decide which
+  columns to drop for the terminal's width once, at that point, in the existing
+  order (Last Pushed, Default Branch, Archived, Language); if the Name column
+  still doesn't fit, cap it and cut long names with `…`. A terminal resized
+  mid-run keeps the widths chosen at the start.
+- Replace the separate pterm progress bar with a table footer row merged across
+  all columns (go-pretty `AppendFooter` with `table.RowConfig{AutoMerge: true}`,
+  or the equivalent that renders one cell spanning the table): `Syncing 34/60
+  [=========>------] 57% 12s · 4 running · 22 queued`. Count over every repo
+  given to `SetRepos`, across both passes, not per pass. Draw the bar with plain
+  characters sized to fit the footer.
+- Keep the existing window behaviour for now (s9 replaces it).
+
+Acceptance: `make ci` passes; a test renders frames at several points of a run
+(some queued, some in flight with different elapsed times, some finished with
+the longest action) and asserts every frame's lines have the same width; a test
+asserts the footer text and counts across two `Start`/`Stop` passes; the narrow
+width test still drops Last Pushed first. No change outside `internal/ui`.
+
+#### s9 - [exec] Stream finished rows into scrollback
+
+Rework the table renderer so only the bottom of the table is live, the way
+Claude's CLI keeps finished output in the terminal's scrollback:
+- On the first `Start` after `SetRepos`, print the table's top: its title, top
+  border, header row and header separator, as ordinary output (not in the live
+  area).
+- When a repo finishes, print its row line as ordinary output above the live
+  area (clear the area, print, start the area again, as the pterm renderer does
+  for its log lines). With s8's fixed widths, rows printed one at a time line up
+  as one continuous table. Rows appear in the order repos finish.
+- The live area holds only the in-flight rows, a separator and the s8 footer.
+  That is at most the concurrency plus a few lines, so drop the window logic and
+  its `… N done, M queued` footer; the progress footer carries the queued count.
+  If the live area would still be taller than the terminal (huge concurrency),
+  show the first in-flight rows that fit and `+N more running` in the footer.
+- Between the two passes the live area may stay up or be cleared; either way the
+  table must stay continuous, so when the renderer is a `ui.RepoLister`,
+  `internal/cli/run.go` must not print "Cloning N archived repo(s) into …"
+  between the passes (the archived rows show `yes` in Archived already; keep
+  the message for the other renderers).
+- `PrintTable` becomes the close of the table: print any rows never finished
+  (`queued` or `interrupted`) as ordinary rows, then the bottom border with a
+  final footer such as `60 repos · ✓ 52 · ⚠ 6 skipped · ✗ 2 failed · 1m12s`,
+  once per `SetRepos`. Rename it (e.g. `FinishTable`) if that reads better, and
+  update `run.go` and the `RepoLister` doc.
+- Nothing is printed twice: the full table is not reprinted at the end.
+
+Acceptance: `make ci` passes; a test drives a run into a buffer from several
+goroutines and asserts, on the final output with the live-area frames removed
+(or on a terminal emulation if one is already in the tests), that the header
+appears once, every repo's row appears exactly once in completion order, the
+bottom border and final footer close it, and every table line has the same width;
+a test covers a cancel (unfinished rows printed as `queued`/`interrupted`); a cli
+test shows the archived-pass message is absent with the table renderer and
+present with another renderer.
+
+#### s10 - [exec] Drop the duplicate summary counts under the table renderer
+
+When the table renderer drew the table, the final footer already has the counts,
+so `ui.PrintSummary`'s "Sync Summary" counts table is a repeat. Under the table
+renderer, print only the lists that follow it (Failed repos, Skipped (local
+changes), Skipped (unusable name)); everything else prints the summary as now.
+Choose the smallest API for this (a separate `ui` function for the lists, or an
+option), and keep `PrintSummary`'s existing tests passing.
+
+Acceptance: `make ci` passes; a cli test with the table renderer shows no "Sync
+Summary" table but does show a failed repo's list entry; one with another
+renderer shows the summary as before. Update `specs/testing.md` for any seam
+these steps change.
 
 ## After the run (not part of the orchestrated waves)
 
