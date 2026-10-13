@@ -285,7 +285,10 @@ func TestCloneRepos_MasksTheTokenInFailureDetails(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, summary.Results, 1)
 		assert.Equal(t, cloner.ActionFailed, summary.Results[0].Action)
-		assert.Contains(t, summary.Results[0].Detail, "ghost-***", "git quoted the URL, and the token in it was masked")
+		// The detail is git's last fatal: line, which no longer quotes the
+		// URL; the masking of a quoted token is covered by the case above and
+		// by TestGitResult_Message.
+		assert.Contains(t, summary.Results[0].Detail, "fatal:")
 		assert.NotContains(t, summary.Results[0].Detail, token)
 	})
 }

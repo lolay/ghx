@@ -7,6 +7,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- Clone and pull get a 60-minute limit (other git commands keep 5 minutes) and
+  give up on a connection that stays under 1000 bytes a second for 60 seconds,
+  so a stalled transfer fails in a minute instead of holding a worker.
+- A clone or pull that fails on a dropped connection, a DNS or timeout error,
+  a rate limit or a server error is tried once more after 2 seconds.
+  "Repository not found" and authentication failures are never retried.
+- A failed repo's detail is git's last `fatal:` or `error:` line, not its
+  progress output and `hint:` blocks.
+
 ## [v0.2.0] - 2026-10-13
 
 ### Security
