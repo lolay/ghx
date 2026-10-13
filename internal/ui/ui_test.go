@@ -2,11 +2,14 @@ package ui_test
 
 import (
 	"bytes"
-	"io"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/jedib0t/go-pretty/v6/text"
 	"github.com/stretchr/testify/assert"
@@ -138,15 +141,15 @@ func TestPrintSummary_OmitsSectionsWithNothingToList(t *testing.T) {
 }
 
 func TestSetupTerminal_DrawsProgressOnlyOnATerminal(t *testing.T) {
-	buf := captureOut(t)
+	captureOut(t)
 	t.Cleanup(ui.ResetTerminal)
-	assert.Same(t, buf, ui.ProgressOut(), "before setup, progress draws on Out")
+	assert.NotEqual(t, cloner.NoProgress{}, ui.NewProgress(), "before setup, progress draws")
 
 	file, err := os.Create(filepath.Join(t.TempDir(), "log.txt"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = file.Close() })
 	ui.SetupTerminal(file)
-	assert.Equal(t, io.Discard, ui.ProgressOut(), "a file gets no progress bar")
+	assert.Equal(t, cloner.NoProgress{}, ui.NewProgress(), "a file gets no progress bar")
 
 	// The null device is a character device, as a console is, on every OS.
 	null, err := os.Open(os.DevNull)
@@ -154,9 +157,68 @@ func TestSetupTerminal_DrawsProgressOnlyOnATerminal(t *testing.T) {
 	t.Cleanup(func() { _ = null.Close() })
 	ui.SetupTerminal(null)
 	if text.ANSICodesSupported {
-		assert.Same(t, buf, ui.ProgressOut(), "a terminal that takes ANSI codes gets the bar")
+		assert.NotEqual(t, cloner.NoProgress{}, ui.NewProgress(), "a terminal that takes ANSI codes gets the bar")
 	} else {
-		assert.Equal(t, io.Discard, ui.ProgressOut(), "a console without ANSI support gets no bar")
+		assert.Equal(t, cloner.NoProgress{}, ui.NewProgress(), "a console without ANSI support gets no bar")
+	}
+}
+
+func TestNewProgress_RendererNames(t *testing.T) {
+	captureOut(t)
+	t.Cleanup(ui.ResetTerminal)
+	ui.ResetTerminal()
+	tests := []struct {
+		name string
+		env  string
+	}{
+		{"unset means gopretty", ""},
+		{"gopretty", "gopretty"},
+		{"an unknown name means gopretty", "nonsense"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("GHX_PROGRESS", tt.env)
+			p := ui.NewProgress()
+			assert.NotEqual(t, cloner.NoProgress{}, p)
+			assert.IsType(t, ui.NewProgress(), p, "the same renderer each time")
+		})
+	}
+}
+
+func TestGoPrettyProgress_DrawsTheBarAndFinishesOnAFreshLine(t *testing.T) {
+	tests := []struct {
+		name string
+		done int
+	}{
+		{"every repo done", 4},
+		{"stopped early, as a cancelled sync is", 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf := captureOut(t)
+			t.Cleanup(ui.ResetTerminal)
+			ui.ResetTerminal()
+			t.Setenv("GHX_PROGRESS", "gopretty")
+
+			p := ui.NewProgress()
+			p.Start(4)
+			var wg sync.WaitGroup
+			for i := range tt.done {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					name := fmt.Sprintf("repo-%d", i)
+					p.RepoStarted(name, cloner.ProgressClone)
+					p.RepoDone(cloner.RepoResult{Name: name, Action: cloner.ActionCloned}, time.Millisecond)
+				}()
+			}
+			wg.Wait()
+			p.Stop()
+
+			out := buf.String()
+			assert.Contains(t, out, "Syncing repos")
+			assert.True(t, strings.HasSuffix(out, "\n"), "the cursor is left on a fresh line: %q", out)
+		})
 	}
 }
 

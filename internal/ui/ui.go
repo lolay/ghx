@@ -39,15 +39,6 @@ func isTerminal(f *os.File) bool {
 	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
-// ProgressOut is where progress bars render: Out on an interactive terminal,
-// io.Discard otherwise.
-func ProgressOut() io.Writer {
-	if animate {
-		return Out
-	}
-	return io.Discard
-}
-
 // Printf formats to Out and drops the write error: there is nothing useful to
 // do when the terminal is gone.
 func Printf(format string, args ...any) { _, _ = fmt.Fprintf(Out, format, args...) }

@@ -295,7 +295,7 @@ func TestCleanOrigins(t *testing.T) {
 	repo := f.httpsRepo(t, "app")
 	parent := filepath.Join(f.out, "DELETED")
 	_, err := cloner.CloneRepos(t.Context(), []ghapi.RepoInfo{repo}, cloner.Options{
-		OutputDir: parent, Concurrency: 1, ProgressOut: f.opts().ProgressOut,
+		OutputDir: parent, Concurrency: 1, Progress: cloner.NoProgress{},
 	})
 	require.NoError(t, err)
 	src := filepath.Join(parent, "app")

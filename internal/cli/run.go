@@ -212,7 +212,7 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 		GitAuthor:   gitAuthor,
 		GitEmail:    gitEmail,
 		GitPath:     gitPath,
-		ProgressOut: ui.ProgressOut(),
+		Progress:    ui.NewProgress(),
 	}
 
 	// Clones made by ghx before the token moved to git's environment hold it
