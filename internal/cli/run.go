@@ -289,7 +289,13 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 	if err := manifest.Write(outputDir, org, allRepos); err != nil {
 		return fmt.Errorf("writing manifest: %w", err)
 	}
-	ui.PrintSummary(summary)
+	// The table's closing footer already holds the counts, so under the table
+	// renderer only the lists that follow them are left to print.
+	if drawsTable && !dryRun {
+		ui.PrintSummaryLists(summary)
+	} else {
+		ui.PrintSummary(summary)
+	}
 	return nil
 }
 

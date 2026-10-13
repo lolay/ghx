@@ -146,6 +146,41 @@ func TestPrintSummary_OmitsSectionsWithNothingToList(t *testing.T) {
 	assert.NotContains(t, out, "Skipped (unusable name):")
 }
 
+func TestPrintSummaryLists_PrintsTheListsWithoutTheCountsTable(t *testing.T) {
+	buf := captureOut(t)
+	summary := cloner.SyncSummary{Results: []cloner.RepoResult{
+		{Name: "a", Action: cloner.ActionCloned},
+		{Name: "d", Action: cloner.ActionFailed, Detail: "exit status 128"},
+		{Name: "e", Action: cloner.ActionSkippedDirty},
+		{Name: "CON", Action: cloner.ActionSkippedName, Detail: "a reserved device name on Windows"},
+	}}
+
+	ui.PrintSummaryLists(summary)
+
+	out := buf.String()
+	assert.NotContains(t, out, "Sync Summary")
+	assert.NotContains(t, out, "Count")
+	assert.True(t, strings.HasPrefix(out, "\n"), "a blank line sets the lists off from the table above")
+	assert.Contains(t, out, "Failed repos:\n  d: exit status 128\n")
+	assert.Contains(t, out, "Skipped (local changes):\n  e\n")
+	assert.Contains(t, out, "Skipped (unusable name):\n  CON: a reserved device name on Windows\n")
+
+	// What follows the counts table in PrintSummary is the same text.
+	full := captureOut(t)
+	ui.PrintSummary(summary)
+	assert.True(t, strings.HasSuffix(full.String(), strings.TrimPrefix(out, "\n")))
+}
+
+func TestPrintSummaryLists_PrintsNothingWhenThereIsNothingToList(t *testing.T) {
+	buf := captureOut(t)
+
+	ui.PrintSummaryLists(cloner.SyncSummary{Results: []cloner.RepoResult{
+		{Name: "a", Action: cloner.ActionPulled},
+	}})
+
+	assert.Empty(t, buf.String())
+}
+
 func TestSetupTerminal_DrawsProgressOnlyOnATerminal(t *testing.T) {
 	captureOut(t)
 	t.Cleanup(ui.ResetTerminal)

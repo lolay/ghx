@@ -51,8 +51,7 @@ func TestRun_TheLiveTableIsOnePieceWithEachReposStatus(t *testing.T) {
 	assert.NotContains(t, out, "Cloning 1 archived repo(s)", "a message between the passes would split the table")
 	assert.Less(t, strings.Index(out, "Repos to export"), strings.Index(out, "✓ cloned"))
 	assert.Less(t, strings.LastIndex(out, "✓ cloned"), strings.Index(out, "3 repos · "))
-	assert.Less(t, strings.Index(out, "3 repos · "), strings.Index(out, "Sync Summary"),
-		"the sync summary follows the table")
+	assert.NotContains(t, out, "Sync Summary", "the footer has the counts")
 	assert.Equal(t, []string{"ARCHIVED/vault", "alpha", "beta"}, repoDirs(t, w.out))
 }
 
@@ -81,6 +80,68 @@ func TestRun_OtherRenderersAnnounceTheArchivedPass(t *testing.T) {
 			assert.Contains(t, out, "Cloning 1 archived repo(s) into ARCHIVED/...")
 			assert.Equal(t, 1, strings.Count(out, "Repos to export"), "the static table")
 			assert.Contains(t, out, "Total: 3 repos")
+		})
+	}
+}
+
+// failingWorld is tableWorld with a repo whose clone URL points nowhere, so
+// its clone fails.
+func failingWorld(t *testing.T) *world {
+	t.Helper()
+	w := tableWorld(t)
+	w.addRepo("broken", func(r *ghapitest.Repo) {
+		r.CloneURL = filepath.Join(w.upstream, "no-such-repo.git")
+		r.SSHURL = r.CloneURL
+	})
+	return w
+}
+
+func TestRun_TheTableRendererPrintsNoSummaryCountsButKeepsTheLists(t *testing.T) {
+	w := failingWorld(t)
+
+	out := plain(w.mustRun())
+
+	assert.NotContains(t, out, "Sync Summary", "the table's footer has the counts")
+	assert.NotContains(t, out, "COUNT")
+	assert.Regexp(t, `│ 4 repos · ✓ 3 · ✗ 1 failed · \d+s +│`, out)
+	require.Contains(t, out, "Failed repos:\n  broken: ")
+	assert.Less(t, strings.Index(out, "4 repos · "), strings.Index(out, "Failed repos:"),
+		"the list follows the table")
+}
+
+func TestRun_TheTableRendererKeepsTheListOfSkippedLocalChanges(t *testing.T) {
+	w := tableWorld(t)
+	w.mustRun()
+	require.NoError(t, os.WriteFile(filepath.Join(w.out, "alpha", "notes.txt"), []byte("mine\n"), 0o644))
+
+	out := plain(w.mustRun())
+
+	assert.NotContains(t, out, "Sync Summary")
+	assert.Contains(t, out, "Skipped (local changes):\n  alpha\n")
+	assert.Regexp(t, `│ 3 repos · ✓ 2 · ⚠ 1 skipped · \d+s +│`, out)
+}
+
+func TestRun_TheTableRendererPrintsNoListsWhenEverythingWorked(t *testing.T) {
+	w := tableWorld(t)
+
+	out := plain(w.mustRun())
+
+	assert.NotContains(t, out, "Sync Summary")
+	assert.NotContains(t, out, "Failed repos:")
+	assert.NotContains(t, out, "Skipped (")
+}
+
+func TestRun_OtherRenderersPrintTheSummaryAsBefore(t *testing.T) {
+	for _, renderer := range []string{"gopretty", "buildx", "indicatif", "pterm"} {
+		t.Run(renderer, func(t *testing.T) {
+			w := failingWorld(t)
+			t.Setenv("GHX_PROGRESS", renderer)
+
+			out := plain(w.mustRun())
+
+			assert.Contains(t, out, "Sync Summary")
+			assert.Regexp(t, `cloned\s+│\s+3\s+│`, out)
+			assert.Contains(t, out, "Failed repos:\n  broken: ")
 		})
 	}
 }

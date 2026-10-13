@@ -210,7 +210,7 @@ func PrintRepoTable(repos []ghapi.RepoInfo) {
 }
 
 // PrintSummary renders the post-run summary: per-action counts, the
-// list of failed repos, and the list of skipped dirty repos.
+// list of failed repos, and the lists of skipped repos.
 func PrintSummary(summary cloner.SyncSummary) {
 	tw := table.NewWriter()
 	tw.SetOutputMirror(Out)
@@ -233,6 +233,24 @@ func PrintSummary(summary cloner.SyncSummary) {
 	tw.Render()
 	Println()
 
+	printSummaryLists(summary)
+}
+
+// PrintSummaryLists prints only the lists that follow PrintSummary's counts
+// (failed repos, repos skipped for local changes, repos skipped for an unusable
+// name), after a blank line, and nothing at all when there are none. The table
+// renderer's closing footer already holds the counts, so the run flow calls
+// this in place of PrintSummary after it.
+func PrintSummaryLists(summary cloner.SyncSummary) {
+	if summary.Count(cloner.ActionFailed)+summary.Count(cloner.ActionSkippedDirty)+summary.Count(cloner.ActionSkippedName) == 0 {
+		return
+	}
+	Println()
+	printSummaryLists(summary)
+}
+
+// printSummaryLists prints the lists, each under a bold heading.
+func printSummaryLists(summary cloner.SyncSummary) {
 	var failed, dirty, unusable []cloner.RepoResult
 	for _, r := range summary.Results {
 		switch r.Action {
