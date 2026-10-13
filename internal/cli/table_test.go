@@ -30,26 +30,28 @@ func tableWorld(t *testing.T) *world {
 	return w
 }
 
-// finalTable is the last table in out: the one printed as ordinary output
-// after the live frames, with the escape codes removed.
-func finalTable(out string) string {
-	out = ansiCodes.ReplaceAllString(out, "")
-	return out[strings.LastIndex(out, "Repos to export"):]
-}
+// plain is out with the escape codes removed.
+func plain(out string) string { return ansiCodes.ReplaceAllString(out, "") }
 
-func TestRun_TheLiveTableIsPrintedOnceWithEachReposStatus(t *testing.T) {
+func TestRun_TheLiveTableIsOnePieceWithEachReposStatus(t *testing.T) {
 	w := tableWorld(t)
 
-	out := w.mustRun()
+	out := plain(w.mustRun())
 
-	plain := ansiCodes.ReplaceAllString(out, "")
-	assert.Equal(t, 1, strings.Count(plain, "Total: 3 repos"), "the table is printed once, after both passes")
-	final := finalTable(out)
-	assert.Contains(t, final, "STATUS")
-	assert.Equal(t, 3, strings.Count(final, "✓ cloned"), "alpha, beta and the archived repo")
-	assert.NotContains(t, final, "queued")
-	assert.Less(t, strings.Index(plain, "Cloning 1 archived repo(s)"), strings.LastIndex(plain, "Total: 3 repos"))
-	assert.Less(t, strings.LastIndex(plain, "Total: 3 repos"), strings.Index(plain, "Sync Summary"),
+	// A finished row is printed once, above the live area, and the live area
+	// holds no finished row, so each shows once; the top and the totals come
+	// once, around both passes.
+	assert.Equal(t, 1, strings.Count(out, "Repos to export"))
+	assert.Equal(t, 1, strings.Count(out, "NAME"))
+	assert.Contains(t, out, "STATUS")
+	assert.Equal(t, 3, strings.Count(out, "✓ cloned"), "alpha, beta and the archived repo")
+	assert.Regexp(t, `│ 3 repos · ✓ 3 · \d+s +│`, out)
+	assert.NotContains(t, out, "│ queued", "no row is left queued")
+	assert.NotContains(t, out, "Total:", "the footer carries the count")
+	assert.NotContains(t, out, "Cloning 1 archived repo(s)", "a message between the passes would split the table")
+	assert.Less(t, strings.Index(out, "Repos to export"), strings.Index(out, "✓ cloned"))
+	assert.Less(t, strings.LastIndex(out, "✓ cloned"), strings.Index(out, "3 repos · "))
+	assert.Less(t, strings.Index(out, "3 repos · "), strings.Index(out, "Sync Summary"),
 		"the sync summary follows the table")
 	assert.Equal(t, []string{"ARCHIVED/vault", "alpha", "beta"}, repoDirs(t, w.out))
 }
@@ -57,13 +59,30 @@ func TestRun_TheLiveTableIsPrintedOnceWithEachReposStatus(t *testing.T) {
 func TestRun_TheLiveTableShowsRowsStillQueuedWhenArchivedReposAreSkipped(t *testing.T) {
 	w := tableWorld(t)
 
-	out := w.mustRun("--delete")
+	out := plain(w.mustRun("--delete"))
 
-	plain := ansiCodes.ReplaceAllString(out, "")
-	assert.Equal(t, 1, strings.Count(plain, "Total: 3 repos"))
-	final := finalTable(out)
-	assert.Equal(t, 2, strings.Count(final, "✓ cloned"))
-	assert.Equal(t, 1, strings.Count(final, "queued"), "the archived repo was never started")
+	assert.Equal(t, 1, strings.Count(out, "Repos to export"))
+	assert.Equal(t, 2, strings.Count(out, "✓ cloned"))
+	assert.Equal(t, 1, strings.Count(out, "│ queued"), "the archived repo was never started")
+	assert.Regexp(t, `│ 3 repos · ✓ 2 · 1 queued · \d+s +│`, out)
+	// The note on skipping them waits for the table's close.
+	require.Contains(t, out, "Skipping 1 archived repo(s) (--delete)")
+	assert.Less(t, strings.Index(out, "3 repos · "), strings.Index(out, "Skipping 1 archived repo(s) (--delete)"))
+}
+
+func TestRun_OtherRenderersAnnounceTheArchivedPass(t *testing.T) {
+	for _, renderer := range []string{"gopretty", "buildx", "indicatif", "pterm"} {
+		t.Run(renderer, func(t *testing.T) {
+			w := tableWorld(t)
+			t.Setenv("GHX_PROGRESS", renderer)
+
+			out := plain(w.mustRun())
+
+			assert.Contains(t, out, "Cloning 1 archived repo(s) into ARCHIVED/...")
+			assert.Equal(t, 1, strings.Count(out, "Repos to export"), "the static table")
+			assert.Contains(t, out, "Total: 3 repos")
+		})
+	}
 }
 
 func TestRun_ADryRunPrintsTheStaticTable(t *testing.T) {

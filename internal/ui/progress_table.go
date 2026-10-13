@@ -43,52 +43,58 @@ type tableRow struct {
 	started time.Time     // when RepoStarted arrived, while running
 	action  cloner.Action // the result, once done
 	elapsed time.Duration // how long it took, once done
-	seq     int           // the order repos finished in, once done
 }
 
-// tableProgress redraws the "Repos to export" table in place, with a Status
-// column that follows each repo from queued to cloning or pulling to its
-// result, and the progress in a footer row of the table itself. It is a
-// RepoLister: the run flow hands it the repos instead of printing the static
-// table.
+// tableProgress draws the "Repos to export" table the way Claude's CLI keeps
+// its output: the table grows downward into the terminal's scrollback, and
+// only its bottom is live. It is a RepoLister: the run flow hands it the repos
+// instead of printing the static table.
+//
+// The first Start prints the table's top (title, border, header) as ordinary
+// output. Each repo that finishes prints its row, in the order repos finish,
+// above the live area, which holds only what is still moving: the in-flight
+// rows with a spinner and a running time, and a footer row spanning the table
+// with the progress, "Syncing 34/60 [=====>---] 57% 12s · 4 running · 22
+// queued", counted over every repo the table lists, across both passes. The
+// live area is never taller than the terminal; with more repos in flight than
+// fit it shows the first ones and "+N more running" in the footer. FinishTable
+// closes the table: any row never finished, then the bottom border and a
+// footer with the totals.
 //
 // The table's geometry is measured once, when SetRepos gets the repos (see
-// tableLayout): every column is as wide as its widest value, so no frame
-// changes the table's width, and a terminal resized mid-run keeps it.
-//
-// While the table is taller than the terminal it draws a window: the header,
-// every in-flight row, the most recently finished rows that fit, and a footer
-// counting the rows left out. While it is wider, the layout dropped columns,
-// last pushed first. No line is ever longer than the terminal, so none wraps
-// and the area can be erased by counting lines.
+// tableLayout): every column is as wide as its widest value, so rows printed
+// one at a time line up as one table and a terminal resized mid-run keeps it.
+// A line is trimmed only when it is wider than the terminal, so none wraps.
 //
 // The run flow calls CloneRepos once for the active repos and again for the
 // archived ones with this one value, so Start and Stop come in pairs. Each
-// Stop erases the live area. The full table, with every row and its status, is
-// printed once, as ordinary output, by PrintTable, which the run flow calls
-// after the last pass (also on an error or a cancel, which leave rows
-// queued). Printing it from Stop would need to know whether another pass
-// follows, and a renderer can't.
+// Stop erases the live area and prints nothing, so the table stays one piece
+// across the two passes; the run flow calls FinishTable after the last pass,
+// also on an error or a cancel (which leave rows queued or interrupted).
+// Closing it from Stop would need to know whether another pass follows, and a
+// renderer can't.
 //
-// It draws the same way the pterm renderer does: a pterm AreaPrinter writing
-// to out, pterm's switches untouched, and the cursor target (the one pterm
-// global needed) pointing at out only between Start and Stop. Every method is
-// safe for concurrent use.
+// It prints a finished row the way the pterm renderer prints a log line: clear
+// the area, print, start the area again. A pterm AreaPrinter writes to out,
+// pterm's switches stay untouched, and the cursor target (the one pterm global
+// needed) points at out only between Start and Stop. Every method is safe for
+// concurrent use.
 type tableProgress struct {
 	out  fdWriter
 	size func() (width, height int) // read on every repaint, so a resize shows
 
-	mu        sync.Mutex
-	rows      []*tableRow
-	byName    map[string]*tableRow
-	layout    *tableLayout
-	listed    bool      // SetRepos was called
-	printed   bool      // PrintTable has printed since SetRepos
-	finished  int       // how many repos have finished, for tableRow.seq
-	began     time.Time // the first Start since SetRepos
-	area      *pterm.AreaPrinter
-	quit      chan struct{} // closed by Stop to end the repaint goroutine
-	repainted chan struct{} // closed when that goroutine has returned
+	mu         sync.Mutex
+	rows       []*tableRow
+	byName     map[string]*tableRow
+	layout     *tableLayout
+	listed     bool      // SetRepos was called
+	topPrinted bool      // the title and header are out since SetRepos
+	closed     bool      // FinishTable has closed the table since SetRepos
+	began      time.Time // the first Start since SetRepos
+	stopped    time.Time // the last Stop
+	area       *pterm.AreaPrinter
+	quit       chan struct{} // closed by Stop to end the repaint goroutine
+	repainted  chan struct{} // closed when that goroutine has returned
 }
 
 func newTableProgress(out io.Writer) *tableProgress {
@@ -119,7 +125,8 @@ func (p *tableProgress) SetRepos(repos []ghapi.RepoInfo) {
 		p.rows[i] = row
 		p.byName[r.Name] = row
 	}
-	p.listed, p.printed, p.finished, p.began = true, false, 0, time.Time{}
+	p.listed, p.topPrinted, p.closed = true, false, false
+	p.began, p.stopped = time.Time{}, time.Time{}
 	width, _ := p.size()
 	p.layout = newTableLayout(repos, width, 0)
 }
@@ -155,7 +162,8 @@ func (p *tableProgress) rowLocked(name string) *tableRow {
 	return row
 }
 
-// Start draws the table for the repos of one pass.
+// Start prints the table's top, the first time after SetRepos, and draws the
+// live area for the repos of one pass.
 func (p *tableProgress) Start(total int) {
 	// Hiding the cursor goes through pterm's default cursor, which writes to
 	// os.Stdout unless told otherwise.
@@ -170,7 +178,7 @@ func (p *tableProgress) Start(total int) {
 	if p.began.IsZero() {
 		p.began = time.Now()
 	}
-	p.layoutLocked()
+	p.printTopLocked()
 	p.area = area
 	p.quit, p.repainted = quit, repainted
 	_, _ = area.Start(p.frameLocked(time.Now()))
@@ -210,7 +218,7 @@ func (p *tableProgress) RepoStarted(name, action string) {
 	row.state, row.verb, row.started = rowRunning, progressVerb(action), time.Now()
 }
 
-// RepoDone records the repo's result.
+// RepoDone records the repo's result and prints its row above the live area.
 func (p *tableProgress) RepoDone(r cloner.RepoResult, elapsed time.Duration) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -218,8 +226,14 @@ func (p *tableProgress) RepoDone(r cloner.RepoResult, elapsed time.Duration) {
 		return
 	}
 	row := p.rowLocked(r.Name)
-	p.finished++
-	row.state, row.action, row.elapsed, row.seq = rowDone, r.Action, elapsed, p.finished
+	row.state, row.action, row.elapsed = rowDone, r.Action, elapsed
+
+	// Clearing the area leaves the cursor where it began, so the row takes its
+	// place and the area starts again beneath it.
+	now := time.Now()
+	p.area.Clear()
+	p.printLocked(p.rowLinesLocked([]*tableRow{row}, now)...)
+	_, _ = p.area.Start(p.frameLocked(now))
 }
 
 // Stop erases the live area and gives the terminal back, with the cursor at
@@ -242,6 +256,7 @@ func (p *tableProgress) Stop() {
 	_ = p.area.Stop()
 	cursor.Show()
 	cursor.SetTarget(os.Stdout)
+	p.stopped = time.Now()
 	for _, row := range p.rows {
 		if row.state == rowRunning {
 			row.state = rowInterrupted
@@ -250,32 +265,62 @@ func (p *tableProgress) Stop() {
 	p.area = nil
 }
 
-// PrintTable prints the full table as ordinary output, once per SetRepos.
-func (p *tableProgress) PrintTable() {
+// FinishTable closes the table, once per SetRepos: the top if no pass ever
+// started, a row for each repo that never finished (queued, or interrupted),
+// then the bottom border with the totals. It does nothing when SetRepos has
+// not been called, a live area is still on screen, or the table is closed.
+func (p *tableProgress) FinishTable() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if !p.listed || p.printed || p.area != nil {
+	if !p.listed || p.closed || p.area != nil {
 		return
 	}
-	p.printed = true
-	width, _ := p.size()
-	l := p.layoutLocked()
-	repos, status := p.cellsLocked(allIndexes(len(p.rows)), time.Now())
-	lines := slices.Concat(l.head, l.rows(repos, status), []string{l.bottom})
-	for i, line := range lines {
-		lines[i] = trimLine(line, width)
+	p.closed = true
+	p.printTopLocked()
+	var unfinished []*tableRow
+	for _, row := range p.rows {
+		if row.state != rowDone {
+			unfinished = append(unfinished, row)
+		}
 	}
-	_, _ = fmt.Fprintf(p.out, "\n%s\n\nTotal: %s repos\n", strings.Join(lines, "\n"), text.Bold.Sprint(len(p.rows)))
+	l := p.layoutLocked()
+	lines := p.rowLinesLocked(unfinished, time.Now())
+	lines = append(lines, l.rule, l.footer(p.totalsLocked()), l.bottom)
+	p.printLocked(lines...)
 }
 
-// cellsLocked is the repos at the given indexes and their Status cells. The
+// printTopLocked prints the table's title and header, once per SetRepos,
+// after a blank line that sets the table off from what came before. The
 // caller holds p.mu.
-func (p *tableProgress) cellsLocked(idx []int, now time.Time) ([]ghapi.RepoInfo, []string) {
-	repos, status := make([]ghapi.RepoInfo, len(idx)), make([]string, len(idx))
-	for i, n := range idx {
-		repos[i], status[i] = p.rows[n].info, p.rows[n].status(now)
+func (p *tableProgress) printTopLocked() {
+	if p.topPrinted {
+		return
 	}
-	return repos, status
+	p.topPrinted = true
+	_, _ = fmt.Fprintln(p.out)
+	p.printLocked(p.layoutLocked().head...)
+}
+
+// printLocked writes lines to out as ordinary output, each cut to the
+// terminal's width so none wraps. The caller holds p.mu.
+func (p *tableProgress) printLocked(lines ...string) {
+	width, _ := p.size()
+	var b strings.Builder
+	for _, line := range lines {
+		b.WriteString(trimLine(line, width))
+		b.WriteByte('\n')
+	}
+	_, _ = fmt.Fprint(p.out, b.String())
+}
+
+// rowLinesLocked is the table line of each row, as it stands at now. The
+// caller holds p.mu.
+func (p *tableProgress) rowLinesLocked(rows []*tableRow, now time.Time) []string {
+	repos, status := make([]ghapi.RepoInfo, len(rows)), make([]string, len(rows))
+	for i, row := range rows {
+		repos[i], status[i] = row.info, row.status(now)
+	}
+	return p.layoutLocked().rows(repos, status)
 }
 
 // status is the repo's Status cell.
@@ -310,51 +355,107 @@ func (p *tableProgress) countsLocked() (done, running, queued int) {
 	return done, running, queued
 }
 
-// progressLocked is the text of the progress footer, counted over every repo
-// the table lists, across both passes. The caller holds p.mu.
-func (p *tableProgress) progressLocked(now time.Time) string {
+// progressLocked is the text of the live footer, counted over every repo the
+// table lists, across both passes; more is how many in-flight rows the frame
+// left out. The caller holds p.mu.
+func (p *tableProgress) progressLocked(now time.Time, more int) string {
 	done, running, queued := p.countsLocked()
 	var elapsed time.Duration
 	if !p.began.IsZero() {
 		elapsed = now.Sub(p.began)
 	}
-	return progressText(done, len(p.rows), running, queued, p.layoutLocked().barWidth(len(p.rows)), elapsed)
+	var suffix string
+	bar := p.layoutLocked().barWidth(len(p.rows))
+	if more > 0 {
+		// The rare footer that says more is in flight than the frame shows
+		// gives the words their room out of the bar's.
+		suffix = fmt.Sprintf(" · +%d more running", more)
+		if bar -= text.StringWidthWithoutEscSequences(suffix); bar < footerBarMin {
+			bar = 0
+		}
+	}
+	return progressText(done, len(p.rows), running, queued, bar, elapsed) + suffix
 }
 
-// frameLocked is the live area: the table, or a window of it, with the
-// progress in its footer, each line ending in a newline. It is never taller
-// than the terminal less two lines, nor wider than the terminal. The caller
-// holds p.mu.
+// totalsLocked is the text of the footer that closes the table: "60 repos ·
+// ✓ 52 · ⚠ 6 skipped · ✗ 2 failed · 1m12s", with a count of the repos that
+// never finished when there are any. The caller holds p.mu.
+func (p *tableProgress) totalsLocked() string {
+	bySymbol := map[string]int{}
+	var interrupted, queued int
+	for _, row := range p.rows {
+		switch row.state {
+		case rowDone:
+			symbol, _ := statusMark(row.action)
+			bySymbol[symbol]++
+		case rowInterrupted:
+			interrupted++
+		case rowQueued, rowRunning:
+			queued++
+		}
+	}
+	noun := "repos"
+	if len(p.rows) == 1 {
+		noun = "repo"
+	}
+	parts := []string{fmt.Sprintf("%d %s", len(p.rows), noun)}
+	// One class per symbol, with an action that stands for it.
+	for _, c := range []struct {
+		action cloner.Action
+		label  string
+		always bool
+	}{
+		{cloner.ActionCloned, "%d", true},
+		{cloner.ActionSkippedDirty, "%d skipped", false},
+		{cloner.ActionFailed, "%d failed", false},
+	} {
+		symbol, color := statusMark(c.action)
+		if n := bySymbol[symbol]; n > 0 || c.always {
+			parts = append(parts, color.Sprint(symbol)+" "+fmt.Sprintf(c.label, n))
+		}
+	}
+	if interrupted > 0 {
+		parts = append(parts, fmt.Sprintf("%d interrupted", interrupted))
+	}
+	if queued > 0 {
+		parts = append(parts, fmt.Sprintf("%d queued", queued))
+	}
+	var elapsed time.Duration
+	if !p.began.IsZero() && !p.stopped.IsZero() {
+		elapsed = p.stopped.Sub(p.began)
+	}
+	parts = append(parts, formatElapsed(elapsed))
+	return strings.Join(parts, " · ")
+}
+
+// frameLocked is the live area: the in-flight rows, a rule and the progress
+// footer, each line ending in a newline. It is never taller than the terminal
+// less two lines, nor wider than the terminal. With too many repos in flight
+// for that, it shows the first ones and counts the rest in the footer. The
+// caller holds p.mu.
 func (p *tableProgress) frameLocked(now time.Time) string {
 	width, height := p.size()
-	budget := height - 2
 	l := p.layoutLocked()
-	progress := l.footer(p.progressLocked(now))
-	// Besides the rows: the title and header, the rule, the footer and the
-	// closing border.
-	fixed := len(l.head) + 3
 
+	var running []*tableRow
+	for _, row := range p.rows {
+		if row.state == rowRunning {
+			running = append(running, row)
+		}
+	}
+	slices.SortStableFunc(running, func(a, b *tableRow) int { return a.started.Compare(b.started) })
+
+	// Besides the rows: the rule, the footer and the closing border. With no
+	// room even for those (a terminal only a few lines tall) the footer stands
+	// alone.
+	room := height - 2 - 3
 	var lines []string
-	if len(p.rows)+fixed <= budget {
-		repos, status := p.cellsLocked(allIndexes(len(p.rows)), now)
-		lines = slices.Concat(l.head, l.rows(repos, status), []string{l.rule, progress, l.bottom})
+	if room >= 0 {
+		shown := running[:min(len(running), room)]
+		lines = slices.Concat([]string{l.rule}, p.rowLinesLocked(shown, now),
+			[]string{l.footer(p.progressLocked(now, len(running)-len(shown))), l.bottom})
 	} else {
-		// Room for the rows is what is left after the table's own lines and
-		// the window's footer. With none (a terminal only a few lines tall)
-		// the table is left out and the footers stand alone.
-		room := budget - fixed - 1
-		shown, windowFooter := p.windowLocked(room)
-		if room >= 0 {
-			repos, status := p.cellsLocked(shown, now)
-			lines = slices.Concat(l.head, l.rows(repos, status), []string{l.rule})
-		}
-		if windowFooter != "" {
-			lines = append(lines, l.footer(text.Faint.Sprint(windowFooter)))
-		}
-		lines = append(lines, progress)
-		if room >= 0 {
-			lines = append(lines, l.bottom)
-		}
+		lines = []string{l.footer(p.progressLocked(now, 0))}
 	}
 
 	var b strings.Builder
@@ -363,65 +464,6 @@ func (p *tableProgress) frameLocked(now time.Time) string {
 		b.WriteByte('\n')
 	}
 	return b.String()
-}
-
-// windowLocked picks at most room rows to show: every in-flight row first, then
-// the most recently finished, in table order. The footer counts the rows left
-// out. The caller holds p.mu.
-func (p *tableProgress) windowLocked(room int) (shown []int, footer string) {
-	room = max(room, 0)
-	var running, finished []int
-	for i, row := range p.rows {
-		switch row.state {
-		case rowRunning:
-			running = append(running, i)
-		case rowDone:
-			finished = append(finished, i)
-		}
-	}
-	// Most recently finished first.
-	slices.SortStableFunc(finished, func(a, b int) int { return p.rows[b].seq - p.rows[a].seq })
-
-	shown = append(shown, running[:min(len(running), room)]...)
-	shown = append(shown, finished[:min(len(finished), max(room-len(shown), 0))]...)
-	slices.Sort(shown)
-
-	var done, queued, flying int
-	for i, row := range p.rows {
-		if _, ok := slices.BinarySearch(shown, i); ok {
-			continue
-		}
-		switch row.state {
-		case rowRunning:
-			flying++
-		case rowQueued:
-			queued++
-		default:
-			done++
-		}
-	}
-	var parts []string
-	for _, c := range []struct {
-		n     int
-		label string
-	}{{done, "done"}, {queued, "queued"}, {flying, "running"}} {
-		if c.n > 0 {
-			parts = append(parts, fmt.Sprintf("%d %s", c.n, c.label))
-		}
-	}
-	if len(parts) > 0 {
-		footer = "… " + strings.Join(parts, ", ")
-	}
-	return shown, footer
-}
-
-// allIndexes is 0 up to n-1.
-func allIndexes(n int) []int {
-	idx := make([]int, n)
-	for i := range idx {
-		idx[i] = i
-	}
-	return idx
 }
 
 // trimLine cuts line to width columns, keeping its escape sequences.

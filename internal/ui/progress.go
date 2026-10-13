@@ -45,19 +45,22 @@ func formatSeconds(d time.Duration) string {
 }
 
 // RepoLister is implemented by a Progress that draws the "Repos to export"
-// table itself, live, in place of the static table PrintRepoTable prints. The
-// run flow gives it the repos before the first CloneRepos and asks it to print
-// the table once the last pass is over.
+// table itself, growing as the sync runs, in place of the static table
+// PrintRepoTable prints. The run flow gives it the repos before the first
+// CloneRepos and closes the table once the last pass is over. The table is
+// one piece across the passes, so the run flow prints nothing of its own
+// between them.
 type RepoLister interface {
 	// SetRepos gives the repos the sync will cover, active and archived, in
 	// the order the table lists them. It starts a new table: every repo is
 	// queued.
 	SetRepos(repos []ghapi.RepoInfo)
-	// PrintTable prints the table with each repo's final status as ordinary
-	// output, unless SetRepos has not been called, a live area is still on
-	// screen, or it was already printed since the last SetRepos. Calling it
-	// more than once is harmless.
-	PrintTable()
+	// FinishTable closes the table: a row for each repo that never finished
+	// (queued, or interrupted), then the bottom border and a footer with the
+	// totals. It does nothing when SetRepos has not been called, a live area
+	// is still on screen, or the table was already closed since the last
+	// SetRepos, so calling it again is harmless.
+	FinishTable()
 }
 
 // progressVerb is what RepoStarted's action looks like on a live line.

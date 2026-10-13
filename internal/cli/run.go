@@ -172,10 +172,10 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 	lister, drawsTable := progress.(ui.RepoLister)
 	if drawsTable && !dryRun {
 		lister.SetRepos(repos)
-		// The table is printed once the passes are over, here also when a
-		// cancel or an error ends the run early: PrintTable does nothing the
+		// The table is closed once the passes are over, here also when a
+		// cancel or an error ends the run early: FinishTable does nothing the
 		// second time.
-		defer lister.PrintTable()
+		defer lister.FinishTable()
 	} else {
 		ui.PrintRepoTable(repos)
 	}
@@ -246,12 +246,23 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 	}
 	summary.Results = append(summary.Results, cleanFailures...)
 
+	// A live table is one piece from its top to its close, so nothing is
+	// printed between the passes: the archived rows already say "yes" under
+	// Archived, and the note on skipping them waits for the close.
+	var afterTable string
 	if len(archivedRepos) > 0 {
 		if shouldDelete {
-			ui.Printf("Skipping %d archived repo(s) (--delete)\n", len(archivedRepos))
+			note := fmt.Sprintf("Skipping %d archived repo(s) (--delete)", len(archivedRepos))
+			if drawsTable {
+				afterTable = note
+			} else {
+				ui.Println(note)
+			}
 		} else {
-			ui.Printf("Cloning %d archived repo(s) into %s/...\n",
-				len(archivedRepos), archivedDir)
+			if !drawsTable {
+				ui.Printf("Cloning %d archived repo(s) into %s/...\n",
+					len(archivedRepos), archivedDir)
+			}
 			archivedOpts := baseOpts
 			archivedOpts.OutputDir = filepath.Join(outputDir, archivedDir)
 			archivedSummary, err := cloner.CloneRepos(ctx, archivedRepos, archivedOpts)
@@ -268,7 +279,11 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 	// Before the summary, and before the manifest is written: the table shows
 	// the sync, and the summary that follows counts it.
 	if drawsTable && !dryRun {
-		lister.PrintTable()
+		lister.FinishTable()
+		if afterTable != "" {
+			ui.Println()
+			ui.Println(afterTable)
+		}
 	}
 
 	if err := manifest.Write(outputDir, org, allRepos); err != nil {
