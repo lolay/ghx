@@ -365,28 +365,71 @@ func originRef(branch string) string {
 	return "refs/remotes/origin/" + branch
 }
 
+// processWiki syncs repo's wiki clone, <repo>.wiki beside it. A wiki is
+// synced like any repo, so a diverged or dirty one is fetched only rather than
+// silently skipped. Its results are named after the repo, not the wiki
+// directory, so the summary reads as it always has, except that a failure or a
+// fetched-only wiki is named <repo>.wiki so it can't be mistaken for the repo.
 func processWiki(ctx context.Context, git gitRunner, repo ghapi.RepoInfo, opts Options) []RepoResult {
 	wikiDest := filepath.Join(opts.OutputDir, repo.Name+".wiki")
-	wikiURL := resolveWikiURL(repo, opts.UseSSH)
-
 	if hasGitDir(wikiDest) {
-		git.setIdentity(ctx, wikiDest, opts.GitAuthor, opts.GitEmail)
-		if dirty, status := git.status(ctx, wikiDest); status.Success() && !dirty {
-			// A wiki that can't be cleaned or pulled adds no result, as before;
-			// the next run tries again.
-			if git.cleanOrigin(ctx, wikiDest) == nil {
-				git.fetch(ctx, wikiDest, repo.CloneURL, "pull", "--ff-only")
-			}
-		}
-		return nil
+		return syncWiki(ctx, git, wikiDest, repo, opts)
 	}
+
+	wikiURL := resolveWikiURL(repo, opts.UseSSH)
 	args := slices.Concat([]string{"clone"}, platformCloneArgs, []string{wikiURL, wikiDest})
 	r := git.fetch(ctx, "", wikiURL, args...)
-	if r.Success() {
-		git.setIdentity(ctx, wikiDest, opts.GitAuthor, opts.GitEmail)
-		return []RepoResult{{Name: repo.Name, Action: ActionClonedWiki}}
+	if !r.Success() {
+		if wikiNotFound(r.Stderr) {
+			return []RepoResult{{Name: repo.Name, Action: ActionSkippedWiki}}
+		}
+		return []RepoResult{{Name: repo.Name + ".wiki", Action: ActionFailedWiki, Detail: r.Message()}}
 	}
-	return []RepoResult{{Name: repo.Name, Action: ActionSkippedWiki}}
+
+	git.setIdentity(ctx, wikiDest, opts.GitAuthor, opts.GitEmail)
+	if _, born := git.revParse(ctx, wikiDest, "HEAD"); !born {
+		branches := git.remoteBranches(ctx, wikiDest)
+		if len(branches) == 0 {
+			if ctx.Err() == nil {
+				// Nothing to back up, and the next run clones it again, so it
+				// adds no row to the summary.
+				_ = DeleteRepo(wikiDest)
+			}
+			return nil
+		}
+		b := pickBranch("", branches)
+		git.run(ctx, wikiDest, "switch", "--track", "-c", b, originRef(b))
+	}
+	return []RepoResult{{Name: repo.Name, Action: ActionClonedWiki}}
+}
+
+// syncWiki brings an existing wiki clone up to date through syncExisting. A
+// wiki has no default branch from the API, so it follows the branch origin/HEAD
+// names (the clone set it) and falls back to main, master, then the newest
+// branch. A quiet success stays quiet; fetched only and failures surface.
+func syncWiki(ctx context.Context, git gitRunner, wikiDest string, repo ghapi.RepoInfo, opts Options) []RepoResult {
+	wiki := repo
+	wiki.DefaultBranch = ""
+	if head := git.run(ctx, wikiDest, "symbolic-ref", "refs/remotes/origin/HEAD"); head.Success() {
+		wiki.DefaultBranch = strings.TrimPrefix(strings.TrimSpace(head.Stdout), originRef(""))
+	}
+	result := syncExisting(ctx, git, wikiDest, wiki, opts)
+	result.Name = repo.Name + ".wiki"
+	switch result.Action {
+	case ActionPulled, ActionSkippedEmpty:
+		return nil
+	case ActionFailed:
+		result.Action = ActionFailedWiki
+	}
+	return []RepoResult{result}
+}
+
+// wikiNotFound reports whether a wiki clone's stderr says the wiki doesn't
+// exist, which is ordinary: GitHub's HasWiki is true for a repo that never had
+// a page written. Any other failure is a real one.
+func wikiNotFound(stderr string) bool {
+	lower := strings.ToLower(stderr)
+	return strings.Contains(lower, "not found") || strings.Contains(lower, "error: 404")
 }
 
 func hasGitDir(repoDir string) bool {

@@ -145,8 +145,8 @@ func TestCloneRepos_GivesGitTheTokenOnlyThroughItsEnvironment(t *testing.T) {
 		value, _ := envValue(c.Env, "GIT_CONFIG_VALUE_0")
 		assert.Equal(t, "AUTHORIZATION: basic "+basic, value)
 	}
-	assert.Equal(t, map[string]int{"clone": 2, "fetch": 1, "pull": 1}, fetches,
-		"repo and wiki cloned, then the repo fetched and the wiki pulled")
+	assert.Equal(t, map[string]int{"clone": 2, "fetch": 2}, fetches,
+		"repo and wiki cloned, then both fetched")
 
 	for path, cfg := range gitConfigs(t, f.out) {
 		assert.NotContains(t, cfg, token, path)

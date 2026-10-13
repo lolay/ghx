@@ -2,10 +2,13 @@ package cloner_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -225,11 +228,90 @@ func TestCloneRepos_Wikis(t *testing.T) {
 		repo.HasWiki = true // GitHub says so, but the wiki was never created
 		opts := f.opts()
 		opts.CloneWiki = true
+		cloner.RecordGit(t, func(cmd *exec.Cmd) error {
+			if !slices.Contains(cmd.Args, "clone") || !strings.HasSuffix(cmd.Args[len(cmd.Args)-1], "app.wiki") {
+				return cmd.Run()
+			}
+			_, _ = fmt.Fprintf(cmd.Stderr, "remote: Repository not found.\nfatal: repository 'https://github.com/acme/app.wiki.git/' not found\n")
+			return errors.New("exit status 128")
+		})
 
 		summary, err := cloner.CloneRepos(t.Context(), []ghapi.RepoInfo{repo}, opts)
 		require.NoError(t, err)
 		assert.ElementsMatch(t, []cloner.Action{cloner.ActionCloned, cloner.ActionSkippedWiki}, actionsByName(summary)["app"])
 		assert.NoDirExists(t, filepath.Join(f.out, "app.wiki"))
+	})
+
+	t.Run("reports any other wiki clone failure as failed wiki with git's message", func(t *testing.T) {
+		f := newFixture(t)
+		repo := f.repo(t, "app", "main")
+		repo.HasWiki = true
+		opts := f.opts()
+		opts.CloneWiki = true
+		cloner.RecordGit(t, func(cmd *exec.Cmd) error {
+			if !slices.Contains(cmd.Args, "clone") || !strings.HasSuffix(cmd.Args[len(cmd.Args)-1], "app.wiki") {
+				return cmd.Run()
+			}
+			_, _ = fmt.Fprintf(cmd.Stderr, "Cloning into 'app.wiki'...\nfatal: unable to access 'https://github.com/acme/app.wiki.git/': Could not resolve host: github.com\n")
+			return errors.New("exit status 128")
+		})
+
+		summary, err := cloner.CloneRepos(t.Context(), []ghapi.RepoInfo{repo}, opts)
+		require.NoError(t, err)
+		assert.Equal(t, []cloner.Action{cloner.ActionCloned}, actionsByName(summary)["app"])
+		require.Equal(t, []cloner.Action{cloner.ActionFailedWiki}, actionsByName(summary)["app.wiki"],
+			"the failure is named for the wiki, not the repo")
+		for _, r := range summary.Results {
+			if r.Action == cloner.ActionFailedWiki {
+				assert.Contains(t, r.Detail, "Could not resolve host")
+			}
+		}
+	})
+
+	t.Run("removes the clone of an empty wiki and reports nothing", func(t *testing.T) {
+		f := newFixture(t)
+		repo := f.repo(t, "app", "main")
+		repo.HasWiki = true
+		bare := filepath.Join(f.upstream, "app.wiki.git")
+		gittest.Git(t, f.upstream, "init", "--bare", bare)
+		opts := f.opts()
+		opts.CloneWiki = true
+
+		summary, err := cloner.CloneRepos(t.Context(), []ghapi.RepoInfo{repo}, opts)
+		require.NoError(t, err)
+		assert.Equal(t, []cloner.Action{cloner.ActionCloned}, actionsByName(summary)["app"])
+		assert.NoDirExists(t, filepath.Join(f.out, "app.wiki"))
+	})
+
+	t.Run("reports an existing wiki that diverged as fetched only", func(t *testing.T) {
+		f := newFixture(t)
+		repo := f.repo(t, "app", "main")
+		repo.HasWiki = true
+		wiki := gittest.NewBareRepo(t, f.upstream, "app.wiki", "master")
+		opts := f.opts()
+		opts.CloneWiki = true
+		_, err := cloner.CloneRepos(t.Context(), []ghapi.RepoInfo{repo}, opts)
+		require.NoError(t, err)
+		wikiDest := filepath.Join(f.out, "app.wiki")
+		require.NoError(t, os.WriteFile(filepath.Join(wikiDest, "Mine.md"), []byte("mine\n"), 0o644))
+		gittest.Git(t, wikiDest, "add", "Mine.md")
+		gittest.Git(t, wikiDest, "commit", "-m", "Local page")
+		gittest.AddCommit(t, wiki, "master", "Theirs.md", "theirs\n")
+
+		summary, err := cloner.CloneRepos(t.Context(), []ghapi.RepoInfo{repo}, opts)
+		require.NoError(t, err)
+		var wikiResults []cloner.RepoResult
+		for _, r := range summary.Results {
+			if r.Action != cloner.ActionPulled {
+				wikiResults = append(wikiResults, r)
+			}
+		}
+		require.Len(t, wikiResults, 1)
+		assert.Equal(t, cloner.ActionFetchedOnly, wikiResults[0].Action)
+		assert.Equal(t, "app.wiki", wikiResults[0].Name)
+		assert.Contains(t, wikiResults[0].Detail, "local commit(s) not on origin/master")
+		assert.NoFileExists(t, filepath.Join(wikiDest, "Theirs.md"), "the working tree is left alone")
+		assert.Equal(t, rev(t, wiki, "refs/heads/master"), rev(t, wikiDest, "refs/remotes/origin/master"), "the fetch still backed it up")
 	})
 
 	t.Run("pulls an existing wiki clone and leaves a dirty one alone", func(t *testing.T) {
@@ -252,9 +334,11 @@ func TestCloneRepos_Wikis(t *testing.T) {
 
 		require.NoError(t, os.WriteFile(filepath.Join(wikiDest, "Home.md"), []byte("wip\n"), 0o644))
 		gittest.AddCommit(t, wiki, "master", "More.md", "more\n")
-		_, err = cloner.CloneRepos(t.Context(), []ghapi.RepoInfo{repo}, opts)
+		summary, err = cloner.CloneRepos(t.Context(), []ghapi.RepoInfo{repo}, opts)
 		require.NoError(t, err)
 		assert.NoFileExists(t, filepath.Join(wikiDest, "More.md"), "a wiki with tracked changes is not pulled into")
+		assert.ElementsMatch(t, []cloner.Action{cloner.ActionPulled, cloner.ActionFetchedOnly}, slices.Concat(actionsByName(summary)["app"], actionsByName(summary)["app.wiki"]),
+			"the wiki that was left alone is listed")
 	})
 
 	t.Run("ignores wikis unless asked", func(t *testing.T) {
