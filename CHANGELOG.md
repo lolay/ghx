@@ -7,6 +7,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- `ghx --help` and command errors are styled with fang: a titled usage block,
+  examples, and an error message with a pointer to `--help`. Piped output, and
+  any output under `NO_COLOR`, has no escape codes. The exit code is still 0 on
+  success and 1 on any error.
+
+### Added
+- `ghx completion <shell>` prints a shell completion script, and `ghx man` a man
+  page. An organization named `help`, `completion` or `man` needs `--` before it
+  (`ghx -- help <PATH>`).
+
 ## [v0.2.0] - 2026-10-13
 
 ### Security

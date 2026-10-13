@@ -286,33 +286,57 @@ stops before contacting GitHub, while `--dry-run` works without it.
 
 ## CLI reference
 
-This is the output of `ghx --help`:
+This is the output of `ghx --help` with colors off (on a terminal the help is
+styled):
 
 ```
-Export and sync all GitHub repos for an organization
+  Export and sync all GitHub repos for an organization
 
-Usage:
-  ghx <ORG> <PATH> [flags]
+  USAGE
 
-Flags:
-      --archived-dir string   Directory for archived repos.
-      --clone-wiki            Also clone associated wikis.
-  -c, --concurrency int       Parallel workers.
-      --delete                Permanently delete removed/archived repos.
-      --deleted-dir string    Directory for removed repos.
-      --dry-run               Preview changes without doing anything.
-      --exclude string        Regex to exclude matching repo names.
-      --git-author string     Set git user.name in each cloned repo.
-      --git-email string      Set git user.email in each cloned repo.
-  -h, --help                  help for ghx
-      --include string        Regex to include only matching repo names.
-      --max-size int          Skip repos larger than this size in MB.
-      --protocol string       Git transport protocol (https|ssh).
-      --ssh                   Shortcut for --protocol ssh.
-  -t, --token string          GitHub Personal Access Token.
-      --type string           Repo type: all|public|private|forks|sources.
-  -v, --version               version for ghx
+    ghx <ORG> <PATH> [command] [--flags]
+
+  EXAMPLES
+
+    # Preview what would be cloned, without touching the disk
+    ghx --dry-run acme ~/src/acme
+
+    # Clone over SSH instead of HTTPS
+    ghx --ssh acme ~/src/acme
+
+    # Only repos whose names match a pattern
+    ghx --include '^(api|web)-' acme ~/src/acme
+
+  COMMANDS
+
+    completion [command]  Generate the autocompletion script for the specified shell
+    help [command]        Help about any command
+
+  FLAGS
+
+    --archived-dir        Directory for archived repos.
+    --clone-wiki          Also clone associated wikis.
+    -c --concurrency      Parallel workers.
+    --delete              Permanently delete removed/archived repos.
+    --deleted-dir         Directory for removed repos.
+    --dry-run             Preview changes without doing anything.
+    --exclude             Regex to exclude matching repo names.
+    --git-author          Set git user.name in each cloned repo.
+    --git-email           Set git user.email in each cloned repo.
+    -h --help             Help for ghx
+    --include             Regex to include only matching repo names.
+    --max-size            Skip repos larger than this size in MB.
+    --protocol            Git transport protocol (https|ssh).
+    --ssh                 Shortcut for --protocol ssh.
+    -t --token            Github Personal Access Token.
+    --type                Repo type: all|public|private|forks|sources.
+    -v --version          Version for ghx
 ```
+
+Besides syncing, `ghx completion <shell>` prints a shell completion script, and
+`ghx man` prints a man page. A repository owner named `help`, `completion` or
+`man` is read as that command; put `--` before it (`ghx -- help <PATH>`) to sync
+it.
 
 `ghx` exits 0 on success and 1 on any error.
 
