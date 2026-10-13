@@ -145,7 +145,8 @@ func PrintRepoTable(repos []ghapi.RepoInfo) {
 }
 
 // PrintSummary renders the post-run summary: per-action counts, the
-// list of failed repos, and the list of skipped dirty repos.
+// list of failed repos, and the list of repos fetched without updating
+// their working tree.
 func PrintSummary(summary cloner.SyncSummary) {
 	tw := table.NewWriter()
 	tw.SetOutputMirror(Out)
@@ -168,13 +169,13 @@ func PrintSummary(summary cloner.SyncSummary) {
 	tw.Render()
 	Println()
 
-	var failed, dirty, unusable []cloner.RepoResult
+	var failed, fetchedOnly, unusable []cloner.RepoResult
 	for _, r := range summary.Results {
 		switch r.Action {
 		case cloner.ActionFailed:
 			failed = append(failed, r)
-		case cloner.ActionSkippedDirty:
-			dirty = append(dirty, r)
+		case cloner.ActionFetchedOnly:
+			fetchedOnly = append(fetchedOnly, r)
 		case cloner.ActionSkippedName:
 			unusable = append(unusable, r)
 		}
@@ -185,10 +186,10 @@ func PrintSummary(summary cloner.SyncSummary) {
 			Printf("  %s: %s\n", r.Name, r.Detail)
 		}
 	}
-	if len(dirty) > 0 {
-		Println(text.FgYellow.Sprint(text.Bold.Sprint("Skipped (local changes):")))
-		for _, r := range dirty {
-			Printf("  %s\n", r.Name)
+	if len(fetchedOnly) > 0 {
+		Println(text.FgYellow.Sprint(text.Bold.Sprint("Fetched only (working tree not updated):")))
+		for _, r := range fetchedOnly {
+			Printf("  %s: %s\n", r.Name, r.Detail)
 		}
 	}
 	if len(unusable) > 0 {

@@ -80,7 +80,7 @@ func TestPrintSettings_NoRowsPrintsNothing(t *testing.T) {
 	assert.Empty(t, buf.String())
 }
 
-func TestPrintSummary_CountsActionsAndListsFailedAndDirty(t *testing.T) {
+func TestPrintSummary_CountsActionsAndListsFailedAndFetchedOnly(t *testing.T) {
 	buf := captureOut(t)
 
 	ui.PrintSummary(cloner.SyncSummary{Results: []cloner.RepoResult{
@@ -88,7 +88,7 @@ func TestPrintSummary_CountsActionsAndListsFailedAndDirty(t *testing.T) {
 		{Name: "b", Action: cloner.ActionCloned},
 		{Name: "c", Action: cloner.ActionPulled},
 		{Name: "d", Action: cloner.ActionFailed, Detail: "exit status 128"},
-		{Name: "e", Action: cloner.ActionSkippedDirty},
+		{Name: "e", Action: cloner.ActionFetchedOnly, Detail: "local changes"},
 		{Name: "f", Action: cloner.ActionFailed, Detail: "timeout"},
 	}})
 
@@ -101,7 +101,7 @@ func TestPrintSummary_CountsActionsAndListsFailedAndDirty(t *testing.T) {
 		{cloner.ActionCloned, "2"},
 		{cloner.ActionPulled, "1"},
 		{cloner.ActionFailed, "2"},
-		{cloner.ActionSkippedDirty, "1"},
+		{cloner.ActionFetchedOnly, "1"},
 	} {
 		re := regexp.MustCompile(regexp.QuoteMeta(string(row.action)) + `\s+│\s+` + row.count + `\s+│`)
 		assert.Regexp(t, re, out, "row for %q", row.action)
@@ -110,7 +110,7 @@ func TestPrintSummary_CountsActionsAndListsFailedAndDirty(t *testing.T) {
 		assert.NotContains(t, out, string(absent), "zero-count action %q should have no row", absent)
 	}
 	assert.Contains(t, out, "Failed repos:\n  d: exit status 128\n  f: timeout\n")
-	assert.Contains(t, out, "Skipped (local changes):\n  e\n")
+	assert.Contains(t, out, "Fetched only (working tree not updated):\n  e: local changes\n")
 }
 
 func TestPrintSummary_ListsUnusableNamesWithTheReason(t *testing.T) {
@@ -133,7 +133,7 @@ func TestPrintSummary_OmitsSectionsWithNothingToList(t *testing.T) {
 	out := buf.String()
 	assert.Contains(t, out, "Sync Summary")
 	assert.NotContains(t, out, "Failed repos:")
-	assert.NotContains(t, out, "Skipped (local changes):")
+	assert.NotContains(t, out, "Fetched only (working tree not updated):")
 	assert.NotContains(t, out, "Skipped (unusable name):")
 }
 

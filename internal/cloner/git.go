@@ -284,11 +284,13 @@ func (g gitRunner) exec(ctx context.Context, dir string, env []string, timeout t
 	return res
 }
 
-// status runs git status --porcelain and reports whether the working tree has
-// changes. The result is returned too: a failed status means ghx can't tell,
-// and must not pull.
+// status runs git status --porcelain and reports whether tracked files have
+// changes. Untracked files don't count: git refuses, safely, to overwrite one
+// with an incoming file, and otherwise leaves them alone. The result is
+// returned too: a failed status means ghx can't tell, and must not update the
+// working tree.
 func (g gitRunner) status(ctx context.Context, repoDir string) (dirty bool, res gitResult) {
-	res = g.run(ctx, repoDir, "status", "--porcelain")
+	res = g.run(ctx, repoDir, "status", "--porcelain", "--untracked-files=no")
 	return hasChanges(res.Stdout), res
 }
 

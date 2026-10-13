@@ -25,7 +25,10 @@ func TestSyncSummary(t *testing.T) {
 }
 
 func TestAllActionsListsEveryAction(t *testing.T) {
-	assert.Len(t, cloner.AllActions, 12)
+	assert.Len(t, cloner.AllActions, 14)
 	assert.Contains(t, cloner.AllActions, cloner.ActionSkippedTooLarge)
 	assert.Contains(t, cloner.AllActions, cloner.ActionSkippedName)
+	assert.Contains(t, cloner.AllActions, cloner.ActionFetchedOnly)
+	assert.Contains(t, cloner.AllActions, cloner.ActionSkippedEmpty)
+	assert.Contains(t, cloner.AllActions, cloner.ActionFailedWiki)
 }
