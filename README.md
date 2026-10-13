@@ -13,8 +13,10 @@ that were deleted or archived upstream out of the way. A `.ghx.json` manifest in
 the output directory records each run so the next one can tell what changed.
 
 - **Idempotent.** The first run clones; every later run updates.
-- **Safe with local work.** A repository with uncommitted changes is skipped, not
-  pulled.
+- **Safe with local work.** Every repository is fetched, so each remote branch
+  is backed up, but the working tree is only fast-forwarded when that loses
+  nothing. A repository with uncommitted changes is fetched, not updated, and
+  the summary lists it as fetched only.
 - **Filterable.** Select by type (`public`, `private`, `forks`, `sources`), by
   name regex, and by size.
 - **Previewable.** `--dry-run` shows what would happen and changes nothing.
@@ -65,9 +67,7 @@ arm64) and `checksums.txt` from the
 [Releases page](https://github.com/lolay/ghx/releases), check the archive's
 sha256 against `checksums.txt`, and put `ghx` on your `PATH`.
 
-The Homebrew, Scoop and GitHub Releases installs are available from the first
-release; until then, build from source. Releases are cut as
-[`specs/releasing.md`](./specs/releasing.md) describes.
+Releases are cut as [`specs/releasing.md`](./specs/releasing.md) describes.
 
 ### From source
 
@@ -87,9 +87,8 @@ go install github.com/lolay/ghx/cmd/ghx@latest
 ghx --help
 ```
 
-Until the first release, `@latest` resolves to the newest commit on `main`, so
-this works once the module rename (see [`CHANGELOG.md`](./CHANGELOG.md)) has
-merged there.
+`@latest` resolves to the newest release tag. A `go install` build isn't
+stamped, so `ghx --version` prints `ghx dev`.
 
 `go install` puts the `ghx` binary in `$GOBIN`, or `$(go env GOPATH)/bin`
 (typically `~/go/bin`) when `GOBIN` is unset. Make sure that directory is on your
@@ -105,8 +104,6 @@ To install somewhere else, such as `~/.local/bin`, set `GOBIN` for the install:
 mkdir -p ~/.local/bin
 GOBIN=$HOME/.local/bin go install github.com/lolay/ghx/cmd/ghx@latest
 ```
-
-Homebrew and Scoop packages come with the first release.
 
 ## Authentication
 
@@ -249,8 +246,30 @@ token and network access.
 
 - Queries the GitHub API for the organization's current repository list.
 - **Missing repos:** cloned.
-- **Existing repos:** `git pull --ff-only` when the working tree is clean;
-  skipped when there are local changes.
+- **Existing repos:** fetched every run, so every remote branch is backed up
+  whatever state the working tree is in. The working tree fast-forwards when it
+  is on the default branch with no changes to tracked files. Otherwise the
+  summary lists the repo under "Fetched only" with the reason (local changes,
+  commits not on origin, another branch checked out, a detached HEAD, a rebase
+  or merge in progress). Details:
+  - Untracked files don't block an update; git itself refuses only when an
+    incoming file would overwrite one.
+  - A force-pushed default branch is followed when the local branch has no
+    unpushed work: it is reset to the new tip, never overwriting files, and the
+    old tip is kept under `refs/ghx/forced/<branch>/<timestamp>`.
+  - If the default branch was renamed on GitHub, ghx switches to the new name
+    when nothing would be lost.
+  - A repo whose HEAD names a branch that doesn't exist is checked out on
+    `main`, else `master`, else its newest branch, and the summary notes it.
+  - An empty repo has nothing to back up: it is skipped (`∅`, listed under
+    "Skipped (empty)") and cloned on the first run after it gains a commit.
+  - A big clone isn't capped at 5 minutes: a transfer is aborted when it
+    stalls (below 1 KB/s for 60 seconds), and any clone or fetch is capped at
+    60 minutes. A transient network error (a dropped connection, a timeout, a
+    rate limit) is retried once.
+  - With `--clone-wiki`, a wiki is synced the same way. A wiki that doesn't
+    exist is reported as not found; any other wiki failure is `failed wiki`
+    with git's message.
 - **Removed repos** (in the previous manifest, gone from the organization): moved
   to `DELETED/`, or permanently deleted with `--delete`.
 - **Archived repos:** cloned into `ARCHIVED/`. A repo that becomes archived is
@@ -258,6 +277,13 @@ token and network access.
   skipped rather than moved.
 - Writes a `.ghx.json` manifest to the output directory after each run, used to
   detect removed and newly archived repos next time.
+
+The summary marks what needs a look: `✗` for failures, `⚠` for repos fetched
+only, `∅` for empty repos, and a "Notes" section for repos that were updated
+with something to say (a branch fallback, a reset after a force-push, a switch
+after a rename). The words always come with the glyph, so piped output reads.
+
+**Not backed up:** Git LFS content and submodules' contents.
 
 ## Platforms
 

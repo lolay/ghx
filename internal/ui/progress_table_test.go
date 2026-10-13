@@ -183,7 +183,7 @@ func widest(s string) int { return text.LongestLineLen(stripANSI(s)) }
 
 // results is the action each repo of the concurrent runs ends with, by index.
 var results = []cloner.Action{
-	cloner.ActionCloned, cloner.ActionPulled, cloner.ActionFailed, cloner.ActionSkippedDirty,
+	cloner.ActionCloned, cloner.ActionPulled, cloner.ActionFailed, cloner.ActionFetchedOnly,
 }
 
 func TestTableProgress_FinishedRowsStreamIntoOneTableInCompletionOrder(t *testing.T) {
@@ -245,7 +245,7 @@ func TestTableProgress_FinishedRowsStreamIntoOneTableInCompletionOrder(t *testin
 	require.GreaterOrEqual(t, len(lines), 3)
 	rule, footer, bottom := lines[len(lines)-3], lines[len(lines)-2], lines[len(lines)-1]
 	assert.True(t, strings.HasPrefix(rule, "├") && strings.Contains(rule, "┴"), rule)
-	assert.Regexp(t, `^│ 12 repos · ✓ 6 · ⚠ 3 skipped · ✗ 3 failed · \d+s +│$`, footer)
+	assert.Regexp(t, `^│ 12 repos · ✓ 6 · ⚠ 3 not updated · ✗ 3 failed · \d+s +│$`, footer)
 	assert.True(t, strings.HasPrefix(bottom, "└") && !strings.Contains(bottom, "┴"), bottom)
 
 	before := len(buf.String())

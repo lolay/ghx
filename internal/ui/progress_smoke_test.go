@@ -100,7 +100,7 @@ func within(t *testing.T, fn func()) {
 // every repo.
 func TestRenderers_SurviveConcurrentCallsAndNameEveryRepo(t *testing.T) {
 	results := []cloner.Action{
-		cloner.ActionCloned, cloner.ActionPulled, cloner.ActionFailed, cloner.ActionSkippedDirty,
+		cloner.ActionCloned, cloner.ActionPulled, cloner.ActionFailed, cloner.ActionFetchedOnly,
 	}
 	for _, r := range renderers {
 		t.Run(r.name, func(t *testing.T) {

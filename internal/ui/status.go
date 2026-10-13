@@ -10,14 +10,21 @@ import (
 	"github.com/lolay/ghx/internal/cloner"
 )
 
-// statusMark is the symbol and colour that mark a finished repo: a green tick
-// for a success (cloned, pulled, moved), a yellow warning sign for any
-// "skipped (...)" action, and a red cross for a failure. The pterm and table
-// renderers share it, so the two look alike.
+// statusMark is the symbol and colour that mark a finished repo. An action the
+// summary marks (glyphs) keeps that glyph: a red cross for a failure, a yellow
+// warning sign for a clone fetched without updating its working tree or a name
+// that can't be used, a faint empty set for an empty repo. Any other skip gets
+// the warning sign, and everything else (cloned, pulled, moved) a green tick.
+// The pterm and table renderers share it, so they look alike.
 func statusMark(action cloner.Action) (symbol string, color pterm.Color) {
+	g, marked := glyphs[action]
 	switch {
-	case action == cloner.ActionFailed:
-		return "✗", pterm.FgRed
+	case marked && strings.HasPrefix(string(action), "failed"):
+		return g, pterm.FgRed
+	case action == cloner.ActionSkippedEmpty:
+		return g, pterm.FgGray
+	case marked:
+		return g, pterm.FgYellow
 	case strings.HasPrefix(string(action), "skipped"):
 		return "⚠", pterm.FgYellow
 	default:

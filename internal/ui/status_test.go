@@ -25,7 +25,10 @@ func TestStatusMark_ChoosesASymbolAndColourPerClassOfAction(t *testing.T) {
 		{"cloned is a green tick", cloner.ActionCloned, "✓", pterm.FgGreen},
 		{"pulled is a green tick", cloner.ActionPulled, "✓", pterm.FgGreen},
 		{"moved is a green tick", cloner.ActionMovedDeleted, "✓", pterm.FgGreen},
-		{"skipped for local changes is a yellow warning", cloner.ActionSkippedDirty, "⚠", pterm.FgYellow},
+		{"fetched only is a yellow warning", cloner.ActionFetchedOnly, "⚠", pterm.FgYellow},
+		{"skipped as too large is a yellow warning", cloner.ActionSkippedTooLarge, "⚠", pterm.FgYellow},
+		{"an empty repo is a grey empty set", cloner.ActionSkippedEmpty, "∅", pterm.FgGray},
+		{"a failed wiki is a red cross", cloner.ActionFailedWiki, "✗", pterm.FgRed},
 		{"skipped for an unusable name is a yellow warning", cloner.ActionSkippedName, "⚠", pterm.FgYellow},
 		{"failed is a red cross", cloner.ActionFailed, "✗", pterm.FgRed},
 	}
@@ -47,7 +50,8 @@ func TestActionText_ShowsTheTimeOnlyWhenGitRan(t *testing.T) {
 	}{
 		{"a success shows its time", cloner.ActionPulled, 1200 * time.Millisecond, "pulled 1.2s"},
 		{"a failure shows its time", cloner.ActionFailed, 400 * time.Millisecond, "failed 0.4s"},
-		{"a skip has no time", cloner.ActionSkippedDirty, time.Second, string(cloner.ActionSkippedDirty)},
+		{"fetched only ran git, so it shows its time", cloner.ActionFetchedOnly, 1200 * time.Millisecond, "fetched only 1.2s"},
+		{"a skip has no time", cloner.ActionSkippedName, time.Second, string(cloner.ActionSkippedName)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -68,7 +72,7 @@ func TestPtermProgress_LeadsEachFinishedRepoWithItsSymbol(t *testing.T) {
 		line   string
 	}{
 		{"fresh", cloner.ActionCloned, "✓", "fresh cloned 1.2s"},
-		{"dirty", cloner.ActionSkippedDirty, "⚠", "dirty " + string(cloner.ActionSkippedDirty)},
+		{"dirty", cloner.ActionFetchedOnly, "⚠", "dirty fetched only 1.2s"},
 		{"broken", cloner.ActionFailed, "✗", "broken failed 1.2s"},
 	}
 

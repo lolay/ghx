@@ -11,9 +11,12 @@
   Wave 3 [exec] `ghx s8-s10`, c7bf5b6..4a5e995, review CONCERNS (live-area box
   drawing: the column-closing rule sits above the in-flight rows, not above the footer).
   Fix-up 3-fix 683d367, review PASS.
-- **Next:** merge `origin/main`
-  (ee8d164, fetch-first sync and failure handling, lolay/ghx#6) as Gary asked;
-  expect conflicts in `internal/cloner/cloner.go`, `action.go`, `internal/ui/ui.go`.
+- **Merged `origin/main`** (ee8d164, lolay/ghx#6) after the fix-up. Conflicts in
+  CHANGELOG, `internal/ui/ui.go`, `specs/testing.md`, resolved by the parent: main's
+  summary sections kept, `PrintSummaryLists` now prints them without the counts;
+  `statusMark` uses main's glyphs (✗ failed, ⚠ fetched only / unusable name,
+  ∅ empty, ⚠ any other skip, ✓ the rest); the table's closing footer says
+  `⚠ N not updated` and `∅ N empty`. `make ci` green, race x3 on ui/cli/cloner.
 - **Later:** Gary picks a renderer; a follow-up keeps it, deletes the rest and
   `GHX_PROGRESS`, tidies `go.mod`, updates `specs/`, and removes or promotes this
   plan and handoff before the branch merges.
@@ -33,7 +36,7 @@ Run twice against the same dir to see pulls. Piped output gets no progress.
 
 ## Pending question
 
-None. Gary asked to merge `main` ("merge main as there was some handling changes for failure modes"); it runs after the fix-up.
+Which renderer to keep (table is the favourite), and whether to open a PR now or after the clean-up.
 
 ## Decisions so far
 

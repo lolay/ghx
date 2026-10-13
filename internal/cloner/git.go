@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -14,8 +16,44 @@ import (
 	"github.com/lolay/ghx/internal/redact"
 )
 
-// gitTimeout bounds each git subprocess; mirrors Python's timeout=300.
+// gitTimeout bounds each local git subprocess; mirrors Python's timeout=300.
 const gitTimeout = 5 * time.Minute
+
+// networkTimeout bounds a git command that talks to the remote (clone, fetch,
+// pull). A big repo over a slow link legitimately takes far longer than a
+// local command, so the stall check below, not this, catches a dead
+// connection; this only stops a transfer that crawls forever.
+const networkTimeout = 60 * time.Minute
+
+// networkArgs make git give up on a connection that has moved fewer than 1000
+// bytes a second for 60 seconds, so a stalled transfer fails (and may be
+// retried) in a minute instead of holding a worker until networkTimeout.
+var networkArgs = []string{"-c", "http.lowSpeedLimit=1000", "-c", "http.lowSpeedTime=60"}
+
+// retryDelay is how long fetch waits before its one retry. It is a variable so
+// the tests can set it to 0 (export_test.go).
+var retryDelay = 2 * time.Second
+
+// transientMarkers are the pieces of git's stderr that mark a failure worth
+// one more try: a dropped or refused connection, a DNS blip, a rate limit or a
+// server error. The list is fixed on purpose. Anything not on it, such as
+// "Repository not found", an authentication failure or a 4xx other than 429,
+// would fail the same way again and is reported at once.
+var transientMarkers = []string{
+	"RPC failed",
+	"early EOF",
+	"the remote end hung up unexpectedly",
+	"Could not resolve host",
+	"Connection timed out",
+	"Connection reset",
+	"HTTP 429",
+	"The requested URL returned error: 5",
+	"unexpected disconnect",
+}
+
+// withTimeout bounds a git command's context. It is a variable so the tests
+// can see the timeout each command got (export_test.go).
+var withTimeout = context.WithTimeout
 
 // gitWaitDelay is how long a git process that was asked to stop (Ctrl-C, or
 // gitTimeout) gets to clean up before it is killed.
@@ -110,7 +148,10 @@ func (r gitResult) Success() bool { return r.Err == nil && r.ExitCode == 0 }
 // user's GIT_TRACE_CURL with GIT_TRACE_REDACT=0, or an old origin URL that a
 // fatal: line quotes, could still bring it back.
 func (r gitResult) Message() string {
-	msg := strings.TrimSpace(r.Stderr)
+	msg := lastFatalLine(r.Stderr)
+	if msg == "" {
+		msg = strings.TrimSpace(r.Stderr)
+	}
 	if msg == "" {
 		msg = strings.TrimSpace(r.Stdout)
 	}
@@ -120,6 +161,29 @@ func (r gitResult) Message() string {
 	return redact.String(msg, r.secrets...)
 }
 
+// lastFatalLine returns the last line of stderr that starts "fatal:" or
+// "error:", or "" when there is none. Git buries the reason for a failure
+// under progress output and multi-line "hint:" blocks, and a repo's detail
+// should be the reason alone.
+func lastFatalLine(stderr string) string {
+	lines := strings.Split(stderr, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimRight(lines[i], "\r")
+		if strings.HasPrefix(line, "fatal:") || strings.HasPrefix(line, "error:") {
+			return strings.TrimSpace(line)
+		}
+	}
+	return ""
+}
+
+// isTransientFailure reports whether git's stderr names a failure that a
+// second attempt may get past.
+func isTransientFailure(stderr string) bool {
+	return slices.ContainsFunc(transientMarkers, func(m string) bool {
+		return strings.Contains(stderr, m)
+	})
+}
+
 // gitRunner runs the one git executable a sync found, with the token for the
 // commands that fetch.
 type gitRunner struct {
@@ -127,19 +191,73 @@ type gitRunner struct {
 	cred credential
 }
 
-// run runs a git command that needs no credential.
+// run runs a local git command that needs no credential.
 func (g gitRunner) run(ctx context.Context, dir string, args ...string) gitResult {
-	return g.exec(ctx, dir, nil, args)
+	return g.exec(ctx, dir, nil, gitTimeout, args)
 }
 
 // fetch runs a git command that talks to the remote (clone, pull) with the
-// token in its environment, scoped to scopeURL's scheme and host.
+// token in its environment, scoped to scopeURL's scheme and host. It gives the
+// command the network timeout and the stall check, and tries it once more
+// after retryDelay when it failed in a way transientMarkers lists. It is here,
+// not in each caller, so every network command gets all three.
 func (g gitRunner) fetch(ctx context.Context, dir, scopeURL string, args ...string) gitResult {
-	return g.exec(ctx, dir, g.cred.env(scopeURL), args)
+	env := g.cred.env(scopeURL)
+	full := slices.Concat(networkArgs, args)
+
+	dest, isClone := cloneDestination(dir, args)
+	existed := false
+	if isClone {
+		_, err := os.Lstat(dest)
+		existed = err == nil
+	}
+
+	res := g.exec(ctx, dir, env, networkTimeout, full)
+	if res.Success() || ctx.Err() != nil || !isTransientFailure(res.Stderr) {
+		return res
+	}
+	if isClone && !existed {
+		// Git removes a clone it fails to finish, but a killed or crashed
+		// one can leave a partial directory, which would make the retry fail
+		// with "already exists". A destination that was there before the
+		// first attempt isn't ours to delete.
+		if err := os.RemoveAll(dest); err != nil {
+			return res
+		}
+	}
+	timer := time.NewTimer(retryDelay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return res
+	case <-timer.C:
+	}
+	return g.exec(ctx, dir, env, networkTimeout, full)
 }
 
-func (g gitRunner) exec(ctx context.Context, dir string, env, args []string) gitResult {
-	cctx, cancel := context.WithTimeout(ctx, gitTimeout)
+// cloneDestination returns where a git clone in args puts its repo, and
+// whether args is a clone at all. The destination is clone's last argument; dir
+// is the directory the command runs in, "" for the current one.
+func cloneDestination(dir string, args []string) (string, bool) {
+	for i := 0; i < len(args); i++ {
+		if args[i] == "-c" {
+			i++
+			continue
+		}
+		if args[i] != "clone" || i == len(args)-1 {
+			return "", false
+		}
+		dest := args[len(args)-1]
+		if dir != "" && !filepath.IsAbs(dest) {
+			dest = filepath.Join(dir, dest)
+		}
+		return dest, true
+	}
+	return "", false
+}
+
+func (g gitRunner) exec(ctx context.Context, dir string, env []string, timeout time.Duration, args []string) gitResult {
+	cctx, cancel := withTimeout(ctx, timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(cctx, g.path, slices.Concat(platformGitArgs, args)...)
@@ -166,11 +284,13 @@ func (g gitRunner) exec(ctx context.Context, dir string, env, args []string) git
 	return res
 }
 
-// status runs git status --porcelain and reports whether the working tree has
-// changes. The result is returned too: a failed status means ghx can't tell,
-// and must not pull.
+// status runs git status --porcelain and reports whether tracked files have
+// changes. Untracked files don't count: git refuses, safely, to overwrite one
+// with an incoming file, and otherwise leaves them alone. The result is
+// returned too: a failed status means ghx can't tell, and must not update the
+// working tree.
 func (g gitRunner) status(ctx context.Context, repoDir string) (dirty bool, res gitResult) {
-	res = g.run(ctx, repoDir, "status", "--porcelain")
+	res = g.run(ctx, repoDir, "status", "--porcelain", "--untracked-files=no")
 	return hasChanges(res.Stdout), res
 }
 
@@ -206,4 +326,117 @@ func (g gitRunner) setIdentity(ctx context.Context, repoDir, author, email strin
 	if email != "" {
 		g.run(ctx, repoDir, "config", "user.email", email)
 	}
+}
+
+// currentBranch returns the branch HEAD points at. detached is true, with no
+// error, when HEAD points at a commit instead (symbolic-ref -q exits 1 and
+// prints nothing). An unborn branch, in a repo with no commits yet, still has
+// its name.
+func (g gitRunner) currentBranch(ctx context.Context, dir string) (name string, detached bool, err error) {
+	res := g.run(ctx, dir, "symbolic-ref", "--short", "-q", "HEAD")
+	name = strings.TrimSpace(res.Stdout)
+	switch {
+	case res.Success():
+		return name, false, nil
+	case ctx.Err() == nil && res.ExitCode == 1 && name == "":
+		return "", true, nil
+	}
+	return "", false, fmt.Errorf("reading the current branch: %s", res.Message())
+}
+
+// revParse resolves ref to the SHA of the commit it names. ok is false when
+// there is no such ref or it names nothing that is a commit.
+func (g gitRunner) revParse(ctx context.Context, dir, ref string) (sha string, ok bool) {
+	res := g.run(ctx, dir, "rev-parse", "-q", "--verify", ref+"^{commit}")
+	if !res.Success() {
+		return "", false
+	}
+	return strings.TrimSpace(res.Stdout), true
+}
+
+// isAncestor reports whether commit a is reachable from commit b (or is b).
+// Any failure, such as a commit that doesn't exist, reads as false.
+func (g gitRunner) isAncestor(ctx context.Context, dir, a, b string) bool {
+	return g.run(ctx, dir, "merge-base", "--is-ancestor", a, b).Success()
+}
+
+// upstreamTrack returns the full ref a local branch tracks, such as
+// refs/remotes/origin/main, and whether that ref is gone (the remote deleted
+// the branch and a fetch --prune removed the tracking ref). upstream is ""
+// when the branch tracks nothing or doesn't exist.
+func (g gitRunner) upstreamTrack(ctx context.Context, dir, branch string) (upstream string, gone bool) {
+	res := g.run(ctx, dir, "for-each-ref", "--format=%(upstream)%00%(upstream:track)", "refs/heads/"+branch)
+	if !res.Success() {
+		return "", false
+	}
+	line := strings.TrimRight(strings.SplitN(res.Stdout, "\n", 2)[0], "\r")
+	upstream, track, _ := strings.Cut(line, "\x00")
+	return upstream, strings.TrimSpace(track) == "[gone]"
+}
+
+// remoteBranches lists the branches origin has, newest commit first, as the
+// names after refs/remotes/origin/ (so feature/x keeps its slash). origin's
+// HEAD pointer is not a branch and is left out.
+func (g gitRunner) remoteBranches(ctx context.Context, dir string) []string {
+	res := g.run(ctx, dir, "for-each-ref", "--sort=-committerdate", "--format=%(refname:lstrip=3)", "refs/remotes/origin")
+	if !res.Success() {
+		return nil
+	}
+	var branches []string
+	for line := range strings.Lines(res.Stdout) {
+		name := strings.TrimSpace(line)
+		if name != "" && name != "HEAD" {
+			branches = append(branches, name)
+		}
+	}
+	return branches
+}
+
+// operationInProgress names the merge, rebase, cherry-pick or revert a repo is
+// in the middle of, or returns "" when there is none (or git can't say). Such
+// a repo must not be switched or pulled. git has no command for this, so it
+// looks for the state files git leaves in the git directory. ctx is the first
+// argument, as for the other probes, so a Ctrl-C stops the git call.
+func (g gitRunner) operationInProgress(ctx context.Context, dir string) string {
+	res := g.run(ctx, dir, "rev-parse", "--git-dir")
+	if !res.Success() {
+		return ""
+	}
+	gitDir := strings.TrimSpace(res.Stdout)
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(dir, gitDir)
+	}
+	states := []struct {
+		operation string
+		paths     []string
+	}{
+		{"merge", []string{"MERGE_HEAD"}},
+		{"rebase", []string{"rebase-merge", "rebase-apply"}},
+		{"cherry-pick", []string{"CHERRY_PICK_HEAD"}},
+		{"revert", []string{"REVERT_HEAD"}},
+	}
+	for _, s := range states {
+		for _, p := range s.paths {
+			if _, err := os.Lstat(filepath.Join(gitDir, p)); err == nil {
+				return s.operation
+			}
+		}
+	}
+	return ""
+}
+
+// pickBranch chooses the branch to put a repo on: the default branch when
+// origin has it, else main, else master, else the one with the newest commit
+// (branches is newest first, as remoteBranches returns it), else "" when
+// origin has no branches.
+func pickBranch(defaultBranch string, branches []string) string {
+	for _, want := range []string{defaultBranch, "main", "master"} {
+		if want != "" && slices.Contains(branches, want) {
+			return want
+		}
+	}
+	if len(branches) > 0 {
+		return branches[0]
+	}
+	return ""
 }

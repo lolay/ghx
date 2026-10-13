@@ -89,7 +89,7 @@ func TestPrintSettings_NoRowsPrintsNothing(t *testing.T) {
 	assert.Empty(t, buf.String())
 }
 
-func TestPrintSummary_CountsActionsAndListsFailedAndDirty(t *testing.T) {
+func TestPrintSummary_CountsActionsAndListsFailedAndFetchedOnly(t *testing.T) {
 	buf := captureOut(t)
 
 	ui.PrintSummary(cloner.SyncSummary{Results: []cloner.RepoResult{
@@ -97,7 +97,7 @@ func TestPrintSummary_CountsActionsAndListsFailedAndDirty(t *testing.T) {
 		{Name: "b", Action: cloner.ActionCloned},
 		{Name: "c", Action: cloner.ActionPulled},
 		{Name: "d", Action: cloner.ActionFailed, Detail: "exit status 128"},
-		{Name: "e", Action: cloner.ActionSkippedDirty},
+		{Name: "e", Action: cloner.ActionFetchedOnly, Detail: "local changes"},
 		{Name: "f", Action: cloner.ActionFailed, Detail: "timeout"},
 	}})
 
@@ -110,7 +110,7 @@ func TestPrintSummary_CountsActionsAndListsFailedAndDirty(t *testing.T) {
 		{cloner.ActionCloned, "2"},
 		{cloner.ActionPulled, "1"},
 		{cloner.ActionFailed, "2"},
-		{cloner.ActionSkippedDirty, "1"},
+		{cloner.ActionFetchedOnly, "1"},
 	} {
 		re := regexp.MustCompile(regexp.QuoteMeta(string(row.action)) + `\s+│\s+` + row.count + `\s+│`)
 		assert.Regexp(t, re, out, "row for %q", row.action)
@@ -118,8 +118,8 @@ func TestPrintSummary_CountsActionsAndListsFailedAndDirty(t *testing.T) {
 	for _, absent := range []cloner.Action{cloner.ActionDeleted, cloner.ActionMovedArchived, cloner.ActionSkippedTooLarge} {
 		assert.NotContains(t, out, string(absent), "zero-count action %q should have no row", absent)
 	}
-	assert.Contains(t, out, "Failed repos:\n  d: exit status 128\n  f: timeout\n")
-	assert.Contains(t, out, "Skipped (local changes):\n  e\n")
+	assert.Contains(t, out, "Failed repos:\n  ✗ d  exit status 128\n  ✗ f  timeout\n")
+	assert.Contains(t, out, "Fetched only (working tree not updated):\n  ⚠ e  local changes\n")
 }
 
 func TestPrintSummary_ListsUnusableNamesWithTheReason(t *testing.T) {
@@ -129,7 +129,7 @@ func TestPrintSummary_ListsUnusableNamesWithTheReason(t *testing.T) {
 		{Name: "CON", Action: cloner.ActionSkippedName, Detail: "a reserved device name on Windows"},
 	}})
 
-	assert.Contains(t, buf.String(), "Skipped (unusable name):\n  CON: a reserved device name on Windows\n")
+	assert.Contains(t, buf.String(), "Skipped (unusable name):\n  ⚠ CON  a reserved device name on Windows\n")
 }
 
 func TestPrintSummary_OmitsSectionsWithNothingToList(t *testing.T) {
@@ -142,8 +142,59 @@ func TestPrintSummary_OmitsSectionsWithNothingToList(t *testing.T) {
 	out := buf.String()
 	assert.Contains(t, out, "Sync Summary")
 	assert.NotContains(t, out, "Failed repos:")
-	assert.NotContains(t, out, "Skipped (local changes):")
+	assert.NotContains(t, out, "Fetched only (working tree not updated):")
 	assert.NotContains(t, out, "Skipped (unusable name):")
+	assert.NotContains(t, out, "Skipped (empty):")
+	assert.NotContains(t, out, "Notes:")
+}
+
+func TestPrintSummary_ListsEmptyReposWithTheirGlyph(t *testing.T) {
+	buf := captureOut(t)
+
+	ui.PrintSummary(cloner.SyncSummary{Results: []cloner.RepoResult{
+		{Name: "new-repo", Action: cloner.ActionSkippedEmpty, Detail: "empty repository"},
+	}})
+
+	out := buf.String()
+	assert.Contains(t, out, "Skipped (empty):\n  ∅ new-repo  empty repository, skipped\n")
+	assert.Regexp(t, `∅ skipped \(empty\)\s+│\s+1\s+│`, out, "the counts row carries the glyph and the words")
+}
+
+func TestPrintSummary_PutsAGlyphOnEachCountsRowThatNeedsAttention(t *testing.T) {
+	buf := captureOut(t)
+
+	ui.PrintSummary(cloner.SyncSummary{Results: []cloner.RepoResult{
+		{Name: "a", Action: cloner.ActionFailed, Detail: "boom"},
+		{Name: "b", Action: cloner.ActionFetchedOnly, Detail: "local changes"},
+		{Name: "c.wiki", Action: cloner.ActionFailedWiki, Detail: "could not resolve host"},
+		{Name: "d", Action: cloner.ActionPulled},
+	}})
+
+	out := buf.String()
+	assert.Regexp(t, `✗ failed\s+│\s+1\s+│`, out)
+	assert.Regexp(t, `⚠ fetched only\s+│\s+1\s+│`, out)
+	assert.Regexp(t, `✗ failed wiki\s+│\s+1\s+│`, out)
+	assert.Regexp(t, `│ pulled\s+│\s+1\s+│`, out, "an action that needs nothing has no glyph")
+	assert.Contains(t, out, "Failed repos:\n  ✗ a  boom\n  ✗ c.wiki  could not resolve host\n",
+		"a failed wiki is listed with the failed repos")
+}
+
+func TestPrintSummary_NotesNameCloneAndPullDetails(t *testing.T) {
+	buf := captureOut(t)
+
+	ui.PrintSummary(cloner.SyncSummary{Results: []cloner.RepoResult{
+		{Name: "a", Action: cloner.ActionCloned, Detail: "remote HEAD names main, which doesn't exist; checked out dev"},
+		{Name: "b", Action: cloner.ActionPulled, Detail: "origin/main was force-pushed; old tip kept at refs/ghx/forced/main/20260101T000000Z"},
+		{Name: "c", Action: cloner.ActionPulled, Detail: "switched from master to main"},
+		{Name: "quiet", Action: cloner.ActionPulled},
+	}})
+
+	out := buf.String()
+	assert.Contains(t, out, "Notes:\n"+
+		"  · a  remote HEAD names main, which doesn't exist; checked out dev\n"+
+		"  · b  origin/main was force-pushed; old tip kept at refs/ghx/forced/main/20260101T000000Z\n"+
+		"  · c  switched from master to main\n")
+	assert.NotContains(t, out, "quiet  ", "a pull with no detail is not a note")
 }
 
 func TestPrintSummaryLists_PrintsTheListsWithoutTheCountsTable(t *testing.T) {
@@ -151,7 +202,7 @@ func TestPrintSummaryLists_PrintsTheListsWithoutTheCountsTable(t *testing.T) {
 	summary := cloner.SyncSummary{Results: []cloner.RepoResult{
 		{Name: "a", Action: cloner.ActionCloned},
 		{Name: "d", Action: cloner.ActionFailed, Detail: "exit status 128"},
-		{Name: "e", Action: cloner.ActionSkippedDirty},
+		{Name: "e", Action: cloner.ActionFetchedOnly, Detail: "local changes to tracked files"},
 		{Name: "CON", Action: cloner.ActionSkippedName, Detail: "a reserved device name on Windows"},
 	}}
 
@@ -161,9 +212,9 @@ func TestPrintSummaryLists_PrintsTheListsWithoutTheCountsTable(t *testing.T) {
 	assert.NotContains(t, out, "Sync Summary")
 	assert.NotContains(t, out, "Count")
 	assert.True(t, strings.HasPrefix(out, "\n"), "a blank line sets the lists off from the table above")
-	assert.Contains(t, out, "Failed repos:\n  d: exit status 128\n")
-	assert.Contains(t, out, "Skipped (local changes):\n  e\n")
-	assert.Contains(t, out, "Skipped (unusable name):\n  CON: a reserved device name on Windows\n")
+	assert.Contains(t, out, "Failed repos:\n  ✗ d  exit status 128\n")
+	assert.Contains(t, out, "Fetched only (working tree not updated):\n  ⚠ e  local changes to tracked files\n")
+	assert.Contains(t, out, "Skipped (unusable name):\n  ⚠ CON  a reserved device name on Windows\n")
 
 	// What follows the counts table in PrintSummary is the same text.
 	full := captureOut(t)
