@@ -1,7 +1,7 @@
 ```
 --- KICKOFF: begin orchestration at [deep] ---
 
-  Status: 1/1 groups done | last review: wave-1 CONCERNS | current: wave 1-fix ghx m1 s1-s4 [exec] | updated 2026-10-14 | over expected: ~$5.20 of ~$4.0
+  Status: 1/1 groups done | last review: wave-1-fix CONCERNS | current: wave 1-fix2 ghx m1 s1-s4 [exec] | updated 2026-10-14 | passed unattended: gate 1 (fix-up 2 of 2) | over expected: ~$6.39 of ~$4.0
 
   mode: unattended | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch) | guard 3x min $50 | fixups 2 | confirmed 2026-10-14 session 3587b07b-d4af-58e8-ab63-47e6c35d27e1 by Kickoff prompt: Run in unattended mode.
 
@@ -32,6 +32,7 @@
 |---|---|---|
 | 1 [exec] ghx m1 s1-s4 | ~2.9M | ~$1.2 |
 | 1-fix [exec] ghx m1 s1-s4 | — | — |
+| 1-fix2 [exec] ghx m1 s1-s4 | — | — |
 | orchestrator | ~3.1M | ~$2.8 |
 | **Total** | ~6.0M | ~$4.0 |
 
@@ -119,6 +120,7 @@ Acceptance: `make ci` and `make vuln` pass.
 ## Review log
 
 review wave-1 (ghx m1 s1-s4) 45cae77..1b43336: CONCERNS - make ci and make vuln pass (x/text v0.43.0, no vulns); s1-s4 match the spec. Finding: on a TTY, fang's default error handler title-cases the first word of the error, which is now the file path, so the user sees `/Tmp/.../H/.Ghx.toml: concurrency must be an integer, got string "8".` instead of the real path (fang@v1.0.0 theme.go:186-206, help.go:112-121; internal/cli/root.go:41 has no custom error handler); this breaks "names the file" and the manual check. Suggested fix: a fang error handler in internal/cli/root.go that does not change the message case - 2026-10-14
+review wave-1-fix (ghx m1 s1-s4) 45cae77..c2bfb7a: CONCERNS - c2bfb7a adds a fang error handler (root.go errorStyles) that unsets the ErrorText title-case transform when the first word contains / or \; make ci passes, other errors unchanged, terminal-output.md updated. Finding: a local config path with no separator still gets title-cased: `ghx acme .` makes filepath.Join(".", ".ghx.toml") = ".ghx.toml", so the user sees `.Ghx.toml: concurrency must be an integer, got string "8".` (run.go:24,30; config.go:101; root.go errorStyles strings.ContainsAny(first, `/\`)). Suggested fix: also skip the transform when errors.Is(err, config.ErrInvalidValue) (keys.go:28), and add a test row for `.ghx.toml: concurrency must be ...` - 2026-10-14; passed unattended: gate 1 (fix-up 2 of 2)
 
 ## Token log
 
@@ -133,3 +135,6 @@ tokens orchestrator-kickoff plan-config-checks-quill (claude-opus-5-5): input ~6
 tokens orchestrator-resume plan-config-checks-quill (claude-opus-5-5): input ~28 / cache read ~1.6M / cache write ~0 5m + ~87k 1h / output ~10k | ~$1.23 API-equiv
 tokens wave-1 ghx-m1-s1-s4 (claude-sonnet-5-5): input ~56 / cache read ~2.7M / cache write ~120k / output ~28k | ~$1.12 API-equiv (output est.) session 3587b07b-d4af-58e8-ab63-47e6c35d27e1
 tokens review-wave-1 ghx-m1-s1-s4 (claude-opus-5-5): input ~16 / cache read ~170k / cache write ~32k / output ~10k | ~$0.40 API-equiv (output est.) session 3587b07b-d4af-58e8-ab63-47e6c35d27e1
+tokens orchestrator-wave-1 ghx-m1-s1-s4 (claude-opus-5-5): input ~14 / cache read ~870k / cache write ~0 5m + ~18k 1h / output ~7.8k | ~$0.48 API-equiv
+tokens wave-1-fix ghx-m1-s1-s4 (claude-sonnet-5-5): input ~20 / cache read ~650k / cache write ~33k / output ~10k | ~$0.31 API-equiv (output est.) session 3587b07b-d4af-58e8-ab63-47e6c35d27e1
+tokens review-wave-1-fix ghx-m1-s1-s4 (claude-opus-5-5): input ~22 / cache read ~220k / cache write ~22k / output ~12k | ~$0.39 API-equiv (output est.) session 3587b07b-d4af-58e8-ab63-47e6c35d27e1
