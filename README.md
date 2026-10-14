@@ -282,7 +282,8 @@ token and network access.
   back, then synced there; a wiki moves with its repo. That holds with no
   manifest, and a move that failed is tried again next run. With `--delete`,
   archived repos are deleted or skipped rather than moved. A repo left out by
-  `--include`, `--exclude` or `--type` stays where it is.
+  `--include`, `--exclude` or `--type` stays where it is. Where every repo lives,
+  and the rules above in full, are in [`specs/repo-layout.md`](./specs/repo-layout.md).
 - **Moves and deletes are checked.** ghx moves or deletes a clone only when its
   origin URL names the repo (the last part of the URL, so SSH, HTTPS, an
   Enterprise host or a renamed organization all match); otherwise it is left
@@ -326,10 +327,11 @@ stops before contacting GitHub, while `--dry-run` works without it.
   open inside the repository blocks the move; ghx reports it as failed and
   tries again on the next run.
 - **Output.** On a terminal a sync draws one live table: a row per repo in fixed
-  columns, active repos by name and then archived ones, finished rows scrolling
-  up into your terminal's history in that order, the repos still running (and
-  any finished behind a slower one) and a progress line (`Syncing 34/60 ... 4
-  running · 22 queued`) at the bottom, and the totals when it closes. Piped or redirected output gets
+  columns (Visibility reads `public`, `private` or `archived`), active repos by
+  name and then archived ones, finished rows scrolling up into your terminal's
+  history in that order, the repos still running (and any finished behind a
+  slower one) and a progress line (`Syncing 34/60 ... 4 running · 22 queued`) at
+  the bottom, and the totals when it closes. Piped or redirected output gets
   the plain repo table, a note as each pass starts, and the full summary
   instead, with no escape codes. A `--dry-run` gets only the plain repo table
   and `Dry run complete. No changes made.`, on a terminal too. Set `NO_COLOR=1`

@@ -45,6 +45,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   followed by the lists of repos that need a look. Piped or
   redirected output keeps the static table and the full summary, with no escape
   codes.
+- The repo table's Visibility column reads `archived` for an archived repo (it
+  wins over `private`), and the separate Archived column is gone. A narrow
+  terminal now drops Last Pushed, Default Branch and Language, in that order.
 
 ### Added
 - `ghx completion <shell>` prints a shell completion script, and `ghx man` a man
