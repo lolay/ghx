@@ -7,6 +7,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [v0.3.0] - 2026-10-14
+
 ### Changed
 - A config value of the wrong type (`concurrency = "8"`), or a float for an
   integer key, stops the run with an error naming the file and key, where it
