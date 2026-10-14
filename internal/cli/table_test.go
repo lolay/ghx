@@ -1,9 +1,11 @@
 package cli_test
 
 import (
+	"cmp"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -52,18 +54,41 @@ func tableWorld(t *testing.T) *world {
 // plain is out with the escape codes removed.
 func plain(out string) string { return ansiCodes.ReplaceAllString(out, "") }
 
+// tableRow matches a row of the repo table, capturing its name.
+var tableRow = regexp.MustCompile(`^│ (\S+) +│`)
+
+// rowNames are the repos with a table row in out whose line contains status,
+// each once, in the order the table printed them. The output is the raw
+// stream, every live frame included, so a row in flight, or finished and held
+// back behind a slower one, appears more than once. Its last appearance is
+// where it printed: no frame draws a row again once it has.
+func rowNames(out, status string) []string {
+	last := map[string]int{}
+	var names []string
+	for i, line := range strings.Split(out, "\n") {
+		m := tableRow.FindStringSubmatch(line)
+		if m == nil || m[1] == "Repos" || m[1] == "NAME" || !strings.Contains(line, status) {
+			continue
+		}
+		if _, ok := last[m[1]]; !ok {
+			names = append(names, m[1])
+		}
+		last[m[1]] = i
+	}
+	slices.SortFunc(names, func(a, b string) int { return cmp.Compare(last[a], last[b]) })
+	return names
+}
+
 func TestRun_TheLiveTableIsOnePieceWithEachReposStatus(t *testing.T) {
 	w := tableWorld(t)
 
 	out := plain(w.mustRun())
 
-	// A finished row is printed once, above the live area, and the live area
-	// holds no finished row, so each shows once; the top and the totals come
-	// once, around both passes.
+	// The top and the totals come once, around both passes.
 	assert.Equal(t, 1, strings.Count(out, "Repos to export"))
 	assert.Equal(t, 1, strings.Count(out, "NAME"))
 	assert.Contains(t, out, "STATUS")
-	assert.Equal(t, 3, strings.Count(out, "✓ cloned"), "alpha, beta and the archived repo")
+	assert.ElementsMatch(t, []string{"alpha", "beta", "vault"}, rowNames(out, "✓ cloned"), "alpha, beta and the archived repo")
 	assert.Regexp(t, `│ 3 repos · ✓ 3 cloned · \d+s +│`, out)
 	assert.NotContains(t, out, "│ queued", "no row is left queued")
 	assert.NotContains(t, out, "Total:", "the footer carries the count")
@@ -74,13 +99,28 @@ func TestRun_TheLiveTableIsOnePieceWithEachReposStatus(t *testing.T) {
 	assert.Equal(t, []string{"ARCHIVED/vault", "alpha", "beta"}, repoDirs(t, w.out))
 }
 
+func TestRun_TheLiveTableListsActiveReposByNameThenArchivedOnes(t *testing.T) {
+	terminal(t)
+	w := newWorld(t)
+	// The API lists repos by creation date, which is the order they are added.
+	w.addRepo("zulu")
+	w.addRepo("aardvark", func(r *ghapitest.Repo) { r.Archived = true })
+	w.addRepo("Mike")
+	w.addRepo("alpha")
+
+	out := plain(w.mustRun())
+
+	assert.Equal(t, []string{"alpha", "Mike", "zulu", "aardvark"}, rowNames(out, "✓ cloned"),
+		"the passes' order: active repos by name, ignoring case, then archived ones")
+}
+
 func TestRun_TheLiveTableShowsRowsStillQueuedWhenArchivedReposAreSkipped(t *testing.T) {
 	w := tableWorld(t)
 
 	out := plain(w.mustRun("--delete"))
 
 	assert.Equal(t, 1, strings.Count(out, "Repos to export"))
-	assert.Equal(t, 2, strings.Count(out, "✓ cloned"))
+	assert.ElementsMatch(t, []string{"alpha", "beta"}, rowNames(out, "✓ cloned"))
 	assert.Equal(t, 1, strings.Count(out, "│ queued"), "the archived repo was never started")
 	assert.Regexp(t, `│ 3 repos · ✓ 2 cloned · 1 queued · \d+s +│`, out)
 	// The note on skipping them waits for the table's close.
@@ -208,7 +248,7 @@ func TestRun_ATerminalDrawsTheLiveTableWithoutAnyVariable(t *testing.T) {
 	out := plain(w.mustRun())
 
 	assert.Contains(t, out, "STATUS")
-	assert.Equal(t, 3, strings.Count(out, "✓ cloned"))
+	assert.Len(t, rowNames(out, "✓ cloned"), 3)
 	assert.NotContains(t, out, "Total: ", "no static table")
 	assert.NotContains(t, out, "Sync Summary")
 }
