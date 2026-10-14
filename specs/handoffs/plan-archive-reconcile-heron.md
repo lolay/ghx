@@ -1,7 +1,7 @@
 ```
---- KICKOFF: begin orchestration at [deep] ---
+--- KICKOFF: plan complete ---
 
-  Status: 2/2 groups done | last review: wave-2 CONCERNS | current: 2-fix ghx m1 s2-s4 [exec] | over expected: ~$12.3 of ~$8.0 | updated 2026-10-14
+  Status: 2/2 groups done | completed 2026-10-14
 
   mode: unattended | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch claude/fervent-heisenberg-72nmt2) | guard 3x min $50 | fixups 2 | confirmed 2026-10-14 session db99f13c-13a7-5420-b626-79e0efa04ff4: Unattended (Recommended)
 
@@ -29,14 +29,14 @@
 
 **Cost (API-equiv, Claude Code models)**
 
-| wave | expected tokens | expected $ |
-|---|---|---|
-| 1 [deep] ghx m1 s1 | ~6.1M | ~$3.2 |
-| 1-fix [deep] ghx m1 s1 | — | — |
-| 2 [exec] ghx m1 s2-s4 | ~2.3M | ~$1.0 |
-| 2-fix [exec] ghx m1 s2-s4 | — | — |
-| orchestrator | ~4.3M | ~$3.8 |
-| **Total** | ~13M | ~$8.0 |
+| wave | expected tokens | expected $ | actual tokens | actual $ |
+|---|---|---|---|---|
+| 1 [deep] ghx m1 s1 | ~6.1M | ~$3.2 | ~8.1M (output est.) | ~$4.15 (output est.) |
+| 1-fix [deep] ghx m1 s1 | — | — | ~0.6M (output est.) | ~$0.58 (output est.) |
+| 2 [exec] ghx m1 s2-s4 | ~2.3M | ~$1.0 | ~3.4M (output est.) | ~$1.65 (output est.) |
+| 2-fix [exec] ghx m1 s2-s4 | — | — | ~0.6M (output est.) | ~$0.48 (output est.) |
+| orchestrator | ~4.3M | ~$3.8 | ~14M (output est.) | ~$6.62 (output est.) |
+| **Total** | ~13M | ~$8.0 | ~27M | ~$13.5 |
 
 Expected values are estimates, good to about 2-3× per wave.
 
@@ -128,6 +128,7 @@ Acceptance: `make ci` passes; README, specs and changelog agree with the code.
 review wave-1 (ghx m1 s1) b884660..976fa01: CONCERNS - specs/terminal-output.md:67 Status marks table still says the yellow ⚠ means "every skip", but the new conflict action uses ⚠ too and the README legend now says "skipped or a conflict", so the docs disagree (AGENTS.md: update the doc in the same change); code meets the spec, make ci passes - 2026-10-14
 review wave-1-fix (ghx m1 s1) b884660..421f8c1: PASS - specs/terminal-output.md:67 now says the yellow ⚠ covers every skip (unusable name, origin mismatch) and a conflict, matching the README legend and internal/ui glyphs - 2026-10-14
 review wave-2 (ghx m1 s2-s4) 493952a..f10da43: CONCERNS - s3's TestRun_AMoveThatFailedIsRetriedByTheNextRun never makes a move fail: a file at <out>/ARCHIVED makes exists(want) see ENOTDIR and report a conflict before MoveRepo, so a regression that stops retrying after ActionFailed would pass; on Windows the same setup likely reaches MoveRepo and fails, contradicting the test comment and specs/repo-layout.md. Fix: make the move really fail (e.g. a dangling symlink at <out>/ARCHIVED so Lstat gives ENOENT and MkdirAll fails; skip if os.Symlink fails), assert `beta: failed` on run 1, and word the repo-layout.md sentence so it holds on every OS; s2 and s4 passed, make ci passes - 2026-10-14
+review wave-2-fix (ghx m1 s2-s4) 493952a..3dccf51: PASS - the retry test now plants a dangling symlink at <out>/ARCHIVED so run 1 reaches MoveRepo and reports `beta: failed`, run 2 moves it; skips where symlinks can't be made; repo-layout.md wording holds on every OS; make ci passes - 2026-10-14
 
 ## Token log
 
@@ -148,3 +149,27 @@ tokens orchestrator-wave-1 ghx-m1-s1 (claude-opus-5-5): input ~44 / cache read ~
 tokens wave-2 ghx-m1-s2-s4 (claude-sonnet-5-5): input ~60 / cache read ~3M / cache write ~140k / output ~30k | ~$1.25 API-equiv (output est.) session db99f13c-13a7-5420-b626-79e0efa04ff4
 tokens review-wave-2 ghx-m1-s2-s4 (claude-opus-5-5): input ~16 / cache read ~200k / cache write ~39k / output ~8k | ~$0.40 API-equiv (output est.) session db99f13c-13a7-5420-b626-79e0efa04ff4
 tokens orchestrator-wave-1-fix ghx-m1-s1 (claude-opus-5-5): input ~20 / cache read ~2.4M / cache write ~0 5m + ~17k 1h / output ~9.3k | ~$0.81 API-equiv
+tokens wave-2-fix ghx-m1-s2-s4 (claude-sonnet-5-5): input ~14 / cache read ~470k / cache write ~37k / output ~7k | ~$0.26 API-equiv (output est.) session db99f13c-13a7-5420-b626-79e0efa04ff4
+tokens review-wave-2-fix ghx-m1-s2-s4 (claude-opus-5-5): input ~12 / cache read ~81k / cache write ~17k / output ~6k | ~$0.22 API-equiv (output est.) session db99f13c-13a7-5420-b626-79e0efa04ff4
+tokens orchestrator-wave-2 ghx-m1-s2-s4 (claude-opus-5-5): input ~10 / cache read ~1.1M / cache write ~0 5m + ~18k 1h / output ~6.5k | ~$0.50 API-equiv
+tokens orchestrator-wave-2-fix ghx-m1-s2-s4 (claude-opus-5-5): input ~6 / cache read ~590k / cache write ~0 5m + ~9.7k 1h / output ~810 | ~$0.21 API-equiv
+
+## Completion summary
+
+**Completed**: 2026-10-14
+
+**What shipped**: Every sync now reconciles each listed repo's clone with its archived state, on disk and in both directions: a clone on the wrong side of `ARCHIVED/` moves over (its wiki with it), or is deleted under `--delete` for an archived repo, but only when the clone's raw `remote.origin.url` names the repo (last path segment, `.git` trimmed, case-insensitive, so SSH vs HTTPS and host or owner changes don't matter). A clone whose origin names another repo is left alone and reported; when both locations exist ghx reports a conflict and overwrites nothing. It no longer depends on the previous manifest, so a missing manifest, a failed move or an unarchive all converge on the next run. Removed repos still move to `DELETED/` from the manifest diff, now origin-gated. The repo table's Visibility column reads `public`, `private` or `archived` (archived wins), and the separate Archived column is gone. New `specs/repo-layout.md`; README, `specs/terminal-output.md`, `specs/testing.md` and CHANGELOG updated. The `.ghx.json` format is unchanged.
+
+**Deviations from plan**:
+- Wave 2 re-planned before it ran, on Gary's request: s2 added (Visibility shows archived, Archived column dropped, Gary chose to drop it); edge-case tests trimmed to what wave 1 hadn't covered; docs step adjusted.
+- `origin/main` (`051e844`, #11) merged by the parent at `493952a` between 1-fix and wave 2; only conflict was an unused `sort` import; `make ci` passed on the merge.
+- 1-fix (automatic, unattended, fix-up 1 of 2): `specs/terminal-output.md` didn't list the conflict action under the yellow ⚠.
+- 2-fix (automatic, unattended, fix-up 1 of 2): the failed-move retry test produced a conflict, not a failure; it now fails through `MoveRepo` with a dangling symlink.
+- Spend ~$13.5 against ~$8.0 expected: wave 1 [deep] ran over, two unplanned fix-ups, the re-plan, and a longer parent session.
+
+**Follow-ups**:
+- `--delete` leaves `<out>/x.wiki` behind for an archived repo, and a removed repo's `<out>/x.wiki` isn't moved to `DELETED/`.
+- A move into `DELETED/` still silently replaces an existing `DELETED/x`.
+- Under `--delete`, the conflict detail says "syncing ARCHIVED/x", but archived repos aren't synced then.
+- The failed-move test runs only where symlinks can be created (skips on Windows without the privilege).
+- The runner image's golangci-lint (v2.5.0) and Go toolchain don't match the Makefile's pins; workers built v2.14.0 and a patched go1.26.2 in scratch.
