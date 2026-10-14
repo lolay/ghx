@@ -7,9 +7,9 @@ Scratch for the orchestrate run of
 - **Branch:** `claude/fervent-heisenberg-72nmt2` in `lolay/ghx` (assigned by the
   cloud session; cut from `main` at `9785f6f`).
 - **Mode:** unattended, confirmed 2026-10-14 in session db99f13c (dialog: "Unattended (Recommended)", "This session (Recommended)").
-- **Done:** wave 1 [deep] ghx m1 s1, `b884660..976fa01`, review CONCERNS (one doc line, below). 1/2 waves.
-- **Spend:** ~$7.7 of ~$8.0 expected (guard: $50). Wave 1 [deep] ran ~$4.2 against ~$3.2 expected; the kickoff ~$3.6.
-- **Next unit:** 1-fix [deep] ghx m1 s1 (automatic fix-up for the review concern). Then the parent merges `origin/main` (`051e844`), then wave 2 [exec] ghx m1 s2-s4.
+- **Done:** wave 1 [deep] ghx m1 s1, `b884660..976fa01`, review CONCERNS (one doc line); 1-fix `421f8c1` PASS. 1/2 waves.
+- **Spend:** ~$9.8 of ~$8.0 expected (guard: $50). Over expected: wave 1 [deep] ran ~$4.2 against ~$3.2, 1-fix ~$0.6 unplanned, the parent ~$5.1 so far.
+- **Next unit:** the parent merges `origin/main` (`051e844`), then wave 2 [exec] ghx m1 s2-s4.
 - **Resume:** paste the plan's Kickoff prompt into a new session.
 
 ## Pending question

@@ -1,7 +1,7 @@
 ```
 --- KICKOFF: begin orchestration at [deep] ---
 
-  Status: 1/2 groups done | last review: wave-1 CONCERNS | current: 1-fix ghx m1 s1 [deep] | updated 2026-10-14
+  Status: 1/2 groups done | last review: wave-1-fix PASS | current: ghx m1 s2-s4 [exec] | over expected: ~$9.8 of ~$8.0 | updated 2026-10-14
 
   mode: unattended | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch claude/fervent-heisenberg-72nmt2) | guard 3x min $50 | fixups 2 | confirmed 2026-10-14 session db99f13c-13a7-5420-b626-79e0efa04ff4: Unattended (Recommended)
 
@@ -125,6 +125,7 @@ Acceptance: `make ci` passes; README, specs and changelog agree with the code.
 ## Review log
 
 review wave-1 (ghx m1 s1) b884660..976fa01: CONCERNS - specs/terminal-output.md:67 Status marks table still says the yellow ⚠ means "every skip", but the new conflict action uses ⚠ too and the README legend now says "skipped or a conflict", so the docs disagree (AGENTS.md: update the doc in the same change); code meets the spec, make ci passes - 2026-10-14
+review wave-1-fix (ghx m1 s1) b884660..421f8c1: PASS - specs/terminal-output.md:67 now says the yellow ⚠ covers every skip (unusable name, origin mismatch) and a conflict, matching the README legend and internal/ui glyphs - 2026-10-14
 
 ## Token log
 
@@ -139,3 +140,6 @@ review wave-1 (ghx m1 s1) b884660..976fa01: CONCERNS - specs/terminal-output.md:
 tokens orchestrator-kickoff plan-archive-reconcile-heron (claude-opus-5-5): input ~70 / cache read ~5.0M / cache write ~94k 5m + ~180k 1h / output ~36k | ~$3.57 API-equiv (output est.) session db99f13c-13a7-5420-b626-79e0efa04ff4
 tokens wave-1 ghx-m1-s1 (claude-opus-5-5): input ~94 / cache read ~7.2M / cache write ~200k / output ~47k | ~$3.40 API-equiv (output est.) session db99f13c-13a7-5420-b626-79e0efa04ff4
 tokens review-wave-1 ghx-m1-s1 (claude-opus-5-5): input ~30 / cache read ~610k / cache write ~62k / output ~16k | ~$0.75 API-equiv (output est.) session db99f13c-13a7-5420-b626-79e0efa04ff4
+tokens wave-1-fix ghx-m1-s1 (claude-opus-5-5): input ~16 / cache read ~470k / cache write ~23k / output ~8k | ~$0.37 API-equiv (output est.) session db99f13c-13a7-5420-b626-79e0efa04ff4
+tokens review-wave-1-fix ghx-m1-s1 (claude-opus-5-5): input ~12 / cache read ~78k / cache write ~15k / output ~6k | ~$0.21 API-equiv (output est.) session db99f13c-13a7-5420-b626-79e0efa04ff4
+tokens orchestrator-wave-1 ghx-m1-s1 (claude-opus-5-5): input ~44 / cache read ~4.6M / cache write ~0 5m + ~40k 1h / output ~15k | ~$1.53 API-equiv
