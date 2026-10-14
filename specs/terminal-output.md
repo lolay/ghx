@@ -64,7 +64,7 @@ test checks every `cloner.Action`.
 | `↓` | green | pulled (new commits came in) |
 | `–` | grey | up to date |
 | `⇣` | yellow | fetched only: remote refs updated, working tree left alone |
-| `⚠` | yellow | every skip, including an unusable name |
+| `⚠` | yellow | every skip, including an unusable name or an origin mismatch, and a conflict |
 | `∅` | grey | skipped (empty) |
 | `✗` | red | failed, failed wiki |
 
