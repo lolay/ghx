@@ -12,6 +12,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   examples, and an error message with a pointer to `--help`. Piped output, and
   any output under `NO_COLOR`, has no escape codes. The exit code is still 0 on
   success and 1 on any error.
+- An existing clone that had nothing new is counted as `up to date`, so
+  `pulled` counts only repos that took in new commits.
+- A clone fetched only for local changes names the first three changed files
+  (`local changes: app.py, data.csv (+2 more)`).
 - Clone and pull get a 60-minute limit (other git commands keep 5 minutes) and
   give up on a connection that stays under 1000 bytes a second for 60 seconds,
   so a stalled transfer fails in a minute instead of holding a worker.
@@ -42,7 +46,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   instead of failing on every run.
 - A force-pushed default branch is followed when the clone has no unpushed
   work, with the old tip kept under `refs/ghx/forced/<branch>/<timestamp>`,
-  instead of being skipped on every run.
+  instead of being skipped on every run. That includes a force-push an earlier
+  fetch already brought in (such as the failed `pull --ff-only` of earlier
+  versions), found through the reflog of `origin/<branch>`, and the fetched-only
+  count of local commits leaves out the ones the force-push dropped.
 - A default branch renamed on GitHub is switched to when nothing would be lost.
 - A clone on a feature branch or a detached HEAD is fetched, and reported as
   fetched only with the reason, instead of failing its pull.

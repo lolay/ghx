@@ -250,13 +250,17 @@ token and network access.
   whatever state the working tree is in. The working tree fast-forwards when it
   is on the default branch with no changes to tracked files. Otherwise the
   summary lists the repo under "Fetched only" with the reason (local changes,
-  commits not on origin, another branch checked out, a detached HEAD, a rebase
+  naming the first few changed files, commits not on origin, another branch checked out, a detached HEAD, a rebase
   or merge in progress). Details:
   - Untracked files don't block an update; git itself refuses only when an
     incoming file would overwrite one.
   - A force-pushed default branch is followed when the local branch has no
     unpushed work: it is reset to the new tip, never overwriting files, and the
-    old tip is kept under `refs/ghx/forced/<branch>/<timestamp>`.
+    old tip is kept under `refs/ghx/forced/<branch>/<timestamp>`. That holds
+    even when an earlier fetch (a failed pull, or `git fetch` by hand) already
+    brought in the rewrite: ghx checks the history of `origin/<branch>` that
+    git keeps in its reflog. Commits only the force-push dropped aren't counted
+    as local work.
   - If the default branch was renamed on GitHub, ghx switches to the new name
     when nothing would be lost.
   - A repo whose HEAD names a branch that doesn't exist is checked out on
@@ -278,7 +282,8 @@ token and network access.
 - Writes a `.ghx.json` manifest to the output directory after each run, used to
   detect removed and newly archived repos next time.
 
-The summary marks what needs a look: `✗` for failures, `⚠` for repos fetched
+The summary counts existing repos as `pulled` (new commits came in) or `up to
+date` (nothing new), and marks what needs a look: `✗` for failures, `⚠` for repos fetched
 only, `∅` for empty repos, and a "Notes" section for repos that were updated
 with something to say (a branch fallback, a reset after a force-push, a switch
 after a rename). The words always come with the glyph, so piped output reads.

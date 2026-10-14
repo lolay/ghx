@@ -18,6 +18,7 @@ var (
 	CheckRepoNameOn = checkRepoName
 	CheckGitVersion = checkGitVersion
 	HasChanges      = hasChanges
+	DescribeChanges = describeChanges
 	StripUserInfo   = stripUserInfo
 	RetryWithin     = retryWithin
 	InterruptGit    = interruptGit
@@ -78,6 +79,11 @@ func (g Git) CurrentBranch(ctx context.Context, dir string) (string, bool, error
 // RevParse calls gitRunner.revParse.
 func (g Git) RevParse(ctx context.Context, dir, ref string) (string, bool) {
 	return g.g.revParse(ctx, dir, ref)
+}
+
+// ForkPoint calls gitRunner.forkPoint.
+func (g Git) ForkPoint(ctx context.Context, dir, ref, commit string) (string, bool) {
+	return g.g.forkPoint(ctx, dir, ref, commit)
 }
 
 // IsAncestor calls gitRunner.isAncestor.

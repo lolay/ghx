@@ -5,13 +5,16 @@ package cloner
 // Action is the outcome of processing a single repo. Most string values
 // match the Python Action enum. The Go port has since diverged: it added
 // ActionSkippedName, and the fetch-first sync replaced "skipped (local
-// changes)" with ActionFetchedOnly and added ActionSkippedEmpty and
-// ActionFailedWiki.
+// changes)" with ActionFetchedOnly, added ActionSkippedEmpty and
+// ActionFailedWiki, and split ActionUpToDate out of ActionPulled.
 type Action string
 
 const (
 	ActionCloned Action = "cloned"
-	ActionPulled Action = "pulled"
+	// ActionPulled is an existing clone whose working tree moved to new
+	// commits; ActionUpToDate is one that already had them.
+	ActionPulled   Action = "pulled"
+	ActionUpToDate Action = "up to date"
 	// ActionFetchedOnly is a repo whose remote refs were brought up to date
 	// but whose working tree was left alone, because moving it could lose
 	// local work (or git refused to); Detail says why.
@@ -39,6 +42,7 @@ const (
 var AllActions = []Action{
 	ActionCloned,
 	ActionPulled,
+	ActionUpToDate,
 	ActionFetchedOnly,
 	ActionSkippedArchived,
 	ActionMovedDeleted,
