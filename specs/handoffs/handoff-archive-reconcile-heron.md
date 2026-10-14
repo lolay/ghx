@@ -7,10 +7,9 @@ Scratch for the orchestrate run of
 - **Branch:** `claude/fervent-heisenberg-72nmt2` in `lolay/ghx` (assigned by the
   cloud session; cut from `main` at `9785f6f`).
 - **Mode:** unattended, confirmed 2026-10-14 in session db99f13c (dialog: "Unattended (Recommended)", "This session (Recommended)").
-- **Done:** nothing yet. 0/2 waves.
-- **Spend:** ~$3.0 (kickoff) of ~$8.0 expected (guard: $50).
-- **Next unit:** wave 1 [deep] ghx m1 s1, reconcile clone location with archived
-  state.
+- **Done:** wave 1 [deep] ghx m1 s1, `b884660..976fa01`, review CONCERNS (one doc line, below). 1/2 waves.
+- **Spend:** ~$7.7 of ~$8.0 expected (guard: $50). Wave 1 [deep] ran ~$4.2 against ~$3.2 expected; the kickoff ~$3.6.
+- **Next unit:** 1-fix [deep] ghx m1 s1 (automatic fix-up for the review concern). Then the parent merges `origin/main` (`051e844`), then wave 2 [exec] ghx m1 s2-s4.
 - **Resume:** paste the plan's Kickoff prompt into a new session.
 
 ## Pending question
@@ -27,14 +26,17 @@ None. Wave 1 is next.
 - `MoveRepo` keeps its replace-destination semantics; the reconcile path checks
   the destination first and reports a conflict instead.
 - The `.ghx.json` schema doesn't change.
+- Wave 1 (review flagged the doc gap, otherwise passed the spec): the origin is read with `git --git-dir=<dir>/.git config --local --get remote.origin.url` (no repo discovery, no global config). A removed directory without `.git` is now reported `skipped (origin mismatch)` instead of being moved to `DELETED/`. The conflict check comes before the `--delete` branch, so with both copies present under `--delete` nothing is deleted. A wiki gets the same checks as its repo and follows a move but not a `--delete`. New actions: `moved (unarchived)`, `skipped (origin mismatch)`, `conflict`; `cloner.HasGitDir` is now exported; `handleRemovedAndArchived` is now `handleRemoved`; tests live in `internal/cli/reconcile_test.go`.
+- Gary, 2026-10-14: the Visibility column reads `public`, `private` or `archived` (archived wins), and the separate Archived column is dropped (wave 2 s2).
 
 ## Environment notes
 
-- env: the session doctor reports go 1.26.2 against `.go-version` 1.27.2.
-  `go.mod` requires 1.26.2 and `make ci` doesn't run the doctor, so build, lint
-  and test on 1.26.2 are valid. Don't try to install another Go.
+- env: the base Go is 1.24.7 at /usr/local/go; with GOTOOLCHAIN=auto it downloads go1.26.2 (the go.mod minimum), which is valid for `make ci` (the doctor's 1.27.2 pin is a warning, and `make ci` doesn't run the doctor). That downloaded toolchain has no `covdata` tool, so `go test -cover` fails on packages without tests: copy the toolchain to a scratch GOROOT, build `src/cmd/covdata` into its `pkg/tool/linux_amd64`, and run `GOTOOLCHAIN=local PATH=<scratch>/bin:<scratch>/goroot/bin:$PATH make ci`.
+- env: /usr/local/bin/golangci-lint is v2.5.0 built with go1.25 and refuses this module. Build the Makefile's pinned v2.14.0 with `GOBIN=<scratch>/bin go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0` and put it first on PATH.
 - env: the git identity is the runner's (`noreply@anthropic.com`); accept it.
 
 ## Deviations from plan
 
-None yet.
+- Re-plan of wave 2 before it ran, on Gary's requests: s2 (Visibility shows archived, Archived column dropped) added; the edge-case tests trimmed to what wave 1 didn't cover (s3); the docs step (s4) adjusted for docs wave 1 already wrote and for the Visibility change. Wave 2 keeps its planned ~$1.0 expected, which now understates it.
+- `origin/main` gained `051e844` (#11, live table order) after the branch was cut. It conflicts with wave 1 in `internal/cli/run.go`. The parent merges it as bookkeeping after 1-fix and before wave 2's snapshot, with a merge commit (no rebase; the branch is pushed), verified with `make ci`. Not a worker step, because `check_wave.py` would count main's commit in the worker's range.
+- Follow-ups wave 1 found, not in scope: `--delete` still leaves `<out>/x.wiki` behind; a move into `DELETED/` still silently replaces an existing `DELETED/x`. Review nit, not blocking: under `--delete` the conflict detail says "syncing ARCHIVED/x", but archived repos aren't synced then.

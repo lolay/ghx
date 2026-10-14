@@ -1,7 +1,7 @@
 ```
 --- KICKOFF: begin orchestration at [deep] ---
 
-  Status: 0/2 groups done | last review: — | current: ghx m1 s1 [deep] | updated 2026-10-14
+  Status: 1/2 groups done | last review: wave-1 CONCERNS | current: 1-fix ghx m1 s1 [deep] | updated 2026-10-14
 
   mode: unattended | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch claude/fervent-heisenberg-72nmt2) | guard 3x min $50 | fixups 2 | confirmed 2026-10-14 session db99f13c-13a7-5420-b626-79e0efa04ff4: Unattended (Recommended)
 
@@ -32,7 +32,8 @@
 | wave | expected tokens | expected $ |
 |---|---|---|
 | 1 [deep] ghx m1 s1 | ~6.1M | ~$3.2 |
-| 2 [exec] ghx m1 s2-s3 | ~2.3M | ~$1.0 |
+| 1-fix [deep] ghx m1 s1 | — | — |
+| 2 [exec] ghx m1 s2-s4 | ~2.3M | ~$1.0 |
 | orchestrator | ~4.3M | ~$3.8 |
 | **Total** | ~13M | ~$8.0 |
 
@@ -77,7 +78,7 @@ Reuse: `cloner.CheckRepoName` (`internal/cloner/names.go:18`), `hasGitDir` (`clo
 
 --- WAVE 1 [deep] ---
 
-#### s1 - [deep] Reconcile clone location with archived state
+#### s1 - [deep] Reconcile clone location with archived state (done)
 
 Implement the Design above in one commit that passes `make ci`:
 
@@ -91,34 +92,39 @@ Acceptance: `make ci` passes; the two new cli tests and the helper table tests p
 
 --- WAVE 2 [exec] ---
 
-#### s2 - [exec] Cover the reconcile edge cases in cli tests
+Re-planned 2026-10-14 after wave 1, before wave 2 ran (Gary's requests): s2 added for the Visibility change, s3 trimmed to the cases wave 1 didn't already test, s4 adjusted for docs wave 1 already wrote. `origin/main` (`051e844`, #11) is merged into the branch by the parent before this wave, so these steps build on main's live-table changes.
 
-In `internal/cli/run_test.go`, using the `world` harness, add one test per case (table-driven where the setup shares a shape):
+#### s2 - [exec] Show archived as a visibility state
 
-- a move that failed on one run is retried by the next (make the move fail, for example with a read-only parent or a file squatting the destination parent, then clear it)
-- archive → unarchive → archive: exactly one clone exists after each run and a local commit made in it survives all three
-- both `<out>/x` and `ARCHIVED/x` present: a conflict is reported and neither is deleted
-- `<out>/x` whose origin names another repo: left alone and reported
-- `--clone-wiki`: `x.wiki` moves with `x` in both directions
-- a repo excluded by `--exclude` that becomes archived is not moved
-- dry run reports the move and changes nothing on disk
-- a removed repo whose clone's origin names another repo is not moved to `DELETED/`
+In `internal/ui/ui.go` `repoColumns`, the Visibility cell reads `archived` when `r.Archived`, else `private` or `public` (archived wins, so an archived private repo shows `archived`). Remove the separate Archived column: drop it from `repoColumns`, drop `columnArchived` and every use of it, including the live table's column-dropping order in `internal/ui/progress_table.go` (as merged from main), and fix the column indexes that follow it. Update `internal/ui` tests (`progress_table_test.go` column lists and drop order, `ui_test.go`, table golden output if any) and `internal/cli/table_test.go` for the new cells and the missing column. Fix any comment that points at the Archived column, such as the note in `internal/cli/run.go` that archived rows "say yes under Archived".
 
-Acceptance: `make ci` passes; each case above has a test that fails if the behavior is reverted.
+Acceptance: `make ci` passes; a test asserts each of the three Visibility values, including an archived private repo reading `archived`; no table output has an Archived column.
 
-#### s3 - [fast] Document reconciled placement
+#### s3 - [exec] Cover the remaining reconcile edge cases in cli tests
 
-- `README.md` around lines 277-283: replace "moved there on the next run once they become archived" with the reconciled behavior: each run puts every clone where its archived state says, in both directions, moves a wiki with its repo, checks the clone's origin names the repo first, and reports a conflict instead of overwriting when both locations exist.
-- Add `specs/repo-layout.md`: where each repo lives (`<out>/x`, `<out>/<archived-dir>/x`, `<out>/<deleted-dir>/x`, wikis beside them), the reconcile rules from the Design, and the origin check.
-- `CHANGELOG.md`: one entry under Unreleased.
+Wave 1 already tests dry-run unarchive, a wiki moving with its repo, an excluded archived repo, origin mismatch (archived and removed, with and without `--delete`), a clone with no origin, host/owner/case-insensitive matching, and a conflict that keeps both copies (`internal/cli/reconcile_test.go`). Add, using the `world` harness:
 
-Acceptance: `make ci` passes; README, spec and changelog agree with the code.
+- a move that failed on one run is retried by the next (make the move fail, for example with a file squatting where the archived dir should be, then clear it)
+- archive → unarchive → archive: exactly one clone exists after each run, and a local commit made in it survives all three runs
+- `--clone-wiki` across the full cycle: `x.wiki` ends beside `x` after both the archive and the unarchive move
+
+Acceptance: `make ci` passes; each case fails if its behavior is reverted.
+
+#### s4 - [fast] Document reconciled placement and the visibility column
+
+- `specs/terminal-output.md`: describe the Visibility column's three values and the removed Archived column, and the live table's column-dropping order without it; keep the Status marks table consistent with the conflict action (wave 1's 1-fix may already have done that part).
+- Add `specs/repo-layout.md`: where each repo lives (`<out>/x`, `<out>/<archived-dir>/x`, `<out>/<deleted-dir>/x`, wikis beside them), the reconcile rules from the Design, and the origin check. Link it from `README.md` where the README describes `ARCHIVED/` and `DELETED/`.
+- `README.md` and `CHANGELOG.md` (Unreleased): wave 1 already describes the reconcile; add the Visibility change, and make sure nothing still mentions an Archived column.
+
+Acceptance: `make ci` passes; README, specs and changelog agree with the code.
 
 ## Verification
 
 `make ci` at each step. The doctor reports go 1.26.2 against `.go-version` 1.27.2; `go.mod` requires 1.26.2 and `make ci` doesn't run the doctor, so the build is valid on 1.26.2. Then `go test ./internal/cli -run 'Archiv|Unarchiv|Reconcile' -v` to read the action strings.
 
 ## Review log
+
+review wave-1 (ghx m1 s1) b884660..976fa01: CONCERNS - specs/terminal-output.md:67 Status marks table still says the yellow ⚠ means "every skip", but the new conflict action uses ⚠ too and the README legend now says "skipped or a conflict", so the docs disagree (AGENTS.md: update the doc in the same change); code meets the spec, make ci passes - 2026-10-14
 
 ## Token log
 
@@ -130,4 +136,6 @@ Acceptance: `make ci` passes; README, spec and changelog agree with the code.
 - `$C` = (input × in + cache read × cached + 5m write × in × 1.25 + 1h write × in × 2.00 + output × out) / 1M.
 - In another harness, or on a model not listed here, count and price per plan-execution.md "Token accounting" and "Model price table" instead.
 
-tokens orchestrator-kickoff plan-archive-reconcile-heron (claude-opus-5-5): input ~56 / cache read ~3.4M / cache write ~94k 5m + ~170k 1h / output ~27k | ~$3.01 API-equiv (output est.) session db99f13c-13a7-5420-b626-79e0efa04ff4
+tokens orchestrator-kickoff plan-archive-reconcile-heron (claude-opus-5-5): input ~70 / cache read ~5.0M / cache write ~94k 5m + ~180k 1h / output ~36k | ~$3.57 API-equiv (output est.) session db99f13c-13a7-5420-b626-79e0efa04ff4
+tokens wave-1 ghx-m1-s1 (claude-opus-5-5): input ~94 / cache read ~7.2M / cache write ~200k / output ~47k | ~$3.40 API-equiv (output est.) session db99f13c-13a7-5420-b626-79e0efa04ff4
+tokens review-wave-1 ghx-m1-s1 (claude-opus-5-5): input ~30 / cache read ~610k / cache write ~62k / output ~16k | ~$0.75 API-equiv (output est.) session db99f13c-13a7-5420-b626-79e0efa04ff4
