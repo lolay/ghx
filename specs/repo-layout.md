@@ -47,8 +47,10 @@ reach it. For each such repo `x`:
 Because the disk decides, the rules cover a repo archived since the last run, one
 unarchived since, a mirror with no `.ghx.json`, and a move an earlier run failed to
 make: the next run finds the clone in the wrong place again and retries. A path
-that can't be checked (a file where the archive directory belongs) counts as taken,
-so the repo shows as a conflict and stays put until the path is cleared.
+that can't be checked counts as taken, so the repo shows as a conflict and stays
+put until the path is cleared. Where the check finds nothing but the move still
+fails (an unwritable parent, or a dangling symlink where the archive directory
+belongs), the repo shows as `failed` and the next run retries.
 
 A removed repo goes through the same origin check, then moves to `<deleted-dir>`
 or, under `--delete`, is deleted. A removed directory with no `.git` is reported
