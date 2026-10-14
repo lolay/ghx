@@ -21,12 +21,18 @@ The goal is the feel of a modern CLI (Claude Code, BuildKit): the screen updates
 in place, nothing is printed twice, and you can scroll back through what finished
 while the run goes on.
 
+- **Columns.** Name, Visibility, Language, Size (MB), Default Branch, Last
+  Pushed, and Status on the live table. Visibility reads `public`, `private` or
+  `archived`, and archived wins, so an archived private repo shows `archived`:
+  what matters about an archived repo is that it is read-only, and it takes the
+  place of a separate Archived column, which no table has. The static table has
+  the same columns without Status.
 - **Fixed widths.** `newTableLayout` measures every column once, from the full repo
   list, when the renderer gets it (`SetRepos`). Status is as wide as its longest
   possible value. Widths never change mid-run, which is what lets rows printed
   one at a time line up as one table. If the terminal is too narrow at the start,
-  columns drop in this order: Last Pushed, Default Branch, Archived, Language;
-  then a long name is cut with `…`. A terminal resized mid-run keeps the start's
+  columns drop in this order: Last Pushed, Default Branch, Language; then a
+  long name is cut with `…`. A terminal resized mid-run keeps the start's
   widths.
 - **Only the bottom is live.** The table's top (title, header) prints once as
   ordinary output. Rows print above the live area, into the terminal's
@@ -77,7 +83,7 @@ test checks every `cloner.Action`.
 | `↓` | green | pulled (new commits came in) |
 | `–` | grey | up to date |
 | `⇣` | yellow | fetched only: remote refs updated, working tree left alone |
-| `⚠` | yellow | every skip, including an unusable name |
+| `⚠` | yellow | every skip, including an unusable name or an origin mismatch, and a conflict |
 | `∅` | grey | skipped (empty) |
 | `✗` | red | failed, failed wiki |
 

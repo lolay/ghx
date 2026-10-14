@@ -104,9 +104,20 @@ func (w *world) removeRepo(name string) {
 // archiveRepo marks name as archived in the org listing.
 func (w *world) archiveRepo(name string) {
 	w.t.Helper()
+	w.setArchived(name, true)
+}
+
+// unarchiveRepo marks name as no longer archived in the org listing.
+func (w *world) unarchiveRepo(name string) {
+	w.t.Helper()
+	w.setArchived(name, false)
+}
+
+func (w *world) setArchived(name string, archived bool) {
+	w.t.Helper()
 	i := slices.IndexFunc(w.repos, func(r ghapitest.Repo) bool { return r.Name == name })
 	require.GreaterOrEqual(w.t, i, 0, "no repo %q", name)
-	w.repos[i].Archived = true
+	w.repos[i].Archived = archived
 	w.publish()
 }
 

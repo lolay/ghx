@@ -33,6 +33,10 @@ var glyphs = map[cloner.Action]string{
 	cloner.ActionFetchedOnly:  "⇣",
 	cloner.ActionSkippedEmpty: "∅",
 	cloner.ActionSkippedName:  "⚠",
+	// A clone left in place for its origin, or because it is in both places,
+	// needs the user to look before ghx will move it.
+	cloner.ActionSkippedOrigin: "⚠",
+	cloner.ActionConflict:      "⚠",
 }
 
 // noteGlyph marks a repo that synced but has something to say.
@@ -116,15 +120,19 @@ type repoColumn struct {
 const (
 	columnLanguage = 2
 	columnBranch   = 4
-	columnArchived = 5
-	columnPushed   = 6
+	columnPushed   = 5
 )
 
 // repoColumns lists the table's columns in the order they are shown.
 var repoColumns = []repoColumn{
 	{title: "Name", cell: func(r ghapi.RepoInfo) any { return text.FgCyan.Sprint(r.Name) }},
 	{title: "Visibility", cell: func(r ghapi.RepoInfo) any {
-		if r.Private {
+		// An archived repo is read-only whatever its visibility, and that is
+		// what the reader wants to know, so archived wins over private.
+		switch {
+		case r.Archived:
+			return "archived"
+		case r.Private:
 			return "private"
 		}
 		return "public"
@@ -134,12 +142,6 @@ var repoColumns = []repoColumn{
 		return fmt.Sprintf("%.1f", float64(r.SizeKB)/1024)
 	}},
 	{title: "Default Branch", cell: func(r ghapi.RepoInfo) any { return r.DefaultBranch }},
-	{title: "Archived", cell: func(r ghapi.RepoInfo) any {
-		if r.Archived {
-			return "yes"
-		}
-		return "no"
-	}},
 	{title: "Last Pushed", cell: func(r ghapi.RepoInfo) any { return orDash(r.PushedAt) }},
 }
 
@@ -228,8 +230,9 @@ func PrintRepoTable(repos []ghapi.RepoInfo) {
 
 // PrintSummary renders the post-run summary: per-action counts, then a section
 // for each kind of repo that needs a look: failures, repos fetched without
-// updating their working tree, empty repos, unusable names, and notes on repos
-// that synced with something to say. A section with no rows isn't printed.
+// updating their working tree, empty repos, unusable names, clones left in
+// place for their origin or a conflict, and notes on repos that synced with
+// something to say. A section with no rows isn't printed.
 func PrintSummary(summary cloner.SyncSummary) {
 	tw := table.NewWriter()
 	tw.SetOutputMirror(Out)
@@ -277,7 +280,8 @@ func PrintSummaryLists(summary cloner.SyncSummary) {
 func listed(r cloner.RepoResult) bool {
 	switch r.Action {
 	case cloner.ActionFailed, cloner.ActionFailedWiki, cloner.ActionFetchedOnly,
-		cloner.ActionSkippedEmpty, cloner.ActionSkippedName:
+		cloner.ActionSkippedEmpty, cloner.ActionSkippedName,
+		cloner.ActionSkippedOrigin, cloner.ActionConflict:
 		return true
 	case cloner.ActionCloned, cloner.ActionPulled:
 		return r.Detail != ""
@@ -291,6 +295,8 @@ func printSummaryLists(summary cloner.SyncSummary) {
 	printSection("Fetched only (working tree not updated):", text.FgYellow, summary.Results, "", cloner.ActionFetchedOnly)
 	printSection("Skipped (empty):", text.Faint, summary.Results, "empty repository, skipped", cloner.ActionSkippedEmpty)
 	printSection("Skipped (unusable name):", text.FgYellow, summary.Results, "", cloner.ActionSkippedName)
+	printSection("Skipped (origin mismatch):", text.FgYellow, summary.Results, "", cloner.ActionSkippedOrigin)
+	printSection("Conflicts (both copies left in place):", text.FgYellow, summary.Results, "", cloner.ActionConflict)
 	printNotes(summary.Results)
 }
 
