@@ -2,7 +2,7 @@
 
 - **Branch:** `claude/magical-ride-7h4rhi` in `lolay/ghx` (assigned by the cloud
   session; cut from `main` at d984df8).
-- **Plan:** `specs/handoffs/plan-cli-ux-sparkling.md` (complete after wave 3 and its fix-up).
+- **Plan:** `specs/handoffs/plan-cli-ux-sparkling.md` (re-opened for wave 4).
 - **Mode:** unattended (confirmed 2026-10-13; runner=cloud).
 - **Done:** wave 1 [exec] `ghx s1-s5`, 56d21d8..33a21fd, review PASS. No fix-ups,
   retries or checkpoints.
@@ -17,6 +17,11 @@
   `statusMark` uses main's glyphs (✗ failed, ⚠ fetched only / unusable name,
   ∅ empty, ⚠ any other skip, ✓ the rest); the table's closing footer says
   `⚠ N not updated` and `∅ N empty`. `make ci` green, race x3 on ui/cli/cloner.
+- **Merged `origin/main` again** (bb82990: d366f93 up-to-date split, bc9653f
+  force-push follow-up); only CHANGELOG conflicted; one progress test now expects
+  `up to date` on a second sync.
+- **Next unit:** wave 4 [exec] `ghx s11-s12`: download-style marks (↓ pulled,
+  – up to date, ⇣ fetched only), then the table becomes the only progress display.
 - **Later:** Gary picks a renderer; a follow-up keeps it, deletes the rest and
   `GHX_PROGRESS`, tidies `go.mod`, updates `specs/`, and removes or promotes this
   plan and handoff before the branch merges.
@@ -36,7 +41,7 @@ Run twice against the same dir to see pulls. Piped output gets no progress.
 
 ## Pending question
 
-Which renderer to keep (table is the favourite), and whether to open a PR now or after the clean-up.
+None. Gary chose the table as permanent and asked for download-style marks.
 
 ## Decisions so far
 
@@ -70,6 +75,7 @@ Which renderer to keep (table is the favourite), and whether to open a PR now or
 
 ## Deviations from plan
 
+- Re-plan after wave 3: wave 4 (s11-s12) at Gary's request; unplanned row.
 - wave 3: automatic fix-up 3-fix for the review's CONCERNS (passed unattended: gate 1, fix-up 1 of 2).
 - Re-plan after wave 2: wave 3 (s8-s10) added at Gary's request; unplanned row.
 - Re-plan after wave 1: wave 2 (s6, s7) added at Gary's request; its Cost table row is unplanned (expected —).

@@ -1,7 +1,7 @@
 ```
---- KICKOFF: plan complete ---
+--- KICKOFF: begin orchestration at [deep] ---
 
-  Status: 3/3 groups done | completed 2026-10-13 | over expected: ~$19.1 of ~$4.6
+  Status: 3/4 groups done | last review: wave-3-fix PASS | current: ghx s11-s12 [exec] | updated 2026-10-14 | over expected: ~$19.1 of ~$4.6
 
   mode: unattended | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch claude/magical-ride-7h4rhi) | guard 3x min $50 | fixups 2 | confirmed 2026-10-13 session bd9c01f5-fe1c-5a92-ab0c-95720d491a10: unattended
 
@@ -35,6 +35,7 @@
 | 2 [exec] ghx s6-s7 | — | — | ~6.2M (output est.) | ~$2.6 (output est.) |
 | 3 [exec] ghx s8-s10 | — | — | ~8.9M (output est.) | ~$3.5 (output est.) |
 | 3-fix [exec] ghx s8-s10 | — | — | ~1.3M (output est.) | ~$0.85 (output est.) |
+| 4 [exec] ghx s11-s12 | — | — | — | — |
 | orchestrator | ~3.1M | ~$2.8 | ~19M | ~$8.0 |
 | **Total** | ~7.7M | ~$4.6 | ~47M | ~$19.1 |
 
@@ -339,6 +340,68 @@ Acceptance: `make ci` passes; a cli test with the table renderer shows no "Sync
 Summary" table but does show a failed repo's list entry; one with another
 renderer shows the summary as before. Update `specs/testing.md` for any seam
 these steps change.
+
+--- WAVE 4 [exec] ---
+
+Re-plan after wave 3 (2026-10-14): `origin/main` is merged twice (b62310c,
+bb82990), bringing `ActionFetchedOnly`, `ActionSkippedEmpty`, `ActionFailedWiki`
+and `ActionUpToDate` ("up to date", split out of pulled), and main's summary
+`glyphs`. Gary asked for download-style marks and to make the table renderer
+the permanent progress display.
+
+#### s11 - [exec] Download-style status marks
+
+In `internal/ui`, change the marks `statusMark` gives (and the summary's
+`glyphs` where they overlap, so the table and the summary agree):
+- cloned: `✓` green (unchanged); pulled (new commits came in): `↓` green;
+  up to date: `–` (U+2013) faint/grey; fetched only: `⇣` (U+21E3, the dashed down
+  arrow: "partly downloaded") yellow, in `glyphs` too so the summary's "Fetched
+  only" section and counts row use it; failed and failed wiki `✗` red, empty
+  `∅` grey, unusable name and every other skip `⚠` yellow, moves `✓` green: all
+  unchanged.
+- `actionText`: up to date ran git, so it keeps its time like pulled.
+- The table's closing footer counts one class per mark, in this order, showing
+  a class only when its count is non-zero except the first:
+  `60 repos · ✓ 3 cloned · ↓ 12 pulled · – 40 up to date · ⇣ 2 fetched only ·
+  ⚠ 1 skipped · ∅ 1 empty · ✗ 1 failed · 1m12s` (keep the interrupted and
+  queued counts after them). Drop the "not updated" wording.
+- Every mark must be one terminal column wide (no emoji presentation): assert
+  it with go-runewidth (already a dependency) in a test, since the table's fixed
+  widths depend on it.
+
+Acceptance: `make ci` passes; `status_test.go` covers every `cloner.Action`
+(table-driven over `cloner.AllActions`, so a new action without a mark fails);
+the footer test asserts the new totals text; the summary's counts table and
+"Fetched only" section show `⇣`; `CHANGELOG.md` Unreleased notes the marks.
+
+#### s12 - [exec] Make the table the only progress display
+
+- Delete `progress_gopretty.go`, `progress_buildx.go`, `progress_indicatif.go`,
+  `progress_pterm.go` and their tests/smoke-test cases, and the `GHX_PROGRESS`
+  switch: `ui.NewProgress()` returns `cloner.NoProgress{}` when `animate` is
+  false (pipe, file, no ANSI) and the table renderer otherwise. Keep
+  `ui.RepoLister` and the run flow's handling as they are (a non-terminal still
+  prints the static table and the full summary).
+- `run.go` and its tests: drop the "other renderer" branches that only existed
+  for the spike, but keep the non-terminal path and its tests; the
+  "Cloning N archived repo(s)" and "--delete" notes now print only on the
+  non-terminal path (verify the tests say so).
+- `go mod tidy`: `github.com/vbauerster/mpb/v8` and anything only it pulled in
+  should leave `go.mod`; pterm stays (the table draws through its AreaPrinter).
+- Docs in the same commit: `specs/testing.md` (progress rows describe one
+  renderer, no `GHX_PROGRESS`), `README.md` (one short paragraph on what a sync
+  looks like on a terminal versus a pipe, if the README describes output at all),
+  `CHANGELOG.md` Unreleased (the live repo table replaces the progress bar on a
+  terminal: fixed columns, finished rows in scrollback, progress in the footer,
+  totals at the close).
+- Leave the `.scratch/` demo and `specs/handoffs/` alone.
+
+Acceptance: `make ci` passes; `grep -rn GHX_PROGRESS` finds nothing outside
+`specs/handoffs/`; `go.mod` has no mpb; a cli test shows a terminal-like run
+(the renderer forced on, as the table tests do now) draws the live table without
+any env var, and a non-terminal run still prints the static table and the full
+summary; check the real binary's run in a pty with the scratch demo and put the
+final screen in the artifact.
 
 ## After the run (not part of the orchestrated waves)
 
