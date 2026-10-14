@@ -1,9 +1,9 @@
 ```
 --- KICKOFF: begin orchestration at [deep] ---
 
-  Status: 0/1 groups done | last review: — | current: ghx m1 s1-s4 [exec] | updated 2026-10-14 | BLOCKED at gate mode
+  Status: 0/1 groups done | last review: — | current: ghx m1 s1-s4 [exec] | updated 2026-10-14
 
-  mode: pending | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch) | guard 3x min $50 | fixups 2
+  mode: unattended | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch) | guard 3x min $50 | fixups 2 | confirmed 2026-10-14 session aeb2cfec-f2e8-5289-89eb-8bd98af4db92: Unattended (Recommended)
 
   review: every-wave (log-only)
 
@@ -14,6 +14,7 @@
   Prompt to paste into the next chat:
     In lolay/ghx, read specs/handoffs/plan-config-checks-quill.md. The plan is already tagged.
     On branch claude/practical-goldberg-xu3jxn (task branch): subagents commit each finished step.
+    Run in unattended mode.
     Run the personal-plan-orchestrate skill from the top: walk to
     each tier boundary, dispatch subagents per the skill's procedure,
     and pause only where the recorded mode stops. Do not execute plan
@@ -125,3 +126,4 @@ Acceptance: `make ci` and `make vuln` pass.
 - Rates by `<model>`, $ per Mtok input / cached / output: `claude-opus-5-5` 4.00 / 0.20 / 20.00; `claude-sonnet-5-5` 2.00 / 0.20 / 10.00; `claude-haiku-4-5` 1.00 / 0.10 / 5.00.
 - `$C` = (input × in + cache read × cached + 5m write × in × 1.25 + 1h write × in × 2.00 + output × out) / 1M.
 - In another harness, or on a model not listed here, count and price per plan-execution.md "Token accounting" and "Model price table" instead.
+tokens orchestrator-kickoff plan-config-checks-quill (claude-opus-5-5): input ~66 / cache read ~4.3M / cache write ~0 5m + ~140k 1h / output ~23k | ~$2.46 API-equiv
