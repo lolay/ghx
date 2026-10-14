@@ -52,6 +52,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (`ghx -- help <PATH>`).
 
 ### Fixed
+- An archived repo's clone is moved into `ARCHIVED/` whenever it is found
+  outside it, not only on the run after the repo was archived: a mirror with no
+  `.ghx.json` no longer gets a second clone in `ARCHIVED/`, and a move that
+  failed is tried again. An unarchived repo's clone is moved back out of
+  `ARCHIVED/` (`moved (unarchived)`) and synced there, instead of being cloned
+  again beside a stale copy. A wiki moves with its repo.
+- A clone is moved or deleted only when its origin URL names the repo;
+  otherwise it is left alone and reported as `skipped (origin mismatch)` with
+  the URL found. A clone is never moved onto an existing directory, which used
+  to be deleted first: both are left in place and reported as `conflict`.
+- A repo left out by `--include`, `--exclude` or `--type` is no longer moved
+  into `ARCHIVED/`, where no sync would reach it.
 - A repo whose HEAD names a branch that doesn't exist, which GitHub reports for
   an empty repo or one whose pushes never made `main`, is cloned and checked
   out on `main`, else `master`, else its newest branch, instead of failing.

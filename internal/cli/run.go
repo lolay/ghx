@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 
 	"github.com/jedib0t/go-pretty/v6/text"
 	"github.com/spf13/cobra"
@@ -180,16 +180,22 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 		ui.PrintRepoTable(repos)
 	}
 
+	// Before the dry-run return, so a dry run reports what would move. The
+	// archived check runs on every sync, manifest or not: it looks at the
+	// disk, not at what the last run recorded.
+	check := &originCheck{ctx: ctx, gitPath: gitPath}
 	var removalSummary cloner.SyncSummary
 	if len(previousRepos) > 0 {
-		removalSummary = handleRemovedAndArchived(
-			outputDir, allRepos, previousRepos,
-			shouldDelete, deletedDir, archivedDir, dryRun,
-		)
-		if len(removalSummary.Results) > 0 {
-			ui.Println()
-			ui.Println(text.Bold.Sprint("Changes for removed/archived repos:"))
-			for _, r := range removalSummary.Results {
+		removalSummary = handleRemoved(check, outputDir, allRepos, previousRepos, shouldDelete, deletedDir, dryRun)
+	}
+	removalSummary.Extend(reconcileArchived(check, outputDir, archivedDir, repos, shouldDelete, dryRun))
+	if len(removalSummary.Results) > 0 {
+		ui.Println()
+		ui.Println(text.Bold.Sprint("Changes for removed, archived and unarchived repos:"))
+		for _, r := range removalSummary.Results {
+			if r.Detail != "" {
+				ui.Printf("  %s: %s (%s)\n", r.Name, r.Action, r.Detail)
+			} else {
 				ui.Printf("  %s: %s\n", r.Name, r.Action)
 			}
 		}
@@ -300,91 +306,72 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 	return nil
 }
 
-// handleRemovedAndArchived compares the previous manifest against the
-// current repo list and either moves or deletes repos that have been
-// removed from the org or newly archived.
-func handleRemovedAndArchived(
+// handleRemoved moves each repo the previous manifest lists and the org no
+// longer has into deletedDir, or deletes it under shouldDelete, once its
+// origin shows it is a clone of that repo. A removed repo is absent from the
+// listing, so the manifest is the only record of it. Archived repos are
+// reconcileArchived's.
+func handleRemoved(
+	check *originCheck,
 	outputDir string,
 	currentRepos []ghapi.RepoInfo,
 	previousRepos []manifest.Repo,
 	shouldDelete bool,
-	deletedDir, archivedDir string,
+	deletedDir string,
 	dryRun bool,
 ) cloner.SyncSummary {
-	summary := cloner.SyncSummary{}
+	r := reconciler{check: check, dryRun: dryRun}
 
 	currentNames := map[string]struct{}{}
-	currentArchived := map[string]struct{}{}
-	for _, r := range currentRepos {
-		currentNames[r.Name] = struct{}{}
-		if r.Archived {
-			currentArchived[r.Name] = struct{}{}
+	for _, repo := range currentRepos {
+		currentNames[repo.Name] = struct{}{}
+	}
+	var removed []string
+	for _, repo := range previousRepos {
+		if _, ok := currentNames[repo.Name]; !ok {
+			removed = append(removed, repo.Name)
 		}
 	}
+	slices.Sort(removed)
+	removed = slices.Compact(removed)
 
-	previousNames := map[string]struct{}{}
-	previouslyArchived := map[string]struct{}{}
-	for _, r := range previousRepos {
-		previousNames[r.Name] = struct{}{}
-		if r.Archived {
-			previouslyArchived[r.Name] = struct{}{}
+	for _, name := range removed {
+		// The names come from the previous manifest, which anyone who can
+		// write the output directory can edit: "../x" must not be moved or
+		// deleted.
+		if err := cloner.CheckRepoName(name); err != nil {
+			r.add(name, cloner.ActionSkippedName, err.Error())
+			continue
 		}
-	}
-
-	var removed, newlyArchived []string
-	for name := range previousNames {
-		if _, ok := currentNames[name]; !ok {
-			removed = append(removed, name)
+		repoDir := filepath.Join(outputDir, name)
+		if _, err := os.Stat(repoDir); err != nil {
+			continue
 		}
-	}
-	for name := range currentArchived {
-		if _, ok := previouslyArchived[name]; !ok {
-			newlyArchived = append(newlyArchived, name)
+		if detail := check.mismatch(repoDir, name); detail != "" {
+			r.add(name, cloner.ActionSkippedOrigin, detail)
+			continue
 		}
-	}
-	sort.Strings(removed)
-	sort.Strings(newlyArchived)
-
-	process := func(names []string, moveTarget string, moveAction cloner.Action) {
-		for _, name := range names {
-			// The names come from the previous manifest, which anyone who can
-			// write the output directory can edit: "../x" must not be moved
-			// or deleted.
-			if err := cloner.CheckRepoName(name); err != nil {
-				summary.Append(cloner.RepoResult{Name: name, Action: cloner.ActionSkippedName, Detail: err.Error()})
-				continue
-			}
-			repoDir := filepath.Join(outputDir, name)
-			if _, err := os.Stat(repoDir); err != nil {
-				continue
-			}
-			if dryRun {
-				action := moveAction
-				if shouldDelete {
-					action = cloner.ActionDeleted
-				}
-				summary.Append(cloner.RepoResult{Name: name, Action: action, Detail: "dry-run"})
-				continue
-			}
-			if shouldDelete {
-				if err := cloner.DeleteRepo(repoDir); err != nil {
-					summary.Append(cloner.RepoResult{Name: name, Action: cloner.ActionFailed, Detail: err.Error()})
-					continue
-				}
-				summary.Append(cloner.RepoResult{Name: name, Action: cloner.ActionDeleted})
-			} else {
-				if err := cloner.MoveRepo(repoDir, filepath.Join(outputDir, moveTarget)); err != nil {
-					summary.Append(cloner.RepoResult{Name: name, Action: cloner.ActionFailed, Detail: err.Error()})
-					continue
-				}
-				summary.Append(cloner.RepoResult{Name: name, Action: moveAction})
-			}
+		action := cloner.ActionMovedDeleted
+		if shouldDelete {
+			action = cloner.ActionDeleted
 		}
+		if dryRun {
+			r.add(name, action, "dry-run")
+			continue
+		}
+		var err error
+		if shouldDelete {
+			err = cloner.DeleteRepo(repoDir)
+		} else {
+			err = cloner.MoveRepo(repoDir, filepath.Join(outputDir, deletedDir))
+		}
+		if err != nil {
+			r.add(name, cloner.ActionFailed, err.Error())
+			continue
+		}
+		r.add(name, action, "")
 	}
-
-	process(removed, deletedDir, cloner.ActionMovedDeleted)
-	process(newlyArchived, archivedDir, cloner.ActionMovedArchived)
-	return summary
+	return r.summary
 }
 
 // checkSubdir rejects a --deleted-dir or --archived-dir that isn't a

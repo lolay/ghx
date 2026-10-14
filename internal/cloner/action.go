@@ -6,7 +6,9 @@ package cloner
 // match the Python Action enum. The Go port has since diverged: it added
 // ActionSkippedName, and the fetch-first sync replaced "skipped (local
 // changes)" with ActionFetchedOnly, added ActionSkippedEmpty and
-// ActionFailedWiki, and split ActionUpToDate out of ActionPulled.
+// ActionFailedWiki, and split ActionUpToDate out of ActionPulled. Reconciling
+// clones with their repo's archived state added ActionMovedUnarchived,
+// ActionSkippedOrigin and ActionConflict.
 type Action string
 
 const (
@@ -22,6 +24,16 @@ const (
 	ActionSkippedArchived Action = "skipped (archived)"
 	ActionMovedDeleted    Action = "moved (deleted)"
 	ActionMovedArchived   Action = "moved (archived)"
+	// ActionMovedUnarchived is a clone moved back out of the archived
+	// directory because its repo is no longer archived.
+	ActionMovedUnarchived Action = "moved (unarchived)"
+	// ActionSkippedOrigin is a directory where a clone of the repo would be
+	// moved or deleted from, left alone because its origin URL doesn't name
+	// the repo (or it has none); Detail gives the path and the URL found.
+	ActionSkippedOrigin Action = "skipped (origin mismatch)"
+	// ActionConflict is a clone found both where its repo belongs and where
+	// it would be moved from; both are left in place and Detail names them.
+	ActionConflict        Action = "conflict"
 	ActionDeleted         Action = "deleted"
 	ActionFailed          Action = "failed"
 	ActionClonedWiki      Action = "cloned wiki"
@@ -47,6 +59,7 @@ var AllActions = []Action{
 	ActionSkippedArchived,
 	ActionMovedDeleted,
 	ActionMovedArchived,
+	ActionMovedUnarchived,
 	ActionDeleted,
 	ActionFailed,
 	ActionClonedWiki,
@@ -55,6 +68,8 @@ var AllActions = []Action{
 	ActionSkippedName,
 	ActionSkippedEmpty,
 	ActionFailedWiki,
+	ActionSkippedOrigin,
+	ActionConflict,
 }
 
 // RepoResult records the outcome for a single repo (or its wiki).

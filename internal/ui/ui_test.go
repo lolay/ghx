@@ -132,6 +132,22 @@ func TestPrintSummary_ListsUnusableNamesWithTheReason(t *testing.T) {
 	assert.Contains(t, buf.String(), "Skipped (unusable name):\n  ⚠ CON  a reserved device name on Windows\n")
 }
 
+func TestPrintSummary_ListsClonesLeftInPlaceWithWhy(t *testing.T) {
+	buf := captureOut(t)
+
+	ui.PrintSummary(cloner.SyncSummary{Results: []cloner.RepoResult{
+		{Name: "app", Action: cloner.ActionSkippedOrigin, Detail: "origin names another repo"},
+		{Name: "lib", Action: cloner.ActionConflict, Detail: "both copies exist"},
+		{Name: "old", Action: cloner.ActionMovedUnarchived},
+	}})
+
+	out := buf.String()
+	assert.Contains(t, out, "Skipped (origin mismatch):\n  ⚠ app  origin names another repo\n")
+	assert.Contains(t, out, "Conflicts (both copies left in place):\n  ⚠ lib  both copies exist\n")
+	assert.Contains(t, out, "moved (unarchived)", "the counts table has the move")
+	assert.NotContains(t, out, "  ✓ old", "a move needs no line of its own")
+}
+
 func TestPrintSummary_OmitsSectionsWithNothingToList(t *testing.T) {
 	buf := captureOut(t)
 

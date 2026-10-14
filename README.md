@@ -276,17 +276,28 @@ token and network access.
     with git's message.
 - **Removed repos** (in the previous manifest, gone from the organization): moved
   to `DELETED/`, or permanently deleted with `--delete`.
-- **Archived repos:** cloned into `ARCHIVED/`. A repo that becomes archived is
-  moved there on the next run. With `--delete`, archived repos are deleted or
-  skipped rather than moved.
+- **Archived repos:** cloned into `ARCHIVED/`. Every run checks where each
+  synced repo's clone is: an archived repo's clone found in `PATH` is moved
+  into `ARCHIVED/`, and an unarchived repo's clone found in `ARCHIVED/` is moved
+  back, then synced there; a wiki moves with its repo. That holds with no
+  manifest, and a move that failed is tried again next run. With `--delete`,
+  archived repos are deleted or skipped rather than moved. A repo left out by
+  `--include`, `--exclude` or `--type` stays where it is.
+- **Moves and deletes are checked.** ghx moves or deletes a clone only when its
+  origin URL names the repo (the last part of the URL, so SSH, HTTPS, an
+  Enterprise host or a renamed organization all match); otherwise it is left
+  alone and reported as `skipped (origin mismatch)` with the URL it found. A
+  clone is never moved onto a directory that is already there: both are left in
+  place and reported as `conflict`.
 - Writes a `.ghx.json` manifest to the output directory after each run, used to
-  detect removed and newly archived repos next time.
+  detect removed repos next time.
 
 Each repo gets a mark beside its status: `✓` cloned, `↓` pulled (new commits
 came in), `–` up to date (nothing new), `⇣` fetched only (its remote branches are
 backed up, but the working tree is only partly downloaded: it wasn't updated),
-`⚠` skipped, `∅` empty, `✗` failed. The summary lists what needs a look (failures, repos
-fetched only, empty repos), and a "Notes" section lists repos that were updated
+`⚠` skipped or a conflict, `∅` empty, `✗` failed. The summary lists what needs a
+look (failures, repos fetched only, empty repos, clones left in place for their
+origin or a conflict), and a "Notes" section lists repos that were updated
 with something to say (a branch fallback, a reset after a force-push, a switch
 after a rename). The words always come with the mark, so piped output reads.
 

@@ -106,7 +106,7 @@ func CloneRepos(ctx context.Context, repos []ghapi.RepoInfo, opts Options) (Sync
 // plannedAction is what processRepo will do to repo: pull when a clone is
 // already there, clone otherwise.
 func plannedAction(opts Options, repo ghapi.RepoInfo) string {
-	if hasGitDir(filepath.Join(opts.OutputDir, repo.Name)) {
+	if HasGitDir(filepath.Join(opts.OutputDir, repo.Name)) {
 		return ProgressPull
 	}
 	return ProgressClone
@@ -119,7 +119,7 @@ func processRepo(ctx context.Context, git gitRunner, repo ghapi.RepoInfo, opts O
 
 	dest := filepath.Join(opts.OutputDir, repo.Name)
 	var result RepoResult
-	if hasGitDir(dest) {
+	if HasGitDir(dest) {
 		result = syncExisting(ctx, git, dest, repo, opts)
 	} else {
 		result = cloneNew(ctx, git, dest, repo, opts)
@@ -149,7 +149,7 @@ func cloneNew(ctx context.Context, git gitRunner, dest string, repo ghapi.RepoIn
 	args := slices.Concat([]string{"clone"}, platformCloneArgs, []string{url, dest})
 	r := git.fetch(ctx, "", url, args...)
 	if !r.Success() {
-		if hasGitDir(dest) && strings.Contains(r.Stderr, "Clone succeeded, but checkout failed") {
+		if HasGitDir(dest) && strings.Contains(r.Stderr, "Clone succeeded, but checkout failed") {
 			// Every object is down, which is the backup; only the working tree
 			// is missing (typically Git LFS without git-lfs installed).
 			git.setIdentity(ctx, dest, opts.GitAuthor, opts.GitEmail)
@@ -385,7 +385,7 @@ func originRef(branch string) string {
 // fetched-only wiki is named <repo>.wiki so it can't be mistaken for the repo.
 func processWiki(ctx context.Context, git gitRunner, repo ghapi.RepoInfo, opts Options) []RepoResult {
 	wikiDest := filepath.Join(opts.OutputDir, repo.Name+".wiki")
-	if hasGitDir(wikiDest) {
+	if HasGitDir(wikiDest) {
 		return syncWiki(ctx, git, wikiDest, repo, opts)
 	}
 
@@ -445,7 +445,10 @@ func wikiNotFound(stderr string) bool {
 	return strings.Contains(lower, "not found") || strings.Contains(lower, "error: 404")
 }
 
-func hasGitDir(repoDir string) bool {
+// HasGitDir reports whether repoDir holds a .git directory, which is how ghx
+// tells a clone from any other directory. A .git file (a worktree or a
+// submodule) doesn't count: ghx never makes one.
+func HasGitDir(repoDir string) bool {
 	info, err := os.Stat(filepath.Join(repoDir, ".git"))
 	return err == nil && info.IsDir()
 }
@@ -504,7 +507,7 @@ func CleanOrigins(ctx context.Context, opts Options, parents ...string) ([]RepoR
 		}
 		for _, e := range entries {
 			dir := filepath.Join(parent, e.Name())
-			if !e.IsDir() || !hasGitDir(dir) || !mayHoldUserInfo(dir) {
+			if !e.IsDir() || !HasGitDir(dir) || !mayHoldUserInfo(dir) {
 				continue
 			}
 			if git.path == "" {
