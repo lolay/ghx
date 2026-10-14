@@ -1,7 +1,7 @@
 ```
---- KICKOFF: begin orchestration at [deep] ---
+--- KICKOFF: plan complete ---
 
-  Status: 1/1 groups done | last review: wave-1-fix CONCERNS | current: wave 1-fix2 ghx m1 s1-s4 [exec] | updated 2026-10-14 | passed unattended: gate 1 (fix-up 2 of 2) | over expected: ~$6.39 of ~$4.0
+  Status: 1/1 groups done | completed 2026-10-14
 
   mode: unattended | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch) | guard 3x min $50 | fixups 2 | confirmed 2026-10-14 session 3587b07b-d4af-58e8-ab63-47e6c35d27e1 by Kickoff prompt: Run in unattended mode.
 
@@ -28,13 +28,13 @@
 
 **Cost (API-equiv, Claude Code models)**
 
-| wave | expected tokens | expected $ |
-|---|---|---|
-| 1 [exec] ghx m1 s1-s4 | ~2.9M | ~$1.2 |
-| 1-fix [exec] ghx m1 s1-s4 | — | — |
-| 1-fix2 [exec] ghx m1 s1-s4 | — | — |
-| orchestrator | ~3.1M | ~$2.8 |
-| **Total** | ~6.0M | ~$4.0 |
+| wave | expected tokens | expected $ | actual tokens | actual $ |
+|---|---|---|---|---|
+| 1 [exec] ghx m1 s1-s4 | ~2.9M | ~$1.2 | ~3.1M | ~$1.52 (output est.) |
+| 1-fix [exec] ghx m1 s1-s4 | — | — | ~0.95M | ~$0.70 (output est.) |
+| 1-fix2 [exec] ghx m1 s1-s4 | — | — | ~0.66M | ~$0.53 (output est.) |
+| orchestrator | ~3.1M | ~$2.8 | ~9.5M | ~$5.39 |
+| **Total** | ~6.0M | ~$4.0 | ~14M | ~$8.14 |
 
 Expected values are estimates, good to about 2-3× per wave.
 
@@ -121,6 +121,7 @@ Acceptance: `make ci` and `make vuln` pass.
 
 review wave-1 (ghx m1 s1-s4) 45cae77..1b43336: CONCERNS - make ci and make vuln pass (x/text v0.43.0, no vulns); s1-s4 match the spec. Finding: on a TTY, fang's default error handler title-cases the first word of the error, which is now the file path, so the user sees `/Tmp/.../H/.Ghx.toml: concurrency must be an integer, got string "8".` instead of the real path (fang@v1.0.0 theme.go:186-206, help.go:112-121; internal/cli/root.go:41 has no custom error handler); this breaks "names the file" and the manual check. Suggested fix: a fang error handler in internal/cli/root.go that does not change the message case - 2026-10-14
 review wave-1-fix (ghx m1 s1-s4) 45cae77..c2bfb7a: CONCERNS - c2bfb7a adds a fang error handler (root.go errorStyles) that unsets the ErrorText title-case transform when the first word contains / or \; make ci passes, other errors unchanged, terminal-output.md updated. Finding: a local config path with no separator still gets title-cased: `ghx acme .` makes filepath.Join(".", ".ghx.toml") = ".ghx.toml", so the user sees `.Ghx.toml: concurrency must be an integer, got string "8".` (run.go:24,30; config.go:101; root.go errorStyles strings.ContainsAny(first, `/\`)). Suggested fix: also skip the transform when errors.Is(err, config.ErrInvalidValue) (keys.go:28), and add a test row for `.ghx.toml: concurrency must be ...`; passed unattended: gate 1 (fix-up 2 of 2) - 2026-10-14
+review wave-1-fix2 (ghx m1 s1-s4) 45cae77..1587269: PASS - 1587269 keys errorStyles on errors.Is(err, config.ErrInvalidValue) and drops the separator check, so every config value error keeps its path's case on a TTY (`.ghx.toml` included) and all other errors get fang's default as before; TestErrorStyles_KeepsAConfigPathAsIs covers unix, Windows, no-separator, wrapped and plain errors; terminal-output.md updated; make ci passes - 2026-10-14
 
 ## Token log
 
@@ -138,3 +139,22 @@ tokens review-wave-1 ghx-m1-s1-s4 (claude-opus-5-5): input ~16 / cache read ~170
 tokens orchestrator-wave-1 ghx-m1-s1-s4 (claude-opus-5-5): input ~14 / cache read ~870k / cache write ~0 5m + ~18k 1h / output ~7.8k | ~$0.48 API-equiv
 tokens wave-1-fix ghx-m1-s1-s4 (claude-sonnet-5-5): input ~20 / cache read ~650k / cache write ~33k / output ~10k | ~$0.31 API-equiv (output est.) session 3587b07b-d4af-58e8-ab63-47e6c35d27e1
 tokens review-wave-1-fix ghx-m1-s1-s4 (claude-opus-5-5): input ~22 / cache read ~220k / cache write ~22k / output ~12k | ~$0.39 API-equiv (output est.) session 3587b07b-d4af-58e8-ab63-47e6c35d27e1
+tokens orchestrator-wave-1-fix ghx-m1-s1-s4 (claude-opus-5-5): input ~18 / cache read ~1.3M / cache write ~0 5m + ~25k 1h / output ~14k | ~$0.75 API-equiv
+tokens wave-1-fix2 ghx-m1-s1-s4 (claude-sonnet-5-5): input ~14 / cache read ~440k / cache write ~30k / output ~6.6k | ~$0.23 API-equiv (output est.) session 3587b07b-d4af-58e8-ab63-47e6c35d27e1
+tokens review-wave-1-fix2 ghx-m1-s1-s4 (claude-opus-5-5): input ~16 / cache read ~150k / cache write ~23k / output ~8k | ~$0.30 API-equiv (output est.) session 3587b07b-d4af-58e8-ab63-47e6c35d27e1
+tokens orchestrator-wave-1-fix2 ghx-m1-s1-s4 (claude-opus-5-5): input ~14 / cache read ~1.1M / cache write ~0 5m + ~23k 1h / output ~3k | ~$0.47 API-equiv
+
+## Completion summary
+
+**Completed**: 2026-10-14
+**What shipped**: `config.Load` now checks every value in `~/.ghx.toml` and the output directory's `.ghx.toml` against a known-key table (`internal/config/keys.go`): a wrong-typed value, or a float for an integer key (`8.0` included), fails the run before authenticating with `<path>: <key> must be ..., got ...`, wrapping `config.ErrInvalidValue`; unknown keys print a yellow warning and are ignored. `Load` returns `[]Notice`, `asInt` no longer truncates floats, and a fang error handler keeps the path's case when a config value error is printed on a terminal. README describes the new behaviour, no longer claims `--ssh` has a key, and tags the help fence `text`; a drift test ties every root flag but `ssh`, `help` and `version` to `config.IsKey`. `golang.org/x/text` is v0.43.0 (GO-2026-6629 and GO-2026-5970 clear) and every other module in `go.mod` with an update was bumped; `make ci` and `make vuln` pass. Commits `90ad6e5`, `53561cf`, `151f469`, `1b43336`, `c2bfb7a`, `1587269`.
+**Deviations from plan**:
+- Run moved to `claude/charming-allen-aaonrw`, the resume session's assigned branch (fast-forwarded from `claude/practical-goldberg-xu3jxn`, which is now stale).
+- m1.s4 bumped every module in `go.mod` with an update, not only x/text; none held back. m1.s2 also added a CHANGELOG Unreleased entry (CONTRIBUTING requires one).
+- Fix-up 1-fix (automatic, first CONCERNS): fang title-cased the first word of terminal errors, which is now the config path. `c2bfb7a` added an error handler keyed on a path separator.
+- Fix-up 1-fix2 (automatic, gate 1 passed unattended as fix-up 2 of 2): a path with no separator (`ghx acme .`) was still title-cased. `1587269` keys the handler on `errors.Is(err, config.ErrInvalidValue)` instead.
+- Spend ~$8.14 against ~$4.0 expected: the two fix-ups and a heavier orchestrator than budgeted.
+**Follow-ups**:
+- The manual TTY check from Verification was not run on a real terminal (reviewers are read-only; the worker checked without a TTY). Worth one run with a temp `HOME` before merge.
+- Remove the plan and handoff from `specs/handoffs/` as the last commit before merge.
+- Delete the stale remote branch `claude/practical-goldberg-xu3jxn` once Gary agrees.
