@@ -29,21 +29,34 @@ while the run goes on.
   then a long name is cut with `…`. A terminal resized mid-run keeps the start's
   widths.
 - **Only the bottom is live.** The table's top (title, header) prints once as
-  ordinary output. Each finished repo's row prints above the live area, in the
-  order repos finish, so it lands in the terminal's scrollback. The live area
-  (pterm's `AreaPrinter`, redrawn every 100 ms) holds just the in-flight rows,
-  the rule that closes their columns, the progress footer and the border. That is
-  at most the concurrency plus a few lines, so it fits on screen; if it doesn't,
-  it shows the first in-flight rows and `+N more running`.
+  ordinary output. Rows print above the live area, into the terminal's
+  scrollback, in list order: a finished row prints once every row above it has
+  finished, so the scrollback reads in list order however the workers finish.
+  The live area (pterm's `AreaPrinter`, redrawn every 100 ms) holds the rows not
+  printed yet that are in flight or finished (held back behind a slower one),
+  in list order, then the rule that closes their columns, the progress footer
+  and the border.
+- **A slow repo holds the rows after it.** Workers start repos in list order, so
+  the live area is usually the concurrency plus a few lines. One slow repo (a
+  large monorepo) holds back every row after it until it finishes. When the
+  rows don't fit the terminal, the held ones give way first and the footer
+  counts them, `+5 done, waiting on bigrepo`; then the last in-flight rows give
+  way, counted as `+N more running`. When the slow repo finishes, it and the
+  run of finished rows behind it print together.
 - **Progress in the footer.** `Syncing 34/60 [====>---] 57% 12s · 4 running ·
   22 queued`, counted over every repo, across both passes.
 - **Two passes, one table.** Active repos sync first, archived ones second, with
   the same renderer; the table stays open between them, so the run flow prints
   no "Cloning N archived repo(s)" line on a terminal, and the `--delete` note goes
-  after the table's close.
+  after the table's close. The table lists repos in pass order, each pass by
+  name ignoring case (`ghapi.ListOrgRepos` sorts the list, and `run.go` puts the
+  active repos before the archived ones), which is also the order the workers
+  start them. An archived repo listed among the active ones would hold back the
+  first pass's rows until the second pass reached it.
 - **Closing.** `run.go` calls `FinishTable` after the last pass, and also through
-  `defer` so a cancel or an error still closes it, once. Rows that never finished
-  print as `queued` or `interrupted`, then the totals footer, which wraps between
+  `defer` so a cancel or an error still closes it, once. Every row not printed
+  yet prints in list order: finished ones held back with their result, and the
+  ones that never finished as `queued` or `interrupted`. Then the totals footer, which wraps between
   counts if it is wider than the table:
   `60 repos · ✓ 3 cloned · ↓ 12 pulled · – 40 up to date · ⇣ 2 fetched only ·
   ⚠ 1 skipped · ∅ 1 empty · ✗ 1 failed · 1m12s`.
@@ -102,8 +115,13 @@ before it.
   leaves a copy behind. It also changed width as statuses changed.
 - **A full-screen TUI** (bubbletea, an alternate screen). It can scroll inside
   itself, but takes over the terminal and leaves nothing in scrollback.
-- **Rows in the original order.** Would mean reprinting the table at the end; finish
-  order reads as a log and prints each row once.
+- **Rows in finish order.** Each row prints the moment its repo finishes, so the
+  live area never holds a finished row, but the scrollback comes out shuffled
+  and a repo is hard to find in a long run. Holding rows back keeps list order
+  and still prints each row once; its cost is the `waiting on` stretch behind a
+  slow repo.
+- **Rows in list order by reprinting the table at the end.** Prints every row
+  twice, and the first copy is in finish order anyway.
 
 ## Limits
 

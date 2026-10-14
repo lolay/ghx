@@ -326,9 +326,10 @@ stops before contacting GitHub, while `--dry-run` works without it.
   open inside the repository blocks the move; ghx reports it as failed and
   tries again on the next run.
 - **Output.** On a terminal a sync draws one live table: a row per repo in fixed
-  columns, finished rows scrolling up into your terminal's history, the repos
-  still running and a progress line (`Syncing 34/60 ... 4 running · 22 queued`)
-  at the bottom, and the totals when it closes. Piped or redirected output gets
+  columns, active repos by name and then archived ones, finished rows scrolling
+  up into your terminal's history in that order, the repos still running (and
+  any finished behind a slower one) and a progress line (`Syncing 34/60 ... 4
+  running · 22 queued`) at the bottom, and the totals when it closes. Piped or redirected output gets
   the plain repo table, a note as each pass starts, and the full summary
   instead, with no escape codes. A `--dry-run` gets only the plain repo table
   and `Dry run complete. No changes made.`, on a terminal too. Set `NO_COLOR=1`

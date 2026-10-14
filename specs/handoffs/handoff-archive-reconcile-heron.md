@@ -9,7 +9,7 @@ Scratch for the orchestrate run of
 - **Mode:** unattended, confirmed 2026-10-14 in session db99f13c (dialog: "Unattended (Recommended)", "This session (Recommended)").
 - **Done:** wave 1 [deep] ghx m1 s1, `b884660..976fa01`, review CONCERNS (one doc line); 1-fix `421f8c1` PASS. 1/2 waves.
 - **Spend:** ~$9.8 of ~$8.0 expected (guard: $50). Over expected: wave 1 [deep] ran ~$4.2 against ~$3.2, 1-fix ~$0.6 unplanned, the parent ~$5.1 so far.
-- **Next unit:** the parent merges `origin/main` (`051e844`), then wave 2 [exec] ghx m1 s2-s4.
+- **Next unit:** wave 2 [exec] ghx m1 s2-s4. `origin/main` (`051e844`) is merged.
 - **Resume:** paste the plan's Kickoff prompt into a new session.
 
 ## Pending question
@@ -38,5 +38,5 @@ None. Wave 1 is next.
 ## Deviations from plan
 
 - Re-plan of wave 2 before it ran, on Gary's requests: s2 (Visibility shows archived, Archived column dropped) added; the edge-case tests trimmed to what wave 1 didn't cover (s3); the docs step (s4) adjusted for docs wave 1 already wrote and for the Visibility change. Wave 2 keeps its planned ~$1.0 expected, which now understates it.
-- `origin/main` gained `051e844` (#11, live table order) after the branch was cut. It conflicts with wave 1 in `internal/cli/run.go`. The parent merges it as bookkeeping after 1-fix and before wave 2's snapshot, with a merge commit (no rebase; the branch is pushed), verified with `make ci`. Not a worker step, because `check_wave.py` would count main's commit in the worker's range.
+- `origin/main` gained `051e844` (#11, live table order) after the branch was cut. It conflicts with wave 1 in `internal/cli/run.go`. The parent merged it as bookkeeping after 1-fix and before wave 2's snapshot, with a merge commit (no rebase; the branch is pushed). The only conflict was the `sort` import, which the branch no longer uses; `make ci` passes on the merge. Not a worker step, because `check_wave.py` would count main's commit in the worker's range.
 - Follow-ups wave 1 found, not in scope: `--delete` still leaves `<out>/x.wiki` behind; a move into `DELETED/` still silently replaces an existing `DELETED/x`. Review nit, not blocking: under `--delete` the conflict detail says "syncing ARCHIVED/x", but archived repos aren't synced then.

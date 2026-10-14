@@ -164,6 +164,20 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 		previousRepos = m.Repos
 	}
 
+	var activeRepos, archivedRepos []ghapi.RepoInfo
+	for _, r := range repos {
+		if r.Archived {
+			archivedRepos = append(archivedRepos, r)
+		} else {
+			activeRepos = append(activeRepos, r)
+		}
+	}
+	// The table lists the repos in the order the passes sync them. The live
+	// table prints a row only once every row above it has finished, so an
+	// archived repo listed among the active ones would hold the first pass's
+	// rows back until the second pass reached it.
+	tableRepos := slices.Concat(activeRepos, archivedRepos)
+
 	// On a terminal the progress renderer draws the repo table itself, with a
 	// Status column that follows each repo, so it gets the repos in place of the
 	// static table. A dry run, a pipe and a file print the static table: there
@@ -171,13 +185,13 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 	progress := ui.NewProgress()
 	lister, drawsTable := progress.(ui.RepoLister)
 	if drawsTable && !dryRun {
-		lister.SetRepos(repos)
+		lister.SetRepos(tableRepos)
 		// The table is closed once the passes are over, here also when a
 		// cancel or an error ends the run early: FinishTable does nothing the
 		// second time.
 		defer lister.FinishTable()
 	} else {
-		ui.PrintRepoTable(repos)
+		ui.PrintRepoTable(tableRepos)
 	}
 
 	// Before the dry-run return, so a dry run reports what would move. The
@@ -213,15 +227,6 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 		ui.Println()
 		ui.Println(text.Faint.Sprint("Dry run complete. No changes made."))
 		return nil
-	}
-
-	var activeRepos, archivedRepos []ghapi.RepoInfo
-	for _, r := range repos {
-		if r.Archived {
-			archivedRepos = append(archivedRepos, r)
-		} else {
-			activeRepos = append(activeRepos, r)
-		}
 	}
 
 	baseOpts := cloner.Options{

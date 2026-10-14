@@ -82,7 +82,7 @@ func TestListOrgRepos(t *testing.T) {
 		srv := newAPI(t)
 		srv.SetPageSize(2)
 		srv.SetRepos("acme", []ghapitest.Repo{
-			{Name: "one"}, {Name: "two"}, {Name: "three"},
+			{Name: "alpha"}, {Name: "bravo"}, {Name: "charlie"},
 		})
 
 		repos, err := ghapi.ListOrgRepos(t.Context(), testToken, "acme")
@@ -92,7 +92,7 @@ func TestListOrgRepos(t *testing.T) {
 		for _, r := range repos {
 			names = append(names, r.Name)
 		}
-		assert.Equal(t, []string{"one", "two", "three"}, names)
+		assert.Equal(t, []string{"alpha", "bravo", "charlie"}, names)
 
 		var pages []string
 		for _, req := range srv.Requests() {
@@ -101,6 +101,23 @@ func TestListOrgRepos(t *testing.T) {
 			}
 		}
 		assert.Equal(t, []string{"", "2"}, pages, "one request per page, the second asking for page 2")
+	})
+
+	t.Run("sorts by name ignoring case, across pages", func(t *testing.T) {
+		srv := newAPI(t)
+		srv.SetPageSize(2)
+		srv.SetRepos("acme", []ghapitest.Repo{
+			{Name: "zulu"}, {Name: "Mike"}, {Name: "alpha"}, {Name: "Bravo"}, {Name: "kilo"},
+		})
+
+		repos, err := ghapi.ListOrgRepos(t.Context(), testToken, "acme")
+		require.NoError(t, err)
+
+		var names []string
+		for _, r := range repos {
+			names = append(names, r.Name)
+		}
+		assert.Equal(t, []string{"alpha", "Bravo", "kilo", "Mike", "zulu"}, names)
 	})
 
 	t.Run("asks for every repo type and the largest page", func(t *testing.T) {
