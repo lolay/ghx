@@ -1,7 +1,7 @@
 ```
 --- KICKOFF: begin orchestration at [deep] ---
 
-  Status: 3/4 groups done | last review: wave-3-fix PASS | current: ghx s11-s12 [exec] | updated 2026-10-14 | over expected: ~$19.1 of ~$4.6
+  Status: 4/4 groups done | last review: wave-4 CONCERNS | current: ghx s11-s12 [exec] fix-up 4-fix | updated 2026-10-14 | over expected: ~$25.8 of ~$4.6
 
   mode: unattended | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch claude/magical-ride-7h4rhi) | guard 3x min $50 | fixups 2 | confirmed 2026-10-13 session bd9c01f5-fe1c-5a92-ab0c-95720d491a10: unattended
 
@@ -36,6 +36,7 @@
 | 3 [exec] ghx s8-s10 | — | — | ~8.9M (output est.) | ~$3.5 (output est.) |
 | 3-fix [exec] ghx s8-s10 | — | — | ~1.3M (output est.) | ~$0.85 (output est.) |
 | 4 [exec] ghx s11-s12 | — | — | — | — |
+| 4-fix [exec] ghx s11-s12 | — | — | — | — |
 | orchestrator | ~3.1M | ~$2.8 | ~19M | ~$8.0 |
 | **Total** | ~7.7M | ~$4.6 | ~47M | ~$19.1 |
 
@@ -349,7 +350,7 @@ and `ActionUpToDate` ("up to date", split out of pulled), and main's summary
 `glyphs`. Gary asked for download-style marks and to make the table renderer
 the permanent progress display.
 
-#### s11 - [exec] Download-style status marks
+#### s11 - [exec] Download-style status marks (done)
 
 In `internal/ui`, change the marks `statusMark` gives (and the summary's
 `glyphs` where they overlap, so the table and the summary agree):
@@ -374,7 +375,7 @@ Acceptance: `make ci` passes; `status_test.go` covers every `cloner.Action`
 the footer test asserts the new totals text; the summary's counts table and
 "Fetched only" section show `⇣`; `CHANGELOG.md` Unreleased notes the marks.
 
-#### s12 - [exec] Make the table the only progress display
+#### s12 - [exec] Make the table the only progress display (done)
 
 - Delete `progress_gopretty.go`, `progress_buildx.go`, `progress_indicatif.go`,
   `progress_pterm.go` and their tests/smoke-test cases, and the `GHX_PROGRESS`
@@ -416,6 +417,7 @@ review wave-1 (ghx s1,s2,s3,s4,s5) 56d21d8..33a21fd: PASS - make ci green (lint 
 review wave-2 (ghx s6,s7) 7ee0a3c..0592684: PASS - make ci green (race x3 on ui and cli); symbols via copies of pterm.Success, no pterm globals assigned; table renderer windows, drops columns, prints the full table once from run.go; removed/too-large notes now print before the live table - 2026-10-13
 review wave-3 (ghx s8,s9,s10) c7bf5b6..4a5e995: CONCERNS - live area box drawing is wrong: the ┴ rule sits above the in-flight rows (closing columns the rows still use) instead of between them and the footer, and on the first frame it sits right under the header separator (two separators in a row); progress_table.go frameLocked concatenates [l.rule, rows..., footer, bottom] and progress_table_test.go:385-395 locks that order in; the rule belongs directly above the merged footer - 2026-10-13
 review wave-3-fix (ghx s8,s9,s10) c7bf5b6..683d367: PASS - live area is now in-flight rows, ┴ rule, footer, border; rule omitted when nothing sits above it; tests lock the order; make ci green; checked in a pty at 70x14; passed unattended: gate 1 (fix-up 1 of 2) - 2026-10-13
+review wave-4 (ghx s11,s12) 02d076d..f0d4743: CONCERNS - two doc defects, no code defects: README Output bullet says `--dry-run` gets the pass notes and the full summary, but run.go returns before both (a dry run gets only the static table and "Dry run complete"); internal/ui/status.go:20-21 statusMark comment still says the pterm and table renderers share it, though s12 deleted the pterm renderer - 2026-10-14
 
 ## Token log
 
@@ -439,6 +441,9 @@ tokens review-wave-3 ghx-s8-s9-s10 (claude-opus-5-5): input ~30 / cache read ~63
 tokens orchestrator-wave-3 ghx-s8-s9-s10 (claude-opus-5-5): input ~22 / cache read ~2.9M / cache write ~0 5m + ~26k 1h / output ~11k | ~$1.00 API-equiv
 tokens wave-3-fix ghx-s8-s9-s10 (claude-sonnet-5-5): input ~28 / cache read ~1M / cache write ~47k / output ~14k | ~$0.47 API-equiv (output est.) session bd9c01f5-fe1c-5a92-ab0c-95720d491a10
 tokens review-wave-3-fix ghx-s8-s9-s10 (claude-opus-5-5): input ~20 / cache read ~220k / cache write ~27k / output ~10k | ~$0.38 API-equiv (output est.) session bd9c01f5-fe1c-5a92-ab0c-95720d491a10
+tokens orchestrator-wave-3-fix ghx-s8-s9-s10 (claude-opus-5-5): input ~68 / cache read ~13M / cache write ~0 5m + ~76k 1h / output ~28k | ~$3.72 API-equiv
+tokens wave-4 ghx-s11-s12 (claude-sonnet-5-5): input ~100 / cache read ~6.5M / cache write ~170k / output ~52k | ~$2.26 API-equiv (output est.) session bd9c01f5-fe1c-5a92-ab0c-95720d491a10
+tokens review-wave-4 ghx-s11-s12 (claude-opus-5-5): input ~30 / cache read ~600k / cache write ~63k / output ~15k | ~$0.74 API-equiv (output est.) session bd9c01f5-fe1c-5a92-ab0c-95720d491a10
 
 ## Completion summary (wave 1)
 

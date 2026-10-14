@@ -7,7 +7,7 @@
 - **Done:** wave 1 [exec] `ghx s1-s5`, 56d21d8..33a21fd, review PASS. No fix-ups,
   retries or checkpoints.
   Wave 2 [exec] `ghx s6-s7` (re-plan), 7ee0a3c..0592684, review PASS.
-- **Spend:** ~$19.1 of ~$4.6 expected (Token log in the plan).
+- **Spend:** ~$25.8 of ~$4.6 expected (Token log in the plan).
   Wave 3 [exec] `ghx s8-s10`, c7bf5b6..4a5e995, review CONCERNS (live-area box
   drawing: the column-closing rule sits above the in-flight rows, not above the footer).
   Fix-up 3-fix 683d367, review PASS.
@@ -20,8 +20,10 @@
 - **Merged `origin/main` again** (bb82990: d366f93 up-to-date split, bc9653f
   force-push follow-up); only CHANGELOG conflicted; one progress test now expects
   `up to date` on a second sync.
-- **Next unit:** wave 4 [exec] `ghx s11-s12`: download-style marks (↓ pulled,
-  – up to date, ⇣ fetched only), then the table becomes the only progress display.
+  Wave 4 [exec] `ghx s11-s12`, 02d076d..f0d4743: marks (↓ pulled, – up to date,
+  ⇣ fetched only) and the table as the only progress display (mpb gone);
+  review CONCERNS on two doc lines.
+- **Next unit:** fix-up 4-fix (automatic, 1 of 2).
 - **Later:** Gary picks a renderer; a follow-up keeps it, deletes the rest and
   `GHX_PROGRESS`, tidies `go.mod`, updates `specs/`, and removes or promotes this
   plan and handoff before the branch merges.
@@ -59,8 +61,10 @@ None. Gary chose the table as permanent and asked for download-style marks.
   border); footer, rule and border are hand-drawn from StyleLight's characters
   because go-pretty's merged footer wraps at the first column; run.go skips the
   archived-pass and --delete notes inside the table; `ui.PrintSummaryLists` under it.
-- pterm renderer uses an AreaPrinter over private buffers, with the cursor target
-  pointed at `Out` only between Start and Stop.
+- Wave 4: marks keyed by symbol in the footer (moves and wikis count as cloned,
+  every skip as skipped); the closing footer wraps between counts when wider
+  than the table; the cli TestMain is non-terminal by default and `terminal(t)`
+  opts a test into the live table; only the table renderer remains.
 
 ## Environment notes
 
@@ -75,6 +79,7 @@ None. Gary chose the table as permanent and asked for download-style marks.
 
 ## Deviations from plan
 
+- wave 4: automatic fix-up 4-fix for the review's CONCERNS (passed unattended: gate 1, fix-up 1 of 2).
 - Re-plan after wave 3: wave 4 (s11-s12) at Gary's request; unplanned row.
 - wave 3: automatic fix-up 3-fix for the review's CONCERNS (passed unattended: gate 1, fix-up 1 of 2).
 - Re-plan after wave 2: wave 3 (s8-s10) added at Gary's request; unplanned row.
