@@ -5,10 +5,10 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"github.com/charmbracelet/colorprofile"
@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/lolay/ghx/internal/buildinfo"
+	"github.com/lolay/ghx/internal/config"
 	"github.com/lolay/ghx/internal/ui"
 )
 
@@ -51,13 +52,14 @@ func errorHandler(w io.Writer, styles fang.Styles, err error) {
 	fang.DefaultErrorHandler(w, errorStyles(styles, err), err)
 }
 
-// errorStyles returns styles unchanged unless err's first word is a path, as
-// in a config error ("<path>: concurrency must be ..."). On a terminal fang
-// title-cases the first word of an error, which would show a path that
-// doesn't exist, so such errors keep their case.
+// errorStyles returns styles unchanged unless err is a config value error,
+// which starts with the file path ("<path>: concurrency must be ..."). On a
+// terminal fang title-cases the first word of an error, which would show a
+// path that doesn't exist (".Ghx.toml"), so such errors keep their case. The
+// sentinel is the test, not the shape of the text: a local path can have no
+// separator at all.
 func errorStyles(styles fang.Styles, err error) fang.Styles {
-	first, _, _ := strings.Cut(strings.TrimSpace(err.Error()), " ")
-	if strings.ContainsAny(first, `/\`) {
+	if errors.Is(err, config.ErrInvalidValue) {
 		styles.ErrorText = styles.ErrorText.UnsetTransform()
 	}
 	return styles

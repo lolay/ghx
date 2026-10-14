@@ -3,6 +3,7 @@ package cli_test
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -131,26 +132,42 @@ func TestRun_CompletionWorksNextToTheTwoArguments(t *testing.T) {
 	assert.Contains(t, out, "bash completion V2 for ghx")
 }
 
-// fang title-cases the first word of an error on a terminal; a config error
-// starts with a file path, which must come out as it went in.
-func TestErrorStyles_KeepsAPathFirstWordAsIs(t *testing.T) {
-	const msg = `/tmp/home/.ghx.toml: concurrency must be an integer, got string "8"`
+// fang title-cases the first word of an error on a terminal; a config value
+// error starts with a file path, which must come out as it went in, including
+// a local path with no directory separator.
+func TestErrorStyles_KeepsAConfigPathAsIs(t *testing.T) {
 	tests := []struct {
 		name string
-		msg  string
+		err  error
 		want string
 	}{
-		{"unix path", msg, msg},
-		{"windows path", `C:\Users\me\.ghx.toml: concurrency must be an integer`, `C:\Users\me\.ghx.toml: concurrency must be an integer`},
-		{"plain error is title-cased as before", "unknown flag: --nope", "Unknown flag: --nope"},
+		{"unix path", invalidValue("/tmp/home/.ghx.toml"), `/tmp/home/.ghx.toml: concurrency must be an integer, got string "8"`},
+		{"windows path", invalidValue(`C:\Users\me\.ghx.toml`), `C:\Users\me\.ghx.toml: concurrency must be an integer, got string "8"`},
+		{"path with no separator", invalidValue(".ghx.toml"), `.ghx.toml: concurrency must be an integer, got string "8"`},
+		{"wrapped further", fmt.Errorf("sync: %w", invalidValue(".ghx.toml")), `sync: .ghx.toml: concurrency must be an integer, got string "8"`},
+		{"plain error is title-cased as before", errors.New("unknown flag: --nope"), "Unknown flag: --nope"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			styles := cli.ErrorStyles(fangStyles(t), errors.New(tt.msg))
+			styles := cli.ErrorStyles(fangStyles(t), tt.err)
 
-			assert.Equal(t, tt.want, strings.TrimSpace(styles.ErrorText.UnsetMargins().UnsetWidth().Render(tt.msg)))
+			assert.Equal(t, tt.want, strings.TrimSpace(styles.ErrorText.UnsetMargins().UnsetWidth().Render(tt.err.Error())))
 		})
 	}
+}
+
+// valueError stands in for config.Load's error: that type is unexported, and
+// its text has no sentinel suffix.
+type valueError struct{ msg string }
+
+func (e valueError) Error() string { return e.msg }
+
+func (e valueError) Unwrap() error { return config.ErrInvalidValue }
+
+// invalidValue is the error config.Load returns for a string given to the
+// integer key concurrency in the file at path.
+func invalidValue(path string) error {
+	return valueError{path + `: concurrency must be an integer, got string "8"`}
 }
 
 // fangStyles returns the styles fang hands its error handler, which it builds

@@ -105,8 +105,9 @@ code is 0 or 1 as before. Under `NO_COLOR` fang still emits bold and reset codes
 so `execute` strips ANSI itself. On a terminal fang title-cases the first word of
 an error, which would mangle the file path that starts a config error
 (`<path>: concurrency must be an integer, ...`), so `errorHandler` keeps the
-case of any error whose first word is a path and otherwise leaves fang's default
-alone. Because fang adds subcommands next to the root's
+case of any error that wraps `config.ErrInvalidValue` (the sentinel, not the
+text's shape, since a local path such as `.ghx.toml` has no separator) and
+otherwise leaves fang's default alone. Because fang adds subcommands next to the root's
 two positional arguments, an org named `help`, `completion` or `man` needs `--`
 before it.
 
