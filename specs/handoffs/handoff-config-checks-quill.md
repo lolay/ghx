@@ -3,11 +3,11 @@
 - **Plan:** `specs/handoffs/plan-config-checks-quill.md` (closes lolay/ghx#1)
 - **Branch:** `claude/charming-allen-aaonrw` (assigned to the resume session by the cloud harness; fast-forwarded from `claude/practical-goldberg-xu3jxn` at `254dc42`, where the kickoff ran). Task branch.
 - **Mode:** unattended, confirmed 2026-10-14 in session aeb2cfec (dialog: "Unattended (Recommended)"), re-confirmed 2026-10-14 in session 3587b07b by Kickoff prompt (same harness and runner tokens).
-- **Done:** nothing yet. 1 wave, `[exec]`, one group `ghx m1 s1-s4`.
-- **Review log:** empty.
-- **Fix-ups, retries, checkpoints:** none.
-- **Spend:** ~$2.46 logged (orchestrator-kickoff, which also covers the planning conversation) of ~$4.0 expected (guard $50).
-- **Next unit:** wave 1 `[exec]` ghx m1 s1-s4 (Sonnet high worker, Opus high reviewer). One group, so no canary. Launching from session 3587b07b.
+- **Done:** wave 1 `[exec]` ghx m1 s1-s4, `45cae77..1b43336` (m1.s1 `90ad6e5`, m1.s2 `53561cf`, m1.s3 `151f469`, m1.s4 `1b43336`). `check_wave.py` passed.
+- **Review log:** wave-1 CONCERNS: on a TTY fang title-cases the first word of the error, which is now the config file path, so the path shown is wrong (`/Tmp/.../.Ghx.toml`). Everything else matched the spec; `make ci` and `make vuln` pass, x/text v0.43.0.
+- **Fix-ups, retries, checkpoints:** wave 1-fix (first CONCERNS, automatic, no gate) launching for the fang casing finding.
+- **Spend:** ~$5.20 logged of ~$4.0 expected (over expected; guard $50). Kickoff ~$2.46, resume parent ~$1.23, wave 1 worker ~$1.12, review ~$0.40.
+- **Next unit:** wave 1-fix `[exec]` ghx m1 s1-s4 (Sonnet high worker, Opus high reviewer), from `45cae77`.
 - **Resume:** paste the plan's Kickoff prompt.
 
 ## Pending question (verbatim)
@@ -23,5 +23,8 @@ None.
 - `make doctor` fails in this container: `triage` isn't installed (`brew install lolay/tap/triage`). It is a doctor-only tool; `make ci` doesn't need it.
 
 ## Deviations from plan
+
+- The wave 1 worker bumped every module in `go.mod` with an update (go-pretty, lipgloss, x/term and others), not only x/text, since `make ci` stayed green; none held back. It also added a CHANGELOG Unreleased entry in m1.s2 (CONTRIBUTING requires one).
+- Wave 1 review CONCERNS gets an automatic fix-up `1-fix` (first CONCERNS, no gate in either mode).
 
 - The resume session's harness assigned `claude/charming-allen-aaonrw`, so the run continues there (skill path (b)); the Kickoff prompt's `On branch` line now names it. `claude/practical-goldberg-xu3jxn` stays at `254dc42` and is stale.

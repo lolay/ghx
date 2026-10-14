@@ -1,7 +1,7 @@
 ```
 --- KICKOFF: begin orchestration at [deep] ---
 
-  Status: 0/1 groups done | last review: — | current: ghx m1 s1-s4 [exec] | updated 2026-10-14
+  Status: 1/1 groups done | last review: wave-1 CONCERNS | current: wave 1-fix ghx m1 s1-s4 [exec] | updated 2026-10-14 | over expected: ~$5.20 of ~$4.0
 
   mode: unattended | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch) | guard 3x min $50 | fixups 2 | confirmed 2026-10-14 session 3587b07b-d4af-58e8-ab63-47e6c35d27e1 by Kickoff prompt: Run in unattended mode.
 
@@ -31,6 +31,7 @@
 | wave | expected tokens | expected $ |
 |---|---|---|
 | 1 [exec] ghx m1 s1-s4 | ~2.9M | ~$1.2 |
+| 1-fix [exec] ghx m1 s1-s4 | — | — |
 | orchestrator | ~3.1M | ~$2.8 |
 | **Total** | ~6.0M | ~$4.0 |
 
@@ -59,7 +60,7 @@ Gate: `make ci` (build, lint, test) must pass before each step's commit. Follow 
 ## m1 - Config validation and issue #1 follow-ups
 
 --- WAVE 1 [exec] ---
-#### s1 - [exec] Check config values in config.Load
+#### s1 - [exec] Check config values in config.Load (done)
 
 The check goes in `Load`, not the resolvers, because `Load` is the only place that knows which file a value came from, and the 15 `Resolve*` call sites in `internal/cli/run.go` stay untouched.
 
@@ -81,7 +82,7 @@ Tests (`internal/config`, black-box, table-driven, testify, `t.TempDir` plus `t.
 
 Acceptance: `make ci` passes; the new tests fail on the old code and pass on the new.
 
-#### s2 - [exec] Update the README and add a flag drift guard
+#### s2 - [exec] Update the README and add a flag drift guard (done)
 
 - README Configuration section: replace "A config value of the wrong type (for example `concurrency = "8"`) is ignored and the next source is used. A TOML float given for an integer key is truncated." with the new behaviour: a wrong-typed value, or a float for an integer key, stops the run with an error naming the file and key; an unknown key gets a warning and is ignored.
 - README: reword "Every command-line option can be set as a config key, hyphenated like the flag." so it no longer claims `--ssh` has a key (every option except `--ssh`, which `protocol` covers).
@@ -91,13 +92,13 @@ Acceptance: `make ci` passes; the new tests fail on the old code and pass on the
 
 Acceptance: `make ci` passes; the README matches the s1 behaviour.
 
-#### s3 - [fast] Tag the README help code fence
+#### s3 - [fast] Tag the README help code fence (done)
 
 - The fenced block holding the `ghx --help` output (README, around line 347) gets the language tag `text`. Change nothing else.
 
 Acceptance: `make ci` passes.
 
-#### s4 - [exec] Bump golang.org/x/text and review indirect modules
+#### s4 - [exec] Bump golang.org/x/text and review indirect modules (done)
 
 - `go get golang.org/x/text@latest` (must be v0.41.0 or later), then `go mod tidy`.
 - `go list -m -u all` to review the other indirect modules; bump the ones with updates where it's safe (via their direct parents where possible), and list any held back, with why, in the commit body.
@@ -117,6 +118,8 @@ Acceptance: `make ci` and `make vuln` pass.
 
 ## Review log
 
+review wave-1 (ghx m1 s1-s4) 45cae77..1b43336: CONCERNS - make ci and make vuln pass (x/text v0.43.0, no vulns); s1-s4 match the spec. Finding: on a TTY, fang's default error handler title-cases the first word of the error, which is now the file path, so the user sees `/Tmp/.../H/.Ghx.toml: concurrency must be an integer, got string "8".` instead of the real path (fang@v1.0.0 theme.go:186-206, help.go:112-121; internal/cli/root.go:41 has no custom error handler); this breaks "names the file" and the manual check. Suggested fix: a fang error handler in internal/cli/root.go that does not change the message case - 2026-10-14
+
 ## Token log
 
 **Counting header (Claude Code)**
@@ -127,3 +130,6 @@ Acceptance: `make ci` and `make vuln` pass.
 - `$C` = (input × in + cache read × cached + 5m write × in × 1.25 + 1h write × in × 2.00 + output × out) / 1M.
 - In another harness, or on a model not listed here, count and price per plan-execution.md "Token accounting" and "Model price table" instead.
 tokens orchestrator-kickoff plan-config-checks-quill (claude-opus-5-5): input ~66 / cache read ~4.3M / cache write ~0 5m + ~140k 1h / output ~23k | ~$2.46 API-equiv
+tokens orchestrator-resume plan-config-checks-quill (claude-opus-5-5): input ~28 / cache read ~1.6M / cache write ~0 5m + ~87k 1h / output ~10k | ~$1.23 API-equiv
+tokens wave-1 ghx-m1-s1-s4 (claude-sonnet-5-5): input ~56 / cache read ~2.7M / cache write ~120k / output ~28k | ~$1.12 API-equiv (output est.) session 3587b07b-d4af-58e8-ab63-47e6c35d27e1
+tokens review-wave-1 ghx-m1-s1-s4 (claude-opus-5-5): input ~16 / cache read ~170k / cache write ~32k / output ~10k | ~$0.40 API-equiv (output est.) session 3587b07b-d4af-58e8-ab63-47e6c35d27e1
