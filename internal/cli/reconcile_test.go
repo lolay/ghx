@@ -174,3 +174,80 @@ func TestRun_AClonePresentInBothPlacesIsAConflict(t *testing.T) {
 	assert.Contains(t, out, "beta: conflict")
 	assert.Contains(t, out, "Conflicts (both copies left in place):")
 }
+
+func TestRun_AMoveThatFailedIsRetriedByTheNextRun(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("alpha")
+	w.addRepo("beta")
+	w.mustRun()
+	w.archiveRepo("beta")
+	// A file where the archive directory belongs: the move can't be made (the
+	// path under it can't be checked, so it counts as taken).
+	squatter := filepath.Join(w.out, "ARCHIVED")
+	require.NoError(t, os.WriteFile(squatter, []byte("in the way\n"), 0o644))
+
+	out, _ := w.run()
+
+	assert.NotContains(t, out, "moved (archived)", "nothing moved")
+	assert.DirExists(t, filepath.Join(w.out, "beta", ".git"), "the clone stays where it was")
+
+	require.NoError(t, os.Remove(squatter))
+	out = w.mustRun()
+
+	assert.Equal(t, []string{"ARCHIVED/beta", "alpha"}, repoDirs(t, w.out), "the next run finishes the move")
+	assert.Contains(t, out, "beta: moved (archived)")
+}
+
+func TestRun_ArchivingUnarchivingAndArchivingAgainKeepsOneCloneAndItsCommits(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("alpha")
+	w.addRepo("beta")
+	w.mustRun()
+	// Work that exists only in the clone: a second copy cloned fresh from
+	// upstream would not have it.
+	gittest.Git(t, filepath.Join(w.out, "beta"), "commit", "--allow-empty", "-m", "Local work")
+	head := gittest.Git(t, filepath.Join(w.out, "beta"), "rev-parse", "HEAD")
+
+	steps := []struct {
+		name   string
+		change func()
+		want   []string
+		clone  string
+	}{
+		{"archived", func() { w.archiveRepo("beta") }, []string{"ARCHIVED/beta", "alpha"}, "ARCHIVED/beta"},
+		{"unarchived", func() { w.unarchiveRepo("beta") }, []string{"alpha", "beta"}, "beta"},
+		{"archived again", func() { w.archiveRepo("beta") }, []string{"ARCHIVED/beta", "alpha"}, "ARCHIVED/beta"},
+	}
+	for _, step := range steps {
+		t.Run(step.name, func(t *testing.T) {
+			step.change()
+
+			out := w.mustRun()
+
+			assert.Equal(t, step.want, repoDirs(t, w.out), "exactly one clone of beta")
+			assert.NotContains(t, out, "beta: cloned", "moved, never cloned again")
+			assert.Equal(t, head, gittest.Git(t, filepath.Join(w.out, filepath.FromSlash(step.clone)), "rev-parse", "HEAD"),
+				"the local commit survived")
+		})
+	}
+}
+
+func TestRun_AWikiStaysBesideItsRepoThroughArchiveAndUnarchive(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("alpha", func(r *ghapitest.Repo) { r.HasWiki = true })
+	gittest.NewBareRepo(t, w.upstream, "alpha.wiki", "master")
+	w.mustRun("--clone-wiki")
+	require.Equal(t, []string{"alpha", "alpha.wiki"}, repoDirs(t, w.out))
+
+	w.archiveRepo("alpha")
+	out := w.mustRun("--clone-wiki")
+
+	assert.Equal(t, []string{"ARCHIVED/alpha", "ARCHIVED/alpha.wiki"}, repoDirs(t, w.out), "after the archive")
+	assert.Contains(t, out, "alpha.wiki: moved (archived)")
+
+	w.unarchiveRepo("alpha")
+	out = w.mustRun("--clone-wiki")
+
+	assert.Equal(t, []string{"alpha", "alpha.wiki"}, repoDirs(t, w.out), "after the unarchive")
+	assert.Contains(t, out, "alpha.wiki: moved (unarchived)")
+}
