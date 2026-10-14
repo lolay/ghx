@@ -164,7 +164,21 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 		previousRepos = m.Repos
 	}
 
-	ui.PrintRepoTable(repos)
+	// On a terminal the progress renderer draws the repo table itself, with a
+	// Status column that follows each repo, so it gets the repos in place of the
+	// static table. A dry run, a pipe and a file print the static table: there
+	// is no sync to follow, or no terminal to follow it on.
+	progress := ui.NewProgress()
+	lister, drawsTable := progress.(ui.RepoLister)
+	if drawsTable && !dryRun {
+		lister.SetRepos(repos)
+		// The table is closed once the passes are over, here also when a
+		// cancel or an error ends the run early: FinishTable does nothing the
+		// second time.
+		defer lister.FinishTable()
+	} else {
+		ui.PrintRepoTable(repos)
+	}
 
 	var removalSummary cloner.SyncSummary
 	if len(previousRepos) > 0 {
@@ -212,7 +226,7 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 		GitAuthor:   gitAuthor,
 		GitEmail:    gitEmail,
 		GitPath:     gitPath,
-		ProgressOut: ui.ProgressOut(),
+		Progress:    progress,
 	}
 
 	// Clones made by ghx before the token moved to git's environment hold it
@@ -232,12 +246,24 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 	}
 	summary.Results = append(summary.Results, cleanFailures...)
 
+	// The live table on a terminal is one piece from its top to its close, so
+	// nothing is printed between the passes: the archived rows already say
+	// "yes" under Archived, and the note on skipping them waits for the close.
+	// Without a terminal the notes print where they happen.
+	var afterTable string
 	if len(archivedRepos) > 0 {
 		if shouldDelete {
-			ui.Printf("Skipping %d archived repo(s) (--delete)\n", len(archivedRepos))
+			note := fmt.Sprintf("Skipping %d archived repo(s) (--delete)", len(archivedRepos))
+			if drawsTable {
+				afterTable = note
+			} else {
+				ui.Println(note)
+			}
 		} else {
-			ui.Printf("Cloning %d archived repo(s) into %s/...\n",
-				len(archivedRepos), archivedDir)
+			if !drawsTable {
+				ui.Printf("Cloning %d archived repo(s) into %s/...\n",
+					len(archivedRepos), archivedDir)
+			}
 			archivedOpts := baseOpts
 			archivedOpts.OutputDir = filepath.Join(outputDir, archivedDir)
 			archivedSummary, err := cloner.CloneRepos(ctx, archivedRepos, archivedOpts)
@@ -251,10 +277,26 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 	summary.Extend(removalSummary)
 	summary.Results = append(summary.Results, skippedLargeResults...)
 
+	// Before the summary, and before the manifest is written: the table shows
+	// the sync, and the summary that follows counts it.
+	if drawsTable && !dryRun {
+		lister.FinishTable()
+		if afterTable != "" {
+			ui.Println()
+			ui.Println(afterTable)
+		}
+	}
+
 	if err := manifest.Write(outputDir, org, allRepos); err != nil {
 		return fmt.Errorf("writing manifest: %w", err)
 	}
-	ui.PrintSummary(summary)
+	// The table's closing footer already holds the counts, so on a terminal
+	// only the lists that follow them are left to print.
+	if drawsTable && !dryRun {
+		ui.PrintSummaryLists(summary)
+	} else {
+		ui.PrintSummary(summary)
+	}
 	return nil
 }
 

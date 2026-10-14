@@ -2,13 +2,14 @@ package ui_test
 
 import (
 	"bytes"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/jedib0t/go-pretty/v6/text"
+	"github.com/pterm/pterm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -18,9 +19,14 @@ import (
 )
 
 // TestMain turns go-pretty's ANSI colors off so output compares as plain
-// text whatever terminal or CI runner the tests run under.
+// text whatever terminal or CI runner the tests run under. It also gives pterm
+// a terminal of 1000 by 1000 before any test starts a renderer: pterm's area
+// printer wraps its lines at the width of os.Stdout, which under `go test` is
+// a pipe or whatever terminal the developer has, and the table renderer's
+// tests set the width of their own terminal.
 func TestMain(m *testing.M) {
 	text.DisableColors()
+	pterm.SetForcedTerminalSize(1000, 1000)
 	os.Exit(m.Run())
 }
 
@@ -113,7 +119,7 @@ func TestPrintSummary_CountsActionsAndListsFailedAndFetchedOnly(t *testing.T) {
 		assert.NotContains(t, out, string(absent), "zero-count action %q should have no row", absent)
 	}
 	assert.Contains(t, out, "Failed repos:\n  ✗ d  exit status 128\n  ✗ f  timeout\n")
-	assert.Contains(t, out, "Fetched only (working tree not updated):\n  ⚠ e  local changes\n")
+	assert.Contains(t, out, "Fetched only (working tree not updated):\n  ⇣ e  local changes\n")
 }
 
 func TestPrintSummary_ListsUnusableNamesWithTheReason(t *testing.T) {
@@ -166,7 +172,7 @@ func TestPrintSummary_PutsAGlyphOnEachCountsRowThatNeedsAttention(t *testing.T) 
 
 	out := buf.String()
 	assert.Regexp(t, `✗ failed\s+│\s+1\s+│`, out)
-	assert.Regexp(t, `⚠ fetched only\s+│\s+1\s+│`, out)
+	assert.Regexp(t, `⇣ fetched only\s+│\s+1\s+│`, out)
 	assert.Regexp(t, `✗ failed wiki\s+│\s+1\s+│`, out)
 	assert.Regexp(t, `│ pulled\s+│\s+1\s+│`, out, "an action that needs nothing has no glyph")
 	assert.Contains(t, out, "Failed repos:\n  ✗ a  boom\n  ✗ c.wiki  could not resolve host\n",
@@ -191,16 +197,51 @@ func TestPrintSummary_NotesNameCloneAndPullDetails(t *testing.T) {
 	assert.NotContains(t, out, "quiet  ", "a pull with no detail is not a note")
 }
 
-func TestSetupTerminal_DrawsProgressOnlyOnATerminal(t *testing.T) {
+func TestPrintSummaryLists_PrintsTheListsWithoutTheCountsTable(t *testing.T) {
 	buf := captureOut(t)
+	summary := cloner.SyncSummary{Results: []cloner.RepoResult{
+		{Name: "a", Action: cloner.ActionCloned},
+		{Name: "d", Action: cloner.ActionFailed, Detail: "exit status 128"},
+		{Name: "e", Action: cloner.ActionFetchedOnly, Detail: "local changes to tracked files"},
+		{Name: "CON", Action: cloner.ActionSkippedName, Detail: "a reserved device name on Windows"},
+	}}
+
+	ui.PrintSummaryLists(summary)
+
+	out := buf.String()
+	assert.NotContains(t, out, "Sync Summary")
+	assert.NotContains(t, out, "Count")
+	assert.True(t, strings.HasPrefix(out, "\n"), "a blank line sets the lists off from the table above")
+	assert.Contains(t, out, "Failed repos:\n  ✗ d  exit status 128\n")
+	assert.Contains(t, out, "Fetched only (working tree not updated):\n  ⇣ e  local changes to tracked files\n")
+	assert.Contains(t, out, "Skipped (unusable name):\n  ⚠ CON  a reserved device name on Windows\n")
+
+	// What follows the counts table in PrintSummary is the same text.
+	full := captureOut(t)
+	ui.PrintSummary(summary)
+	assert.True(t, strings.HasSuffix(full.String(), strings.TrimPrefix(out, "\n")))
+}
+
+func TestPrintSummaryLists_PrintsNothingWhenThereIsNothingToList(t *testing.T) {
+	buf := captureOut(t)
+
+	ui.PrintSummaryLists(cloner.SyncSummary{Results: []cloner.RepoResult{
+		{Name: "a", Action: cloner.ActionPulled},
+	}})
+
+	assert.Empty(t, buf.String())
+}
+
+func TestSetupTerminal_DrawsProgressOnlyOnATerminal(t *testing.T) {
+	captureOut(t)
 	t.Cleanup(ui.ResetTerminal)
-	assert.Same(t, buf, ui.ProgressOut(), "before setup, progress draws on Out")
+	assert.NotEqual(t, cloner.NoProgress{}, ui.NewProgress(), "before setup, progress draws")
 
 	file, err := os.Create(filepath.Join(t.TempDir(), "log.txt"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = file.Close() })
 	ui.SetupTerminal(file)
-	assert.Equal(t, io.Discard, ui.ProgressOut(), "a file gets no progress bar")
+	assert.Equal(t, cloner.NoProgress{}, ui.NewProgress(), "a file gets no progress bar")
 
 	// The null device is a character device, as a console is, on every OS.
 	null, err := os.Open(os.DevNull)
@@ -208,10 +249,36 @@ func TestSetupTerminal_DrawsProgressOnlyOnATerminal(t *testing.T) {
 	t.Cleanup(func() { _ = null.Close() })
 	ui.SetupTerminal(null)
 	if text.ANSICodesSupported {
-		assert.Same(t, buf, ui.ProgressOut(), "a terminal that takes ANSI codes gets the bar")
+		assert.NotEqual(t, cloner.NoProgress{}, ui.NewProgress(), "a terminal that takes ANSI codes gets the bar")
 	} else {
-		assert.Equal(t, io.Discard, ui.ProgressOut(), "a console without ANSI support gets no bar")
+		assert.Equal(t, cloner.NoProgress{}, ui.NewProgress(), "a console without ANSI support gets no bar")
 	}
+}
+
+func TestNewProgress_AFileGetsNoProgress(t *testing.T) {
+	captureOut(t)
+	t.Cleanup(ui.ResetTerminal)
+	file, err := os.Create(filepath.Join(t.TempDir(), "log.txt"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = file.Close() })
+	ui.SetupTerminal(file)
+
+	assert.Equal(t, cloner.NoProgress{}, ui.NewProgress())
+	_, ok := ui.NewProgress().(ui.RepoLister)
+	assert.False(t, ok, "no progress means the run flow prints the static table")
+}
+
+func TestNewProgress_ATerminalGetsTheTableThatListsRepos(t *testing.T) {
+	captureOut(t)
+	t.Cleanup(ui.ResetTerminal)
+	ui.ResetTerminal()
+
+	p := ui.NewProgress()
+
+	assert.NotEqual(t, cloner.NoProgress{}, p)
+	_, ok := p.(ui.RepoLister)
+	assert.True(t, ok, "the renderer draws the repo table itself")
+	assert.IsType(t, ui.NewProgress(), p, "the same renderer each time")
 }
 
 func TestPrintRepoTable_FormatsEachColumn(t *testing.T) {

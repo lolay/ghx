@@ -5,33 +5,49 @@ package cli
 
 import (
 	"context"
-	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/charmbracelet/colorprofile"
+	"github.com/charmbracelet/fang"
 	"github.com/spf13/cobra"
 
 	"github.com/lolay/ghx/internal/buildinfo"
 	"github.com/lolay/ghx/internal/ui"
 )
 
-// Execute runs the ghx command with the given arguments (typically
-// os.Args[1:]) and returns an exit code suitable for os.Exit.
+// Execute runs the ghx command with the process's arguments and returns an
+// exit code suitable for os.Exit: 0 on success, 1 on any error.
 func Execute() int {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	ui.SetupTerminal(os.Stdout)
 
-	cmd := newRootCmd()
-	cmd.SilenceUsage = true
-	cmd.SilenceErrors = true
-	if err := cmd.ExecuteContext(ctx); err != nil {
-		fmt.Fprintln(os.Stderr, "Error:", err)
+	return execute(ctx, newRootCmd())
+}
+
+// execute runs cmd through fang, which styles the help and prints the error
+// itself, so no caller prints it again. ctx carries the signal handling.
+func execute(ctx context.Context, cmd *cobra.Command) int {
+	// NO_COLOR asks for no colour, which fang's own detection reads as "keep
+	// bold and resets", still escape codes; strip them all.
+	if os.Getenv("NO_COLOR") != "" {
+		cmd.SetOut(plainWriter(cmd.OutOrStdout()))
+		cmd.SetErr(plainWriter(cmd.ErrOrStderr()))
+	}
+	if err := fang.Execute(ctx, cmd, fang.WithVersion(buildinfo.String())); err != nil {
 		return 1
 	}
 	return 0
+}
+
+// plainWriter returns a writer that drops every ANSI escape sequence before
+// writing to w.
+func plainWriter(w io.Writer) io.Writer {
+	return &colorprofile.Writer{Forward: w, Profile: colorprofile.NoTTY}
 }
 
 // flags is the raw flag state. Pointer-value helpers are used for
@@ -60,9 +76,18 @@ func newRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "ghx <ORG> <PATH>",
 		Short: "Export and sync all GitHub repos for an organization",
-		Args:  cobra.ExactArgs(2),
+		Example: `  # Preview what would be cloned, without touching the disk
+  ghx --dry-run acme ~/src/acme
+
+  # Clone over SSH instead of HTTPS
+  ghx --ssh acme ~/src/acme
+
+  # Only repos whose names match a pattern
+  ghx --include '^(api|web)-' acme ~/src/acme`,
+		Args: cobra.ExactArgs(2),
 		// Setting Version gives the command --version (and -v); cobra handles
-		// it before checking the two required arguments.
+		// it before checking the two required arguments. fang sets it again
+		// from the same string.
 		Version: buildinfo.String(),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return run(cmd, args, f)

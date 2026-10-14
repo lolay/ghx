@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -40,7 +41,78 @@ func (f fixture) repo(t *testing.T, name, branch string) ghapi.RepoInfo {
 }
 
 func (f fixture) opts() cloner.Options {
-	return cloner.Options{OutputDir: f.out, Concurrency: 1, ProgressOut: io.Discard}
+	return cloner.Options{OutputDir: f.out, Concurrency: 1, Progress: cloner.NoProgress{}}
+}
+
+// progressEvent is one call a recordingProgress heard.
+type progressEvent struct {
+	kind   string // "start", "started", "done" or "stop"
+	name   string
+	action string
+	total  int
+	result cloner.RepoResult
+}
+
+// recordingProgress is a cloner.Progress that logs each call in order. Its
+// mutex is what the interface demands of every implementation.
+type recordingProgress struct {
+	// onStarted, when set, runs inside each RepoStarted call.
+	onStarted func()
+
+	mu     sync.Mutex
+	events []progressEvent
+}
+
+func (r *recordingProgress) record(e progressEvent) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, e)
+}
+
+func (r *recordingProgress) Start(total int) { r.record(progressEvent{kind: "start", total: total}) }
+
+func (r *recordingProgress) RepoStarted(name, action string) {
+	r.record(progressEvent{kind: "started", name: name, action: action})
+	if r.onStarted != nil {
+		r.onStarted()
+	}
+}
+
+func (r *recordingProgress) RepoDone(res cloner.RepoResult, _ time.Duration) {
+	r.record(progressEvent{kind: "done", name: res.Name, result: res})
+}
+
+func (r *recordingProgress) Stop() { r.record(progressEvent{kind: "stop"}) }
+
+// kind returns the events of one kind, in the order they arrived.
+func (r *recordingProgress) kind(k string) []progressEvent {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []progressEvent
+	for _, e := range r.events {
+		if e.kind == k {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// requireBracketed fails unless the first event is Start and the last is the
+// only Stop.
+func (r *recordingProgress) requireBracketed(t *testing.T, total int) {
+	t.Helper()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	require.NotEmpty(t, r.events)
+	assert.Equal(t, progressEvent{kind: "start", total: total}, r.events[0], "Start comes first, with the repo count")
+	assert.Equal(t, "stop", r.events[len(r.events)-1].kind, "Stop comes last")
+	stops := 0
+	for _, e := range r.events {
+		if e.kind == "stop" {
+			stops++
+		}
+	}
+	assert.Equal(t, 1, stops, "Stop is called exactly once")
 }
 
 // actionsByName groups a summary's actions by repo name; with concurrency
@@ -205,6 +277,129 @@ func TestCloneRepos_StopsOnACancelledContext(t *testing.T) {
 	summary, err := cloner.CloneRepos(ctx, repos, f.opts())
 	require.ErrorIs(t, err, context.Canceled)
 	assert.Less(t, len(summary.Results), len(repos), "a cancelled run stops handing out repos")
+}
+
+func TestCloneRepos_ReportsProgress(t *testing.T) {
+	tests := []struct {
+		name        string
+		concurrency int
+	}{
+		{"one worker", 1},
+		{"several workers", 4},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFixture(t)
+			var repos []ghapi.RepoInfo
+			for i := range 6 {
+				repos = append(repos, f.repo(t, fmt.Sprintf("repo-%d", i), "main"))
+			}
+			opts := f.opts()
+			opts.Concurrency = tt.concurrency
+			rec := &recordingProgress{}
+			opts.Progress = rec
+
+			_, err := cloner.CloneRepos(t.Context(), repos, opts)
+			require.NoError(t, err)
+			rec.requireBracketed(t, len(repos))
+			assert.Len(t, rec.kind("started"), len(repos))
+			assert.Len(t, rec.kind("done"), len(repos), "one RepoDone per repo")
+			for _, e := range rec.kind("started") {
+				assert.Equal(t, cloner.ProgressClone, e.action, e.name)
+			}
+			for _, e := range rec.kind("done") {
+				assert.Equal(t, cloner.ActionCloned, e.result.Action, e.name)
+			}
+
+			// The second run finds a clone of each and pulls; nothing new came
+			// in, so each is up to date.
+			again := &recordingProgress{}
+			opts.Progress = again
+			_, err = cloner.CloneRepos(t.Context(), repos, opts)
+			require.NoError(t, err)
+			again.requireBracketed(t, len(repos))
+			for _, e := range again.kind("started") {
+				assert.Equal(t, cloner.ProgressPull, e.action, e.name)
+			}
+			for _, e := range again.kind("done") {
+				assert.Equal(t, cloner.ActionUpToDate, e.result.Action, e.name)
+			}
+		})
+	}
+}
+
+func TestCloneRepos_ReportsEachRepoOnceWhateverItsResult(t *testing.T) {
+	f := newFixture(t)
+	good := f.repo(t, "app", "main")
+	wiki := f.repo(t, "docs", "main")
+	wiki.HasWiki = true
+	gittest.NewBareRepo(t, f.upstream, "docs.wiki", "master")
+	broken := ghapi.RepoInfo{Name: "ghost", CloneURL: filepath.Join(f.upstream, "ghost.git"), DefaultBranch: "main"}
+	unusable := ghapi.RepoInfo{Name: "..", CloneURL: filepath.Join(f.upstream, "app.git"), DefaultBranch: "main"}
+	opts := f.opts()
+	opts.CloneWiki = true
+	rec := &recordingProgress{}
+	opts.Progress = rec
+
+	_, err := cloner.CloneRepos(t.Context(), []ghapi.RepoInfo{good, wiki, broken, unusable}, opts)
+	require.NoError(t, err)
+
+	rec.requireBracketed(t, 4)
+	done := map[string]cloner.Action{}
+	for _, e := range rec.kind("done") {
+		_, dup := done[e.name]
+		assert.False(t, dup, "%s reported twice", e.name)
+		done[e.name] = e.result.Action
+	}
+	assert.Equal(t, map[string]cloner.Action{
+		"app":   cloner.ActionCloned,
+		"docs":  cloner.ActionCloned, // the repo's own result; its wiki adds none of its own
+		"ghost": cloner.ActionFailed,
+		"..":    cloner.ActionSkippedName,
+	}, done)
+	var started []string
+	for _, e := range rec.kind("started") {
+		started = append(started, e.name)
+	}
+	assert.ElementsMatch(t, []string{"app", "docs", "ghost"}, started, "an unusable name is skipped before it starts")
+}
+
+func TestCloneRepos_StopsProgressWhenTheContextEndsMidRun(t *testing.T) {
+	f := newFixture(t)
+	gitPath, err := cloner.FindGit(t.Context())
+	require.NoError(t, err)
+	var repos []ghapi.RepoInfo
+	for i := range 20 {
+		repos = append(repos, ghapi.RepoInfo{
+			Name:          fmt.Sprintf("repo-%d", i),
+			CloneURL:      filepath.Join(f.upstream, fmt.Sprintf("repo-%d.git", i)),
+			DefaultBranch: "main",
+		})
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	opts := f.opts()
+	opts.GitPath = gitPath
+	opts.Concurrency = 3
+	rec := &recordingProgress{onStarted: cancel}
+	opts.Progress = rec
+
+	_, err = cloner.CloneRepos(ctx, repos, opts)
+	require.ErrorIs(t, err, context.Canceled)
+	rec.requireBracketed(t, len(repos))
+	assert.NotEmpty(t, rec.kind("started"))
+	assert.Less(t, len(rec.kind("done")), len(repos), "repos not yet handed out are never reported")
+}
+
+func TestCloneRepos_NoReposNeverStartsProgress(t *testing.T) {
+	f := newFixture(t)
+	opts := f.opts()
+	rec := &recordingProgress{}
+	opts.Progress = rec
+
+	_, err := cloner.CloneRepos(t.Context(), nil, opts)
+	require.NoError(t, err)
+	assert.Empty(t, rec.events, "with nothing to sync there is nothing to draw")
 }
 
 func TestCloneRepos_Wikis(t *testing.T) {
@@ -395,7 +590,7 @@ func TestMoveRepo(t *testing.T) {
 		// An earlier move left a clone behind, with its read-only git objects.
 		stale := filepath.Join(target, "app")
 		_, err = cloner.CloneRepos(t.Context(), []ghapi.RepoInfo{repo}, cloner.Options{
-			OutputDir: target, Concurrency: 1, ProgressOut: io.Discard,
+			OutputDir: target, Concurrency: 1, Progress: cloner.NoProgress{},
 		})
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(stale, "old.txt"), []byte("old\n"), 0o644))

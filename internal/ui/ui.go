@@ -23,12 +23,14 @@ import (
 var Out io.Writer = os.Stdout
 
 // glyphs marks each action that needs attention, in the summary's counts table
-// and beside each repo it lists. The words always come with the glyph, so a
+// and beside each repo it lists; the table's Status marks (statusMark) follow
+// it, so the two agree. Fetched only is the dashed down arrow, "partly
+// downloaded". The words always come with the glyph, so a
 // font without it, or output piped to a file, still reads.
 var glyphs = map[cloner.Action]string{
 	cloner.ActionFailed:       "✗",
 	cloner.ActionFailedWiki:   "✗",
-	cloner.ActionFetchedOnly:  "⚠",
+	cloner.ActionFetchedOnly:  "⇣",
 	cloner.ActionSkippedEmpty: "∅",
 	cloner.ActionSkippedName:  "⚠",
 }
@@ -36,15 +38,15 @@ var glyphs = map[cloner.Action]string{
 // noteGlyph marks a repo that synced but has something to say.
 const noteGlyph = "·"
 
-// animate is whether progress bars draw on Out; SetupTerminal decides.
+// animate is whether the live table draws on Out; SetupTerminal decides.
 var animate = true
 
 // SetupTerminal decides, once at startup, whether f (os.Stdout) can show the
-// animated progress bar: it must be a terminal that takes ANSI escape codes,
-// since the bar redraws itself with cursor movements. go-pretty has by now
-// turned on virtual terminal processing for a Windows console, or turned
-// colors off where it couldn't (text.ANSICodesSupported); a pipe or a file
-// gets no bar, so a log isn't full of redraws.
+// live table: it must be a terminal that takes ANSI escape codes, since the
+// table redraws itself with cursor movements. go-pretty has by now turned on
+// virtual terminal processing for a Windows console, or turned colors off
+// where it couldn't (text.ANSICodesSupported); a pipe or a file gets no table,
+// so a log isn't full of redraws.
 func SetupTerminal(f *os.File) {
 	animate = text.ANSICodesSupported && isTerminal(f)
 }
@@ -52,15 +54,6 @@ func SetupTerminal(f *os.File) {
 func isTerminal(f *os.File) bool {
 	info, err := f.Stat()
 	return err == nil && info.Mode()&os.ModeCharDevice != 0
-}
-
-// ProgressOut is where progress bars render: Out on an interactive terminal,
-// io.Discard otherwise.
-func ProgressOut() io.Writer {
-	if animate {
-		return Out
-	}
-	return io.Discard
 }
 
 // Printf formats to Out and drops the write error: there is nothing useful to
@@ -112,47 +105,121 @@ func ObfuscateToken(tok string) string {
 	return tok[:4] + "****" + tok[len(tok)-4:]
 }
 
+// repoColumn is one column of the "Repos to export" table.
+type repoColumn struct {
+	title string
+	cell  func(ghapi.RepoInfo) any
+	right bool
+}
+
+// Indexes into repoColumns, for the columns the live table drops to fit.
+const (
+	columnLanguage = 2
+	columnBranch   = 4
+	columnArchived = 5
+	columnPushed   = 6
+)
+
+// repoColumns lists the table's columns in the order they are shown.
+var repoColumns = []repoColumn{
+	{title: "Name", cell: func(r ghapi.RepoInfo) any { return text.FgCyan.Sprint(r.Name) }},
+	{title: "Visibility", cell: func(r ghapi.RepoInfo) any {
+		if r.Private {
+			return "private"
+		}
+		return "public"
+	}},
+	{title: "Language", cell: func(r ghapi.RepoInfo) any { return orDash(r.Language) }},
+	{title: "Size (MB)", right: true, cell: func(r ghapi.RepoInfo) any {
+		return fmt.Sprintf("%.1f", float64(r.SizeKB)/1024)
+	}},
+	{title: "Default Branch", cell: func(r ghapi.RepoInfo) any { return r.DefaultBranch }},
+	{title: "Archived", cell: func(r ghapi.RepoInfo) any {
+		if r.Archived {
+			return "yes"
+		}
+		return "no"
+	}},
+	{title: "Last Pushed", cell: func(r ghapi.RepoInfo) any { return orDash(r.PushedAt) }},
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
+}
+
+// repoTable builds the "Repos to export" table from the columns of
+// repoColumns that cols names, in that order. A non-nil status adds a Status
+// column after them, one cell per repo. A non-nil widths fixes the width of
+// each column (cols in order, then Status) and cuts a cell that is wider with
+// "…", so what is drawn never changes the table's width.
+func repoTable(cols []int, repos []ghapi.RepoInfo, status []string, widths []int) table.Writer {
+	tw := table.NewWriter()
+	tw.SetTitle("Repos to export")
+	header := make(table.Row, 0, len(cols)+1)
+	var configs []table.ColumnConfig
+	fix := func(cfg table.ColumnConfig, n int) table.ColumnConfig {
+		if widths != nil {
+			cfg.WidthMin, cfg.WidthMax = widths[n], widths[n]
+			// The header is laid out with no rows (see tableLayout), where
+			// go-pretty has no cells to take its alignment from.
+			cfg.AlignHeader = cfg.Align
+			if cfg.Align == text.AlignDefault {
+				cfg.AlignHeader = text.AlignLeft
+			}
+		}
+		return cfg
+	}
+	for n, c := range cols {
+		header = append(header, repoColumns[c].title)
+		cfg := table.ColumnConfig{Number: n + 1}
+		if repoColumns[c].right {
+			cfg.Align = text.AlignRight
+		}
+		configs = append(configs, fix(cfg, n))
+	}
+	cell := func(v any, n int) any {
+		if widths == nil {
+			return v
+		}
+		return truncate(fmt.Sprint(v), widths[n])
+	}
+	if status != nil {
+		header = append(header, "Status")
+		configs = append(configs, fix(table.ColumnConfig{Number: len(cols) + 1}, len(cols)))
+	}
+	tw.AppendHeader(header)
+	for i, r := range repos {
+		row := make(table.Row, 0, len(cols)+1)
+		for n, c := range cols {
+			row = append(row, cell(repoColumns[c].cell(r), n))
+		}
+		if status != nil {
+			row = append(row, cell(status[i], len(cols)))
+		}
+		tw.AppendRow(row)
+	}
+	tw.SetColumnConfigs(configs)
+	tw.SetStyle(table.StyleLight)
+	return tw
+}
+
+// allColumns is every column of the table, in order.
+func allColumns() []int {
+	cols := make([]int, len(repoColumns))
+	for i := range cols {
+		cols[i] = i
+	}
+	return cols
+}
+
 // PrintRepoTable renders the "Repos to export" table shown before
 // cloning begins.
 func PrintRepoTable(repos []ghapi.RepoInfo) {
-	tw := table.NewWriter()
+	tw := repoTable(allColumns(), repos, nil, nil)
 	tw.SetOutputMirror(Out)
-	tw.SetTitle("Repos to export")
-	tw.AppendHeader(table.Row{
-		"Name", "Visibility", "Language", "Size (MB)",
-		"Default Branch", "Archived", "Last Pushed",
-	})
-	for _, r := range repos {
-		visibility := "public"
-		if r.Private {
-			visibility = "private"
-		}
-		language := r.Language
-		if language == "" {
-			language = "-"
-		}
-		pushed := r.PushedAt
-		if pushed == "" {
-			pushed = "-"
-		}
-		archived := "no"
-		if r.Archived {
-			archived = "yes"
-		}
-		tw.AppendRow(table.Row{
-			text.FgCyan.Sprint(r.Name),
-			visibility,
-			language,
-			fmt.Sprintf("%.1f", float64(r.SizeKB)/1024),
-			r.DefaultBranch,
-			archived,
-			pushed,
-		})
-	}
-	tw.SetColumnConfigs([]table.ColumnConfig{
-		{Number: 4, Align: text.AlignRight},
-	})
-	tw.SetStyle(table.StyleLight)
 
 	Println()
 	tw.Render()
@@ -191,6 +258,35 @@ func PrintSummary(summary cloner.SyncSummary) {
 	tw.Render()
 	Println()
 
+	printSummaryLists(summary)
+}
+
+// PrintSummaryLists prints only the sections that follow PrintSummary's counts,
+// after a blank line, and nothing at all when none has a row. The table
+// renderer's closing footer already holds the counts, so the run flow calls
+// this in place of PrintSummary after it.
+func PrintSummaryLists(summary cloner.SyncSummary) {
+	if !slices.ContainsFunc(summary.Results, listed) {
+		return
+	}
+	Println()
+	printSummaryLists(summary)
+}
+
+// listed reports whether r has a line in one of the summary's sections.
+func listed(r cloner.RepoResult) bool {
+	switch r.Action {
+	case cloner.ActionFailed, cloner.ActionFailedWiki, cloner.ActionFetchedOnly,
+		cloner.ActionSkippedEmpty, cloner.ActionSkippedName:
+		return true
+	case cloner.ActionCloned, cloner.ActionPulled:
+		return r.Detail != ""
+	}
+	return false
+}
+
+// printSummaryLists prints each section that has rows.
+func printSummaryLists(summary cloner.SyncSummary) {
 	printSection("Failed repos:", text.FgRed, summary.Results, "", cloner.ActionFailed, cloner.ActionFailedWiki)
 	printSection("Fetched only (working tree not updated):", text.FgYellow, summary.Results, "", cloner.ActionFetchedOnly)
 	printSection("Skipped (empty):", text.Faint, summary.Results, "empty repository, skipped", cloner.ActionSkippedEmpty)

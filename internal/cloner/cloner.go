@@ -4,15 +4,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/jedib0t/go-pretty/v6/progress"
 
 	"github.com/lolay/ghx/internal/ghapi"
 )
@@ -31,14 +28,13 @@ type Options struct {
 	// GitPath is the git executable, normally from FindGit. When empty,
 	// CloneRepos calls FindGit itself.
 	GitPath string
-	// ProgressOut is the io.Writer the progress bar renders to.
-	// Defaults to os.Stdout when nil.
-	ProgressOut io.Writer
+	// Progress receives sync events for display. Nil means NoProgress.
+	Progress Progress
 }
 
 // CloneRepos clones or pulls every repo in repos concurrently, bounded
-// by opts.Concurrency, and returns the aggregate SyncSummary. A single
-// progress tracker advances as each repo finishes.
+// by opts.Concurrency, and returns the aggregate SyncSummary. opts.Progress
+// hears about each repo as it starts and finishes.
 func CloneRepos(ctx context.Context, repos []ghapi.RepoInfo, opts Options) (SyncSummary, error) {
 	summary := SyncSummary{}
 	if err := os.MkdirAll(opts.OutputDir, 0o755); err != nil {
@@ -59,27 +55,14 @@ func CloneRepos(ctx context.Context, repos []ghapi.RepoInfo, opts Options) (Sync
 		concurrency = 1
 	}
 
-	progressOut := opts.ProgressOut
-	if progressOut == nil {
-		progressOut = os.Stdout
+	prog := opts.Progress
+	if prog == nil {
+		prog = NoProgress{}
 	}
-
-	pw := progress.NewWriter()
-	pw.SetOutputWriter(progressOut)
-	pw.SetAutoStop(true)
-	pw.SetUpdateFrequency(100 * time.Millisecond)
-	pw.SetTrackerLength(25)
-	pw.SetNumTrackersExpected(1)
-	pw.Style().Visibility.ETA = false
-	pw.Style().Visibility.ETAOverall = false
-	go pw.Render()
-
-	tracker := &progress.Tracker{
-		Message: "Syncing repos",
-		Total:   int64(len(repos)),
-		Units:   progress.UnitsDefault,
-	}
-	pw.AppendTracker(tracker)
+	prog.Start(len(repos))
+	// Stop runs on every path out, including a cancelled context, so the
+	// renderer always releases the terminal.
+	defer prog.Stop()
 
 	type job struct{ repo ghapi.RepoInfo }
 	jobs := make(chan job)
@@ -92,11 +75,15 @@ func CloneRepos(ctx context.Context, repos []ghapi.RepoInfo, opts Options) (Sync
 		go func() {
 			defer wg.Done()
 			for j := range jobs {
+				start := time.Now()
+				if CheckRepoName(j.repo.Name) == nil {
+					prog.RepoStarted(j.repo.Name, plannedAction(opts, j.repo))
+				}
 				results := processRepo(ctx, git, j.repo, opts)
 				mu.Lock()
 				summary.Results = append(summary.Results, results...)
 				mu.Unlock()
-				tracker.Increment(1)
+				prog.RepoDone(results[0], time.Since(start))
 			}
 		}()
 	}
@@ -106,7 +93,6 @@ func CloneRepos(ctx context.Context, repos []ghapi.RepoInfo, opts Options) (Sync
 		case <-ctx.Done():
 			close(jobs)
 			wg.Wait()
-			tracker.MarkAsErrored()
 			return summary, ctx.Err()
 		case jobs <- job{repo: r}:
 		}
@@ -114,12 +100,16 @@ func CloneRepos(ctx context.Context, repos []ghapi.RepoInfo, opts Options) (Sync
 	close(jobs)
 	wg.Wait()
 
-	// Give the renderer a moment to flush the final frame.
-	for pw.IsRenderInProgress() {
-		time.Sleep(50 * time.Millisecond)
-	}
-
 	return summary, nil
+}
+
+// plannedAction is what processRepo will do to repo: pull when a clone is
+// already there, clone otherwise.
+func plannedAction(opts Options, repo ghapi.RepoInfo) string {
+	if hasGitDir(filepath.Join(opts.OutputDir, repo.Name)) {
+		return ProgressPull
+	}
+	return ProgressClone
 }
 
 func processRepo(ctx context.Context, git gitRunner, repo ghapi.RepoInfo, opts Options) []RepoResult {

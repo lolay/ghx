@@ -20,7 +20,7 @@ ghx is a Go CLI that clones and syncs every repository of a GitHub organization.
 | `internal/buildinfo/` | The build version `ghx --version` prints, stamped by `make build` with `-ldflags -X` |
 | `version.txt`, `scripts/bump_version.py` | The last released version, and the release step's bump script (copied unchanged from the `personal-release` template) |
 | `internal/gittest/`, `internal/ghapi/ghapitest/` | Test helpers: local bare git repos, and a fake GitHub API on loopback |
-| `specs/` | Specs; [`specs/testing.md`](./specs/testing.md) records test layout and seams |
+| `specs/` | Specs; [`specs/testing.md`](./specs/testing.md) records test layout and seams, [`specs/terminal-output.md`](./specs/terminal-output.md) the live repo table and help output |
 | `specs/handoffs/` | Plan and handoff scratch (see below) |
 | `Makefile`, [`Makefile.md`](./Makefile.md) | The build, lint and test verbs and their reference |
 
