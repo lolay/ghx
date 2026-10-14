@@ -1,9 +1,9 @@
 ```
 --- KICKOFF: begin orchestration at [deep] ---
 
-  Status: 0/2 groups done | last review: — | current: ghx m1 s1 [deep] | BLOCKED at gate mode | updated 2026-10-14
+  Status: 0/2 groups done | last review: — | current: ghx m1 s1 [deep] | updated 2026-10-14
 
-  mode: pending | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch claude/fervent-heisenberg-72nmt2) | guard 3x min $50 | fixups 2
+  mode: unattended | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch claude/fervent-heisenberg-72nmt2) | guard 3x min $50 | fixups 2 | confirmed 2026-10-14 session db99f13c-13a7-5420-b626-79e0efa04ff4: Unattended (Recommended)
 
   review: every-wave (log-only)
 
@@ -14,6 +14,7 @@
   Prompt to paste into the next chat:
     In lolay/ghx, read specs/handoffs/plan-archive-reconcile-heron.md. The plan is already tagged.
     On branch claude/fervent-heisenberg-72nmt2 (task branch): subagents commit each finished step.
+    Run in unattended mode.
     Run the personal-plan-orchestrate skill from the top: walk to
     each tier boundary, dispatch subagents per the skill's
     procedure, and pause only where the recorded mode stops. Do not

@@ -6,16 +6,16 @@ Scratch for the orchestrate run of
 
 - **Branch:** `claude/fervent-heisenberg-72nmt2` in `lolay/ghx` (assigned by the
   cloud session; cut from `main` at `9785f6f`).
-- **Mode:** pending. Proposed unattended (`harness=claude-code runner=cloud`).
+- **Mode:** unattended, confirmed 2026-10-14 in session db99f13c (dialog: "Unattended (Recommended)", "This session (Recommended)").
 - **Done:** nothing yet. 0/2 waves.
-- **Spend:** ~$0 of ~$8.0 expected (guard: $50).
+- **Spend:** ~$3.0 (kickoff) of ~$8.0 expected (guard: $50).
 - **Next unit:** wave 1 [deep] ghx m1 s1, reconcile clone location with archived
   state.
 - **Resume:** paste the plan's Kickoff prompt into a new session.
 
 ## Pending question
 
-The kickoff question: unattended or gated, and this session or a new one.
+None. Wave 1 is next.
 
 ## Decisions so far
 
