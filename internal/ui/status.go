@@ -17,9 +17,9 @@ import (
 // clone that was only fetched, so it is partly downloaded. An action the
 // summary marks (glyphs) keeps that glyph: a red cross for a failure, a faint
 // empty set for an empty repo, a yellow warning sign for a name that can't be
-// used. Any other skip gets the warning sign too. The pterm and table
-// renderers share it, so they look alike, and every symbol is one terminal
-// column wide: the table's fixed Status width counts on it.
+// used. Any other skip gets the warning sign too. The table renderer draws
+// it, and every symbol is one terminal column wide: the table's fixed Status
+// width counts on it.
 func statusMark(action cloner.Action) (symbol string, color pterm.Color) {
 	g, marked := glyphs[action]
 	switch {
