@@ -122,7 +122,7 @@ func TestPrintSummary_CountsActionsAndListsFailedAndFetchedOnly(t *testing.T) {
 		assert.NotContains(t, out, string(absent), "zero-count action %q should have no row", absent)
 	}
 	assert.Contains(t, out, "Failed repos:\n  ✗ d  exit status 128\n  ✗ f  timeout\n")
-	assert.Contains(t, out, "Fetched only (working tree not updated):\n  ⚠ e  local changes\n")
+	assert.Contains(t, out, "Fetched only (working tree not updated):\n  ⇣ e  local changes\n")
 }
 
 func TestPrintSummary_ListsUnusableNamesWithTheReason(t *testing.T) {
@@ -175,7 +175,7 @@ func TestPrintSummary_PutsAGlyphOnEachCountsRowThatNeedsAttention(t *testing.T) 
 
 	out := buf.String()
 	assert.Regexp(t, `✗ failed\s+│\s+1\s+│`, out)
-	assert.Regexp(t, `⚠ fetched only\s+│\s+1\s+│`, out)
+	assert.Regexp(t, `⇣ fetched only\s+│\s+1\s+│`, out)
 	assert.Regexp(t, `✗ failed wiki\s+│\s+1\s+│`, out)
 	assert.Regexp(t, `│ pulled\s+│\s+1\s+│`, out, "an action that needs nothing has no glyph")
 	assert.Contains(t, out, "Failed repos:\n  ✗ a  boom\n  ✗ c.wiki  could not resolve host\n",
@@ -216,7 +216,7 @@ func TestPrintSummaryLists_PrintsTheListsWithoutTheCountsTable(t *testing.T) {
 	assert.NotContains(t, out, "Count")
 	assert.True(t, strings.HasPrefix(out, "\n"), "a blank line sets the lists off from the table above")
 	assert.Contains(t, out, "Failed repos:\n  ✗ d  exit status 128\n")
-	assert.Contains(t, out, "Fetched only (working tree not updated):\n  ⚠ e  local changes to tracked files\n")
+	assert.Contains(t, out, "Fetched only (working tree not updated):\n  ⇣ e  local changes to tracked files\n")
 	assert.Contains(t, out, "Skipped (unusable name):\n  ⚠ CON  a reserved device name on Windows\n")
 
 	// What follows the counts table in PrintSummary is the same text.

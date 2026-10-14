@@ -245,12 +245,64 @@ func TestTableProgress_FinishedRowsStreamIntoOneTableInCompletionOrder(t *testin
 	require.GreaterOrEqual(t, len(lines), 3)
 	rule, footer, bottom := lines[len(lines)-3], lines[len(lines)-2], lines[len(lines)-1]
 	assert.True(t, strings.HasPrefix(rule, "├") && strings.Contains(rule, "┴"), rule)
-	assert.Regexp(t, `^│ 12 repos · ✓ 6 · ⚠ 3 not updated · ✗ 3 failed · \d+s +│$`, footer)
+	assert.Regexp(t, `^│ 12 repos · ✓ 3 cloned · ↓ 3 pulled · ⇣ 3 fetched only · ✗ 3 failed · \d+s +│$`, footer)
 	assert.True(t, strings.HasPrefix(bottom, "└") && !strings.Contains(bottom, "┴"), bottom)
 
 	before := len(buf.String())
 	lister.FinishTable()
 	assert.Equal(t, before, len(buf.String()), "the table is closed once")
+}
+
+func TestTableProgress_TheFooterCountsOneClassPerMarkInOrder(t *testing.T) {
+	needsANSICursor(t)
+	// Moves share the tick with clones, as failed wikis share the cross.
+	done := []cloner.Action{
+		cloner.ActionCloned, cloner.ActionCloned, cloner.ActionMovedDeleted,
+		cloner.ActionPulled, cloner.ActionPulled,
+		cloner.ActionUpToDate, cloner.ActionUpToDate, cloner.ActionUpToDate,
+		cloner.ActionFetchedOnly,
+		cloner.ActionSkippedName, cloner.ActionSkippedTooLarge,
+		cloner.ActionSkippedEmpty,
+		cloner.ActionFailed, cloner.ActionFailedWiki,
+	}
+	p, lister, buf := newTable(t, 200, 40, tableRepos(len(done)))
+
+	within(t, func() {
+		p.Start(len(done))
+		for i, action := range done {
+			name := fmt.Sprintf("repo-%02d", i)
+			p.RepoStarted(name, cloner.ProgressPull)
+			p.RepoDone(cloner.RepoResult{Name: name, Action: action}, time.Second)
+		}
+		p.Stop()
+		lister.FinishTable()
+	})
+
+	lines := strings.Split(screen(buf), "\n")
+	require.GreaterOrEqual(t, len(lines), 3)
+	assert.Regexp(t, `^│ 14 repos · ✓ 3 cloned · ↓ 2 pulled · – 3 up to date · ⇣ 1 fetched only · `+
+		`⚠ 2 skipped · ∅ 1 empty · ✗ 2 failed · \d+s +│$`, lines[len(lines)-2])
+}
+
+func TestTableProgress_TheFooterShowsOnlyTheClassesThatHaveRepos(t *testing.T) {
+	needsANSICursor(t)
+	p, lister, buf := newTable(t, 200, 40, tableRepos(2))
+
+	within(t, func() {
+		p.Start(2)
+		p.RepoStarted("repo-00", cloner.ProgressPull)
+		p.RepoDone(cloner.RepoResult{Name: "repo-00", Action: cloner.ActionUpToDate}, time.Second)
+		p.RepoStarted("repo-01", cloner.ProgressPull)
+		p.RepoDone(cloner.RepoResult{Name: "repo-01", Action: cloner.ActionUpToDate}, time.Second)
+		p.Stop()
+		lister.FinishTable()
+	})
+
+	lines := strings.Split(screen(buf), "\n")
+	require.GreaterOrEqual(t, len(lines), 3)
+	assert.Regexp(t, `^│ 2 repos · ✓ 0 cloned · – 2 up to date · \d+s +│$`, lines[len(lines)-2],
+		"the cloned count is always there, the rest only when not zero")
+	assert.NotContains(t, lines[len(lines)-2], "not updated")
 }
 
 func TestTableProgress_NoFrameChangesTheTablesWidth(t *testing.T) {
@@ -651,7 +703,7 @@ func TestTableProgress_TwoPassesMakeOneTable(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(scr, "Repos to export"), "the table is opened once")
 	assert.Equal(t, 1, strings.Count(scr, "NAME"))
 	assert.Equal(t, 1, strings.Count(scr, "└"), "and closed once")
-	assert.Regexp(t, `│ 4 repos · ✓ 4 · \d+s +│`, scr)
+	assert.Regexp(t, `│ 4 repos · ✓ 4 cloned · \d+s +│`, scr)
 	assertOneWidth(t, scr)
 }
 
@@ -681,7 +733,7 @@ func TestTableProgress_ACancelledRunLeavesRowsQueuedOrInterrupted(t *testing.T) 
 	assert.Contains(t, rows[1], "interrupted")
 	assert.Contains(t, rows[2], "repo-02")
 	assert.Contains(t, rows[2], "queued")
-	assert.Regexp(t, `│ 3 repos · ✓ 1 · 1 interrupted · 1 queued · \d+s +│`, lines[len(lines)-2])
+	assert.Regexp(t, `│ 3 repos · ✓ 1 cloned · 1 interrupted · 1 queued · \d+s +│`, lines[len(lines)-2])
 	assertOneWidth(t, scr)
 }
 
@@ -693,7 +745,7 @@ func TestTableProgress_FinishTableBeforeAnyRunStillListsTheRepos(t *testing.T) {
 
 	scr := screen(buf)
 	assert.Equal(t, 2, strings.Count(scr, "│ queued"))
-	assert.Regexp(t, `│ 2 repos · ✓ 0 · 2 queued · 0s +│`, scr)
+	assert.Regexp(t, `│ 2 repos · ✓ 0 cloned · 2 queued · 0s +│`, scr)
 	assertOneWidth(t, scr)
 }
 
@@ -727,5 +779,5 @@ func TestTableProgress_SurvivesAnEmptyRunAndStopWithoutStart(t *testing.T) {
 	})
 	lister.FinishTable()
 
-	assert.Contains(t, stripANSI(buf.String()), "0 repos · ✓ 0 ·")
+	assert.Contains(t, stripANSI(buf.String()), "0 repos · ✓ 0 cloned ·")
 }

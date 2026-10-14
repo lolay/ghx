@@ -382,10 +382,11 @@ func (p *tableProgress) progressLocked(now time.Time, more int) string {
 	return progressText(done, len(p.rows), running, queued, bar, elapsed) + suffix
 }
 
-// totalsLocked is the text of the footer that closes the table: "60 repos ·
-// ✓ 52 · ⚠ 5 not updated · ∅ 1 empty · ✗ 2 failed · 1m12s", with a count of
-// the repos that never finished when there are any. "Not updated" is every
-// repo marked ⚠: fetched only, or skipped. The caller holds p.mu.
+// totalsLocked is the text of the footer that closes the table, one class per
+// Status mark: "60 repos · ✓ 3 cloned · ↓ 12 pulled · – 40 up to date · ⇣ 2
+// fetched only · ⚠ 1 skipped · ∅ 1 empty · ✗ 1 failed · 1m12s". Only the
+// cloned count is always shown; the others appear when they are not zero, then
+// come the repos that never finished. The caller holds p.mu.
 func (p *tableProgress) totalsLocked() string {
 	bySymbol := map[string]int{}
 	var interrupted, queued int
@@ -411,8 +412,11 @@ func (p *tableProgress) totalsLocked() string {
 		label  string
 		always bool
 	}{
-		{cloner.ActionCloned, "%d", true},
-		{cloner.ActionFetchedOnly, "%d not updated", false},
+		{cloner.ActionCloned, "%d cloned", true},
+		{cloner.ActionPulled, "%d pulled", false},
+		{cloner.ActionUpToDate, "%d up to date", false},
+		{cloner.ActionFetchedOnly, "%d fetched only", false},
+		{cloner.ActionSkippedName, "%d skipped", false},
 		{cloner.ActionSkippedEmpty, "%d empty", false},
 		{cloner.ActionFailed, "%d failed", false},
 	} {

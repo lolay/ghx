@@ -23,12 +23,14 @@ import (
 var Out io.Writer = os.Stdout
 
 // glyphs marks each action that needs attention, in the summary's counts table
-// and beside each repo it lists. The words always come with the glyph, so a
+// and beside each repo it lists; the table's Status marks (statusMark) follow
+// it, so the two agree. Fetched only is the dashed down arrow, "partly
+// downloaded". The words always come with the glyph, so a
 // font without it, or output piped to a file, still reads.
 var glyphs = map[cloner.Action]string{
 	cloner.ActionFailed:       "✗",
 	cloner.ActionFailedWiki:   "✗",
-	cloner.ActionFetchedOnly:  "⚠",
+	cloner.ActionFetchedOnly:  "⇣",
 	cloner.ActionSkippedEmpty: "∅",
 	cloner.ActionSkippedName:  "⚠",
 }

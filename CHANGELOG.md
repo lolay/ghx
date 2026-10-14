@@ -29,9 +29,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reason, replaces `skipped (local changes)` for a clone whose working tree
   couldn't be updated. Wikis are synced the same way.
 - The summary marks each kind of result with a glyph beside its words: `✗`
-  failed, `⚠` fetched only, `∅` skipped (empty). A "Skipped (empty)" section
+  failed, `⇣` fetched only, `∅` skipped (empty). A "Skipped (empty)" section
   lists empty repos, and a "Notes" section lists clones and pulls that carry a
   detail (a branch fallback, a reset after a force-push, a rename switch).
+- Status marks say how much of a repo came down: `✓` cloned, `↓` pulled (new
+  commits), `–` up to date, `⇣` fetched only (partly downloaded), `⚠` skipped,
+  `∅` empty, `✗` failed. The live table's closing footer counts one class per
+  mark (`60 repos · ✓ 3 cloned · ↓ 12 pulled · – 40 up to date · ⇣ 2 fetched
+  only · ⚠ 1 skipped · ∅ 1 empty · ✗ 1 failed · 1m12s`), showing a class only
+  when it has repos.
 
 ### Added
 - `ghx completion <shell>` prints a shell completion script, and `ghx man` a man

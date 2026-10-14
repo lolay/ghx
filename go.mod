@@ -9,6 +9,7 @@ require (
 	github.com/charmbracelet/fang v1.0.0
 	github.com/google/go-github/v67 v67.0.0
 	github.com/jedib0t/go-pretty/v6 v6.7.10
+	github.com/mattn/go-runewidth v0.0.30
 	github.com/pterm/pterm v0.12.84
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.12.1
@@ -36,7 +37,6 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/lithammer/fuzzysearch v1.1.8 // indirect
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
-	github.com/mattn/go-runewidth v0.0.30 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/mango v0.1.0 // indirect
 	github.com/muesli/mango-cobra v1.2.0 // indirect

@@ -282,11 +282,13 @@ token and network access.
 - Writes a `.ghx.json` manifest to the output directory after each run, used to
   detect removed and newly archived repos next time.
 
-The summary counts existing repos as `pulled` (new commits came in) or `up to
-date` (nothing new), and marks what needs a look: `✗` for failures, `⚠` for repos fetched
-only, `∅` for empty repos, and a "Notes" section for repos that were updated
+Each repo gets a mark beside its status: `✓` cloned, `↓` pulled (new commits
+came in), `–` up to date (nothing new), `⇣` fetched only (its remote branches are
+backed up, but the working tree is only partly downloaded: it wasn't updated),
+`⚠` skipped, `∅` empty, `✗` failed. The summary lists what needs a look (failures, repos
+fetched only, empty repos), and a "Notes" section lists repos that were updated
 with something to say (a branch fallback, a reset after a force-push, a switch
-after a rename). The words always come with the glyph, so piped output reads.
+after a rename). The words always come with the mark, so piped output reads.
 
 **Not backed up:** Git LFS content and submodules' contents.
 
