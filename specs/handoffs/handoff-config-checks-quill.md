@@ -7,7 +7,7 @@
 - **Review log:** wave-1 CONCERNS: on a TTY fang title-cases the first word of the error, which is now the config file path, so the path shown is wrong (`/Tmp/.../.Ghx.toml`). Everything else matched the spec; `make ci` and `make vuln` pass, x/text v0.43.0. wave-1-fix CONCERNS: the handler only skips title-casing when the first word has a separator, so `ghx acme .` still shows `.Ghx.toml:`; suggested fix is to also skip it when `errors.Is(err, config.ErrInvalidValue)`.
 - **Fix-ups, retries, checkpoints:** wave 1-fix (first CONCERNS, automatic, no gate) for the fang casing finding; wave 1-fix2 (second CONCERNS, gate 1 passed unattended as fix-up 2 of 2) for the separator-less path. The cap is then spent: another CONCERNS stops.
 - **Spend:** ~$6.39 logged of ~$4.0 expected (over expected; guard $50). Kickoff ~$2.46, resume parent ~$1.71, wave 1 ~$1.52, 1-fix ~$0.70.
-- **Next unit:** wave 1-fix2 `[exec]` ghx m1 s1-s4 (Sonnet high worker, Opus high reviewer), from `45cae77`.
+- **Next unit:** wave 1-fix2 `[exec]` ghx m1 s1-s4 (Sonnet high worker, Opus high reviewer), from `45cae77`. Launching after `e3b5910` (which fixed the 1-fix Review log line's order: checkpoint before the date, so `plan_state.py` parses it).
 - **Resume:** paste the plan's Kickoff prompt.
 
 ## Pending question (verbatim)
