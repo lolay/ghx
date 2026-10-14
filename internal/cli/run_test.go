@@ -398,3 +398,33 @@ func TestRun_AnUnreadableLocalConfigStopsTheRun(t *testing.T) {
 	assert.Empty(t, repoDirs(t, w.out))
 	assert.Empty(t, w.api.Requests(), "nothing was asked of GitHub")
 }
+
+func TestRun_AWrongTypedConfigValueStopsTheRunBeforeAuthenticating(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("alpha")
+	require.NoError(t, os.MkdirAll(w.out, 0o755))
+	path := filepath.Join(w.out, config.ConfigFilename)
+	require.NoError(t, os.WriteFile(path, []byte("concurrency = \"8\"\n"), 0o600))
+
+	out, err := w.run()
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, config.ErrInvalidValue)
+	assert.Contains(t, err.Error(), path+`: concurrency must be an integer, got string "8"`)
+	assert.NotContains(t, out, "Authenticating")
+	assert.Empty(t, repoDirs(t, w.out))
+	assert.Empty(t, w.api.Requests(), "nothing was asked of GitHub")
+}
+
+func TestRun_AnUnknownConfigKeyIsWarnedAboutAndTheRunGoesOn(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("alpha")
+	require.NoError(t, os.MkdirAll(w.out, 0o755))
+	path := filepath.Join(w.out, config.ConfigFilename)
+	require.NoError(t, os.WriteFile(path, []byte("concurency = 8\n"), 0o600))
+
+	out := w.mustRun()
+
+	assert.Contains(t, out, path+`: unknown key "concurency" ignored`)
+	assert.Equal(t, []string{"alpha"}, repoDirs(t, w.out))
+}
