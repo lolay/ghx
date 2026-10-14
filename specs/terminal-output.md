@@ -40,7 +40,9 @@ while the run goes on.
 - **Two passes, one table.** Active repos sync first, archived ones second, with
   the same renderer; the table stays open between them, so the run flow prints
   no "Cloning N archived repo(s)" line on a terminal, and the `--delete` note goes
-  after the table's close.
+  after the table's close. Each pass starts its repos in name order, ignoring
+  case (`ghapi.ListOrgRepos` sorts the list), so with N workers the first N
+  names start together and finished rows land roughly alphabetically.
 - **Closing.** `run.go` calls `FinishTable` after the last pass, and also through
   `defer` so a cancel or an error still closes it, once. Rows that never finished
   print as `queued` or `interrupted`, then the totals footer, which wraps between
