@@ -348,7 +348,7 @@ stops before contacting GitHub, while `--dry-run` works without it.
 This is the output of `ghx --help` with colors off (on a terminal the help is
 styled):
 
-```
+```text
   Export and sync all GitHub repos for an organization
 
   USAGE
