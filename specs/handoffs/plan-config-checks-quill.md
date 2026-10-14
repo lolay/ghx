@@ -3,7 +3,7 @@
 
   Status: 0/1 groups done | last review: — | current: ghx m1 s1-s4 [exec] | updated 2026-10-14
 
-  mode: unattended | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch) | guard 3x min $50 | fixups 2 | confirmed 2026-10-14 session aeb2cfec-f2e8-5289-89eb-8bd98af4db92: Unattended (Recommended)
+  mode: unattended | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch) | guard 3x min $50 | fixups 2 | confirmed 2026-10-14 session 3587b07b-d4af-58e8-ab63-47e6c35d27e1 by Kickoff prompt: Run in unattended mode.
 
   review: every-wave (log-only)
 
@@ -13,7 +13,7 @@
 
   Prompt to paste into the next chat:
     In lolay/ghx, read specs/handoffs/plan-config-checks-quill.md. The plan is already tagged.
-    On branch claude/practical-goldberg-xu3jxn (task branch): subagents commit each finished step.
+    On branch claude/charming-allen-aaonrw (task branch): subagents commit each finished step.
     Run in unattended mode.
     Run the personal-plan-orchestrate skill from the top: walk to
     each tier boundary, dispatch subagents per the skill's procedure,
@@ -52,7 +52,7 @@ Decisions (answered by Gary, 2026-10-14):
 - Unknown key (`concurency = 8`) → **yellow warning**, keep running.
 - The rest of #1 rides the same branch: bump `golang.org/x/text` to v0.41.0+ (GO-2026-6629; v0.39.0 already covers GO-2026-5970), review the other indirect modules, and fix two README nits.
 
-Branch: `claude/practical-goldberg-xu3jxn` (assigned task branch). The working directory is the ghx repo root.
+Branch: `claude/charming-allen-aaonrw` (assigned task branch; kicked off on `claude/practical-goldberg-xu3jxn`). The working directory is the ghx repo root.
 
 Gate: `make ci` (build, lint, test) must pass before each step's commit. Follow `AGENTS.md` (Go standards, tests, git rules) and `CONTRIBUTING.md`.
 
