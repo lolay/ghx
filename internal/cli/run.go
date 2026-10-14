@@ -258,8 +258,9 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 	summary.Results = append(summary.Results, cleanFailures...)
 
 	// The live table on a terminal is one piece from its top to its close, so
-	// nothing is printed between the passes: the archived rows already say
-	// "yes" under Archived, and the note on skipping them waits for the close.
+	// nothing is printed between the passes: the archived rows already read
+	// "archived" under Visibility, and the note on skipping them waits for
+	// the close.
 	// Without a terminal the notes print where they happen.
 	var afterTable string
 	if len(archivedRepos) > 0 {

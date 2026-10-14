@@ -307,7 +307,52 @@ func TestPrintRepoTable_FormatsEachColumn(t *testing.T) {
 
 	out := buf.String()
 	assert.Contains(t, out, "Repos to export")
-	assert.Regexp(t, `ghx\s+│\s+public\s+│\s+Go\s+│\s+1\.5\s+│\s+main\s+│\s+no\s+│\s+2026-10-01T12:00:00Z\s+│`, out)
-	assert.Regexp(t, `vault\s+│\s+private\s+│\s+-\s+│\s+0\.0\s+│\s+master\s+│\s+yes\s+│\s+-\s+│`, out)
+	assert.Regexp(t, `ghx\s+│\s+public\s+│\s+Go\s+│\s+1\.5\s+│\s+main\s+│\s+2026-10-01T12:00:00Z\s+│`, out)
+	assert.Regexp(t, `vault\s+│\s+archived\s+│\s+-\s+│\s+0\.0\s+│\s+master\s+│\s+-\s+│`, out)
 	assert.Contains(t, out, "\nTotal: 2 repos\n")
+}
+
+func TestPrintRepoTable_VisibilityIsPublicPrivateOrArchived(t *testing.T) {
+	tests := []struct {
+		name string
+		repo ghapi.RepoInfo
+		want string
+	}{
+		{"a public repo", ghapi.RepoInfo{Name: "pub"}, "public"},
+		{"a private repo", ghapi.RepoInfo{Name: "priv", Private: true}, "private"},
+		{"an archived public repo", ghapi.RepoInfo{Name: "oldpub", Archived: true}, "archived"},
+		{"an archived private repo reads archived, not private", ghapi.RepoInfo{Name: "oldpriv", Private: true, Archived: true}, "archived"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf := captureOut(t)
+
+			ui.PrintRepoTable([]ghapi.RepoInfo{tt.repo})
+
+			out := buf.String()
+			assert.Regexp(t, tt.repo.Name+`\s+│\s+`+tt.want+`\s+│`, out)
+			for _, other := range []string{"public", "private", "archived"} {
+				if other != tt.want {
+					assert.NotContains(t, out, other)
+				}
+			}
+		})
+	}
+}
+
+func TestPrintRepoTable_HasNoArchivedColumn(t *testing.T) {
+	buf := captureOut(t)
+
+	ui.PrintRepoTable([]ghapi.RepoInfo{{Name: "vault", Archived: true}})
+
+	var header string
+	for _, line := range strings.Split(buf.String(), "\n") {
+		if strings.Contains(line, "NAME") {
+			header = line
+		}
+	}
+	require.NotEmpty(t, header)
+	assert.Contains(t, header, "VISIBILITY")
+	assert.NotContains(t, strings.ToUpper(header), "ARCHIVED", "the Visibility column says it")
+	assert.Equal(t, 6, strings.Count(header, "│")-1, "six columns: name, visibility, language, size, branch, pushed")
 }

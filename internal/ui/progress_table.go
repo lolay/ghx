@@ -23,7 +23,7 @@ const repaintEvery = 100 * time.Millisecond
 
 // columnDrops is the order the table gives up columns, by index into
 // repoColumns, while it is wider than the terminal.
-var columnDrops = []int{columnPushed, columnBranch, columnArchived, columnLanguage}
+var columnDrops = []int{columnPushed, columnBranch, columnLanguage}
 
 // spinFrames is the spinner on an in-flight repo's Status cell.
 var spinFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}

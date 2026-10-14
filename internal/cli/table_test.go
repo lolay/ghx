@@ -99,6 +99,45 @@ func TestRun_TheLiveTableIsOnePieceWithEachReposStatus(t *testing.T) {
 	assert.Equal(t, []string{"ARCHIVED/vault", "alpha", "beta"}, repoDirs(t, w.out))
 }
 
+func TestRun_TheTableShowsArchivedUnderVisibilityAndHasNoArchivedColumn(t *testing.T) {
+	tests := []struct {
+		name  string
+		build func(t *testing.T) *world
+		clean func(string) string
+	}{
+		{"live", func(t *testing.T) *world {
+			w := tableWorld(t)
+			w.addRepo("secret", func(r *ghapitest.Repo) { r.Archived = true; r.Private = true })
+			return w
+		}, plain},
+		{"static", func(t *testing.T) *world {
+			w := newWorld(t)
+			w.addRepo("alpha")
+			w.addRepo("vault", func(r *ghapitest.Repo) { r.Archived = true })
+			w.addRepo("secret", func(r *ghapitest.Repo) { r.Archived = true; r.Private = true })
+			return w
+		}, func(s string) string { return s }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out := tt.clean(tt.build(t).mustRun())
+
+			var header string
+			for _, line := range strings.Split(out, "\n") {
+				if strings.Contains(line, "NAME") {
+					header = line
+				}
+			}
+			require.NotEmpty(t, header)
+			assert.Contains(t, header, "VISIBILITY")
+			assert.NotContains(t, header, "ARCHIVED", "no Archived column")
+			assert.Regexp(t, `│ vault +│ archived +│`, out, "an archived public repo reads archived")
+			assert.Regexp(t, `│ secret +│ archived +│`, out, "an archived private repo reads archived, not private")
+			assert.Regexp(t, `│ alpha +│ public +│`, out)
+		})
+	}
+}
+
 func TestRun_TheLiveTableListsActiveReposByNameThenArchivedOnes(t *testing.T) {
 	terminal(t)
 	w := newWorld(t)

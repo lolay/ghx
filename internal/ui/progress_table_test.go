@@ -275,10 +275,16 @@ func TestTableProgress_TheFooterCountsOneClassPerMarkInOrder(t *testing.T) {
 		lister.FinishTable()
 	})
 
+	// The table is only as wide as its columns, and this footer is wider than
+	// that without the Archived column, so it wraps: read it as one line.
 	lines := strings.Split(screen(buf), "\n")
 	require.GreaterOrEqual(t, len(lines), 3)
-	assert.Regexp(t, `^│ 14 repos · ✓ 3 cloned · ↓ 2 pulled · – 3 up to date · ⇣ 1 fetched only · `+
-		`⚠ 2 skipped · ∅ 1 empty · ✗ 2 failed · \d+s +│$`, lines[len(lines)-2])
+	var footer []string
+	for i := len(lines) - 2; i > 0 && !strings.HasPrefix(lines[i], "├"); i-- {
+		footer = append([]string{strings.TrimSpace(strings.Trim(strings.TrimSpace(lines[i]), "│"))}, footer...)
+	}
+	assert.Regexp(t, `^14 repos · ✓ 3 cloned · ↓ 2 pulled · – 3 up to date · ⇣ 1 fetched only · `+
+		`⚠ 2 skipped · ∅ 1 empty · ✗ 2 failed( ·)? \d+s$`, strings.Join(footer, " "))
 }
 
 func TestTableProgress_ALongFooterWrapsBetweenCountsInsteadOfCuttingOneOff(t *testing.T) {
@@ -687,7 +693,7 @@ func TestTableProgress_ATerminalTooShortForTheLiveAreaShowsTheFooterAlone(t *tes
 func TestTableProgress_ANarrowTerminalDropsColumnsInOrder(t *testing.T) {
 	needsANSICursor(t)
 	// go-pretty's light style shows headers in capitals.
-	columns := []string{"NAME", "VISIBILITY", "LANGUAGE", "SIZE (MB)", "DEFAULT BRANCH", "ARCHIVED", "LAST PUSHED", "STATUS"}
+	columns := []string{"NAME", "VISIBILITY", "LANGUAGE", "SIZE (MB)", "DEFAULT BRANCH", "LAST PUSHED", "STATUS"}
 	tests := []struct {
 		name    string
 		width   int
@@ -696,8 +702,7 @@ func TestTableProgress_ANarrowTerminalDropsColumnsInOrder(t *testing.T) {
 		{"wide enough keeps every column", 200, nil},
 		{"one column short drops last pushed", 0, []string{"LAST PUSHED"}},
 		{"then default branch", 0, []string{"LAST PUSHED", "DEFAULT BRANCH"}},
-		{"then archived", 0, []string{"LAST PUSHED", "DEFAULT BRANCH", "ARCHIVED"}},
-		{"then language", 0, []string{"LAST PUSHED", "DEFAULT BRANCH", "ARCHIVED", "LANGUAGE"}},
+		{"then language", 0, []string{"LAST PUSHED", "DEFAULT BRANCH", "LANGUAGE"}},
 	}
 	// Each step's width is one less than the table before it needs, found by
 	// rendering it at the width of the step before.

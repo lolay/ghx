@@ -120,15 +120,19 @@ type repoColumn struct {
 const (
 	columnLanguage = 2
 	columnBranch   = 4
-	columnArchived = 5
-	columnPushed   = 6
+	columnPushed   = 5
 )
 
 // repoColumns lists the table's columns in the order they are shown.
 var repoColumns = []repoColumn{
 	{title: "Name", cell: func(r ghapi.RepoInfo) any { return text.FgCyan.Sprint(r.Name) }},
 	{title: "Visibility", cell: func(r ghapi.RepoInfo) any {
-		if r.Private {
+		// An archived repo is read-only whatever its visibility, and that is
+		// what the reader wants to know, so archived wins over private.
+		switch {
+		case r.Archived:
+			return "archived"
+		case r.Private:
 			return "private"
 		}
 		return "public"
@@ -138,12 +142,6 @@ var repoColumns = []repoColumn{
 		return fmt.Sprintf("%.1f", float64(r.SizeKB)/1024)
 	}},
 	{title: "Default Branch", cell: func(r ghapi.RepoInfo) any { return r.DefaultBranch }},
-	{title: "Archived", cell: func(r ghapi.RepoInfo) any {
-		if r.Archived {
-			return "yes"
-		}
-		return "no"
-	}},
 	{title: "Last Pushed", cell: func(r ghapi.RepoInfo) any { return orDash(r.PushedAt) }},
 }
 
