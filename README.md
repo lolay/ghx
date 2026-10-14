@@ -275,13 +275,15 @@ token and network access.
     exist is reported as not found; any other wiki failure is `failed wiki`
     with git's message.
 - **Removed repos** (in the previous manifest, gone from the organization): moved
-  to `DELETED/`, or permanently deleted with `--delete`.
+  to `DELETED/`, or permanently deleted with `--delete`; a wiki goes with its
+  repo. An earlier clone already in `DELETED/` is never replaced: a second one
+  of the same name gets a UTC timestamp suffix (`DELETED/x.20261014T013134Z`).
 - **Archived repos:** cloned into `ARCHIVED/`. Every run checks where each
   synced repo's clone is: an archived repo's clone found in `PATH` is moved
   into `ARCHIVED/`, and an unarchived repo's clone found in `ARCHIVED/` is moved
   back, then synced there; a wiki moves with its repo. That holds with no
   manifest, and a move that failed is tried again next run. With `--delete`,
-  archived repos are deleted or skipped rather than moved. A repo left out by
+  archived repos, and their wikis, are deleted or skipped rather than moved. A repo left out by
   `--include`, `--exclude` or `--type` stays where it is. Where every repo lives,
   and the rules above in full, are in [`specs/repo-layout.md`](./specs/repo-layout.md).
 - **Moves and deletes are checked.** ghx moves or deletes a clone only when its

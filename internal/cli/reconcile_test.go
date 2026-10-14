@@ -152,27 +152,40 @@ func TestRun_AnOriginNamesTheRepoWhateverItsHostOwnerOrCase(t *testing.T) {
 }
 
 func TestRun_AClonePresentInBothPlacesIsAConflict(t *testing.T) {
-	w := newWorld(t)
-	w.addRepo("alpha")
-	w.addRepo("beta")
-	w.mustRun()
-	// Work in the active clone that a move onto ARCHIVED/beta would keep, and
-	// a copy already in ARCHIVED/ that a replace would lose.
-	local := filepath.Join(w.out, "beta", "notes.txt")
-	require.NoError(t, os.WriteFile(local, []byte("mine\n"), 0o644))
-	archived := filepath.Join(w.out, "ARCHIVED", "beta")
-	gittest.Git(t, "", "clone", "--quiet", w.bare("beta"), archived)
-	kept := filepath.Join(archived, "kept.txt")
-	require.NoError(t, os.WriteFile(kept, []byte("also mine\n"), 0o644))
-	w.archiveRepo("beta")
+	tests := []struct {
+		name  string
+		flags []string
+		then  func(out string) string
+	}{
+		{"synced as usual", nil, func(out string) string { return "; syncing " + filepath.Join(out, "ARCHIVED", "beta") }},
+		{"under --delete", []string{"--delete"}, func(string) string { return "; deleting neither" }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := newWorld(t)
+			w.addRepo("alpha")
+			w.addRepo("beta")
+			w.mustRun()
+			// Work in the active clone that a move onto ARCHIVED/beta would
+			// keep, and a copy already in ARCHIVED/ that a replace would lose.
+			local := filepath.Join(w.out, "beta", "notes.txt")
+			require.NoError(t, os.WriteFile(local, []byte("mine\n"), 0o644))
+			archived := filepath.Join(w.out, "ARCHIVED", "beta")
+			gittest.Git(t, "", "clone", "--quiet", w.bare("beta"), archived)
+			kept := filepath.Join(archived, "kept.txt")
+			require.NoError(t, os.WriteFile(kept, []byte("also mine\n"), 0o644))
+			w.archiveRepo("beta")
 
-	out := w.mustRun()
+			out := w.mustRun(tt.flags...)
 
-	assert.Equal(t, []string{"ARCHIVED/beta", "alpha", "beta"}, repoDirs(t, w.out))
-	assert.FileExists(t, local)
-	assert.FileExists(t, kept)
-	assert.Contains(t, out, "beta: conflict")
-	assert.Contains(t, out, "Conflicts (both copies left in place):")
+			assert.Equal(t, []string{"ARCHIVED/beta", "alpha", "beta"}, repoDirs(t, w.out))
+			assert.FileExists(t, local)
+			assert.FileExists(t, kept)
+			assert.Contains(t, out, "beta: conflict")
+			assert.Contains(t, out, tt.then(w.out))
+			assert.Contains(t, out, "Conflicts (both copies left in place):")
+		})
+	}
 }
 
 func TestRun_AMoveThatFailedIsRetriedByTheNextRun(t *testing.T) {
@@ -256,4 +269,86 @@ func TestRun_AWikiStaysBesideItsRepoThroughArchiveAndUnarchive(t *testing.T) {
 
 	assert.Equal(t, []string{"alpha", "alpha.wiki"}, repoDirs(t, w.out), "after the unarchive")
 	assert.Contains(t, out, "alpha.wiki: moved (unarchived)")
+}
+
+func TestRun_DeleteRemovesAnArchivedReposWikiWithIt(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("alpha", func(r *ghapitest.Repo) { r.HasWiki = true })
+	gittest.NewBareRepo(t, w.upstream, "alpha.wiki", "master")
+	w.mustRun("--clone-wiki")
+	require.Equal(t, []string{"alpha", "alpha.wiki"}, repoDirs(t, w.out))
+
+	w.archiveRepo("alpha")
+	out := w.mustRun("--clone-wiki", "--delete")
+
+	assert.Empty(t, repoDirs(t, w.out), "the wiki went with its repo")
+	assert.Contains(t, out, "alpha: deleted")
+	assert.Contains(t, out, "alpha.wiki: deleted")
+}
+
+func TestRun_ARemovedReposWikiGoesWithIt(t *testing.T) {
+	tests := []struct {
+		name  string
+		flags []string
+		want  []string
+		says  string
+	}{
+		{"moved to DELETED", nil, []string{"DELETED/alpha", "DELETED/alpha.wiki"}, "alpha.wiki: moved (deleted)"},
+		{"deleted under --delete", []string{"--delete"}, nil, "alpha.wiki: deleted"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := newWorld(t)
+			w.addRepo("alpha", func(r *ghapitest.Repo) { r.HasWiki = true })
+			gittest.NewBareRepo(t, w.upstream, "alpha.wiki", "master")
+			w.mustRun("--clone-wiki")
+			require.Equal(t, []string{"alpha", "alpha.wiki"}, repoDirs(t, w.out))
+
+			w.removeRepo("alpha")
+			out := w.mustRun(append([]string{"--clone-wiki"}, tt.flags...)...)
+
+			assert.Equal(t, tt.want, repoDirs(t, w.out))
+			assert.Contains(t, out, tt.says)
+		})
+	}
+}
+
+func TestRun_ARepoRemovedTwiceKeepsBothClonesInDeleted(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("alpha")
+	w.addRepo("beta", func(r *ghapitest.Repo) { r.HasWiki = true })
+	gittest.NewBareRepo(t, w.upstream, "beta.wiki", "master")
+	beta := w.repos[1]
+	w.mustRun("--clone-wiki")
+
+	w.removeRepo("beta")
+	w.mustRun("--clone-wiki")
+	require.Equal(t, []string{"DELETED/beta", "DELETED/beta.wiki", "alpha"}, repoDirs(t, w.out))
+	first := filepath.Join(w.out, "DELETED", "beta", "first.txt")
+	require.NoError(t, os.WriteFile(first, []byte("first removal\n"), 0o644))
+
+	// The repo comes back, is cloned again, and is removed again.
+	w.repos = append(w.repos, beta)
+	w.publish()
+	w.mustRun("--clone-wiki")
+	w.removeRepo("beta")
+	out := w.mustRun("--clone-wiki")
+
+	assert.FileExists(t, first, "the first removal's clone is kept")
+	moved, err := filepath.Glob(filepath.Join(w.out, "DELETED", "beta.*"))
+	require.NoError(t, err)
+	var stamped []string
+	for _, m := range moved {
+		if filepath.Base(m) != "beta.wiki" {
+			stamped = append(stamped, filepath.Base(m))
+		}
+	}
+	require.Len(t, stamped, 2, "the second clone and its wiki get a stamped name: %v", moved)
+	repo, wiki := stamped[0], stamped[1]
+	assert.Regexp(t, `^beta\.\d{8}T\d{6}Z$`, repo)
+	assert.Equal(t, repo+".wiki", wiki, "the wiki keeps its repo's name")
+	assert.DirExists(t, filepath.Join(w.out, "DELETED", repo, ".git"))
+	assert.NoDirExists(t, filepath.Join(w.out, "beta"))
+	assert.Contains(t, out, "beta: moved (deleted)")
+	assert.Contains(t, out, "exists; moved to")
 }

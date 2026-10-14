@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -616,6 +617,36 @@ func TestMoveRepo(t *testing.T) {
 
 		require.Error(t, cloner.MoveRepo(src, filepath.Join(blocker, "DELETED")))
 		assert.DirExists(t, src, "a failed move leaves the source in place")
+	})
+}
+
+func TestMoveRepoTo(t *testing.T) {
+	t.Run("moves a directory to a new name, creating its parent", func(t *testing.T) {
+		dir := t.TempDir()
+		src := filepath.Join(dir, "app")
+		require.NoError(t, os.Mkdir(src, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(src, "README.md"), []byte("hi\n"), 0o644))
+		dest := filepath.Join(dir, "DELETED", "app.20261014T013134Z")
+
+		require.NoError(t, cloner.MoveRepoTo(src, dest))
+
+		assert.NoDirExists(t, src)
+		assert.FileExists(t, filepath.Join(dest, "README.md"))
+	})
+
+	t.Run("refuses an existing destination and moves nothing", func(t *testing.T) {
+		dir := t.TempDir()
+		src := filepath.Join(dir, "app")
+		require.NoError(t, os.Mkdir(src, 0o755))
+		dest := filepath.Join(dir, "DELETED", "app")
+		require.NoError(t, os.MkdirAll(dest, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(dest, "old.txt"), []byte("old\n"), 0o644))
+
+		err := cloner.MoveRepoTo(src, dest)
+
+		require.ErrorIs(t, err, fs.ErrExist)
+		assert.DirExists(t, src, "the source stays")
+		assert.FileExists(t, filepath.Join(dest, "old.txt"), "the destination is untouched")
 	})
 }
 
