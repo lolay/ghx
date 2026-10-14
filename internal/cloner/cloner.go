@@ -3,7 +3,9 @@ package cloner
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -544,6 +546,23 @@ func MoveRepo(repoDir, targetDir string) error {
 			return err
 		}
 	} else if !os.IsNotExist(err) {
+		return err
+	}
+	return retryTransient(func() error { return os.Rename(repoDir, dest) })
+}
+
+// MoveRepoTo moves a repo directory to dest, creating dest's parent if
+// missing. Unlike MoveRepo it never replaces anything: when dest exists it
+// returns an error wrapping fs.ErrExist and moves nothing. On Windows a
+// rename that fails because another process briefly holds a file open is
+// retried for up to retryBudget.
+func MoveRepoTo(repoDir, dest string) error {
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return err
+	}
+	if _, err := os.Lstat(dest); err == nil {
+		return fmt.Errorf("moving %s: %s: %w", repoDir, dest, fs.ErrExist)
+	} else if !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	return retryTransient(func() error { return os.Rename(repoDir, dest) })

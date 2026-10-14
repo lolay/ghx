@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"time"
 
 	"github.com/jedib0t/go-pretty/v6/text"
 	"github.com/spf13/cobra"
@@ -314,7 +315,7 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 
 // handleRemoved moves each repo the previous manifest lists and the org no
 // longer has into deletedDir, or deletes it under shouldDelete, once its
-// origin shows it is a clone of that repo. A removed repo is absent from the
+// origin shows it is a clone of that repo; its wiki goes with it. A removed repo is absent from the
 // listing, so the manifest is the only record of it. Archived repos are
 // reconcileArchived's.
 func handleRemoved(
@@ -326,7 +327,8 @@ func handleRemoved(
 	deletedDir string,
 	dryRun bool,
 ) cloner.SyncSummary {
-	r := reconciler{check: check, dryRun: dryRun}
+	r := reconciler{check: check, dryRun: dryRun, stamp: time.Now().UTC().Format(deletedStampLayout)}
+	deletedRoot := filepath.Join(outputDir, deletedDir)
 
 	currentNames := map[string]struct{}{}
 	for _, repo := range currentRepos {
@@ -350,32 +352,13 @@ func handleRemoved(
 			continue
 		}
 		repoDir := filepath.Join(outputDir, name)
-		if _, err := os.Stat(repoDir); err != nil {
-			continue
+		dest, ok := r.retire(name, repoDir, deletedRoot, name, shouldDelete)
+		if ok {
+			// The wiki goes where its repo went, under the same name, so the
+			// pair stays together even when the repo's name was taken.
+			wiki := name + ".wiki"
+			r.retire(wiki, filepath.Join(outputDir, wiki), deletedRoot, dest+".wiki", shouldDelete)
 		}
-		if detail := check.mismatch(repoDir, name); detail != "" {
-			r.add(name, cloner.ActionSkippedOrigin, detail)
-			continue
-		}
-		action := cloner.ActionMovedDeleted
-		if shouldDelete {
-			action = cloner.ActionDeleted
-		}
-		if dryRun {
-			r.add(name, action, "dry-run")
-			continue
-		}
-		var err error
-		if shouldDelete {
-			err = cloner.DeleteRepo(repoDir)
-		} else {
-			err = cloner.MoveRepo(repoDir, filepath.Join(outputDir, deletedDir))
-		}
-		if err != nil {
-			r.add(name, cloner.ActionFailed, err.Error())
-			continue
-		}
-		r.add(name, action, "")
 	}
 	return r.summary
 }

@@ -55,10 +55,18 @@ func (c *originCheck) mismatch(dir, name string) string {
 // reconciler records what the moves and deletes before a sync did, or in a
 // dry run would do.
 type reconciler struct {
-	check   *originCheck
-	dryRun  bool
+	check  *originCheck
+	dryRun bool
+	// stamp suffixes a name already taken in the deleted directory; one per
+	// run, so a repo and its wiki share it.
+	stamp   string
 	summary cloner.SyncSummary
 }
+
+// deletedStampLayout formats the UTC time that tells two clones of the same
+// removed repo apart in the deleted directory. It has no colons, which
+// Windows doesn't allow in a file name.
+const deletedStampLayout = "20060102T150405Z"
 
 func (r *reconciler) add(name string, action cloner.Action, detail string) {
 	r.summary.Append(cloner.RepoResult{Name: name, Action: action, Detail: detail})
@@ -68,10 +76,10 @@ func (r *reconciler) add(name string, action cloner.Action, detail string) {
 // belongs, <out>/<archived-dir>/x for an archived repo and <out>/x otherwise,
 // whatever the previous manifest said: a clone found in the other place is
 // moved over (deleted instead, for an archived repo under --delete), and its
-// wiki follows it. That covers a repo archived since the last run, one
-// unarchived since, a mirror with no manifest, and a move an earlier run
-// failed to make. repos is the filtered list, so a repo the run doesn't sync
-// is never moved somewhere it won't be synced.
+// wiki follows it either way. That covers a repo archived since the last
+// run, one unarchived since, a mirror with no manifest, and a move an earlier
+// run failed to make. repos is the filtered list, so a repo the run doesn't
+// sync is never moved somewhere it won't be synced.
 func reconcileArchived(
 	check *originCheck,
 	outputDir, archivedDir string,
@@ -93,9 +101,11 @@ func reconcileArchived(
 			action = cloner.ActionMovedArchived
 		}
 		deleteIt := repo.Archived && shouldDelete
-		if r.place(repo.Name, other, want, action, deleteIt) && !deleteIt {
+		if r.place(repo.Name, other, want, action, deleteIt) {
+			// The wiki goes where its repo went, or with it under --delete:
+			// left behind, it would never be synced again.
 			wiki := repo.Name + ".wiki"
-			r.place(wiki, other+".wiki", want+".wiki", action, false)
+			r.place(wiki, other+".wiki", want+".wiki", action, deleteIt)
 		}
 	}
 	return r.summary
@@ -138,6 +148,65 @@ func (r *reconciler) place(name, other, want string, action cloner.Action, delet
 	}
 	r.add(name, action, "")
 	return true
+}
+
+// retire moves the clone of a removed repo at dir into deletedRoot as base,
+// or deletes it under deleteIt, and reports the name it moved to and whether
+// it moved or deleted it (or in a dry run, would). Nothing missing, nothing
+// whose origin doesn't name the repo, and nothing already in deletedRoot is
+// touched: when base is taken, the clone goes to base.<stamp> beside it, so
+// an earlier removal's clone, and any work in it, is kept.
+func (r *reconciler) retire(name, dir, deletedRoot, base string, deleteIt bool) (string, bool) {
+	if _, err := os.Stat(dir); err != nil {
+		return "", false
+	}
+	if detail := r.check.mismatch(dir, name); detail != "" {
+		r.add(name, cloner.ActionSkippedOrigin, detail)
+		return "", false
+	}
+	if deleteIt {
+		if !r.dryRun {
+			if err := cloner.DeleteRepo(dir); err != nil {
+				r.add(name, cloner.ActionFailed, err.Error())
+				return "", false
+			}
+		}
+		r.add(name, cloner.ActionDeleted, dryRunDetail("", r.dryRun))
+		return "", true
+	}
+	dest, detail := r.freeName(deletedRoot, base)
+	if !r.dryRun {
+		if err := cloner.MoveRepoTo(dir, filepath.Join(deletedRoot, dest)); err != nil {
+			r.add(name, cloner.ActionFailed, err.Error())
+			return "", false
+		}
+	}
+	r.add(name, cloner.ActionMovedDeleted, dryRunDetail(detail, r.dryRun))
+	return dest, true
+}
+
+// freeName returns base when nothing in root has that name, and otherwise
+// base.<stamp>, or base.<stamp>-2 and so on, with a detail saying why.
+func (r *reconciler) freeName(root, base string) (name, detail string) {
+	if !exists(filepath.Join(root, base)) {
+		return base, ""
+	}
+	name = base + "." + r.stamp
+	for n := 2; exists(filepath.Join(root, name)); n++ {
+		name = fmt.Sprintf("%s.%s-%d", base, r.stamp, n)
+	}
+	return name, fmt.Sprintf("%s exists; moved to %s", filepath.Join(root, base), filepath.Join(root, name))
+}
+
+func dryRunDetail(detail string, dryRun bool) string {
+	switch {
+	case !dryRun:
+		return detail
+	case detail == "":
+		return "dry-run"
+	default:
+		return detail + "; dry-run"
+	}
 }
 
 // exists reports whether anything is at path. A path that can't be checked

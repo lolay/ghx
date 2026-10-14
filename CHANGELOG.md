@@ -55,6 +55,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (`ghx -- help <PATH>`).
 
 ### Fixed
+- `--delete` deletes an archived repo's wiki along with the repo, and a removed
+  repo's wiki moves to `DELETED/` (or is deleted) with it, instead of being
+  left in the output directory, never synced again.
+- A removed repo moved into `DELETED/` no longer replaces an earlier clone of
+  the same name there, and any work in it: the second one gets a UTC timestamp
+  suffix (`DELETED/x.20261014T013134Z`), and its wiki takes the same name.
 - An archived repo's clone is moved into `ARCHIVED/` whenever it is found
   outside it, not only on the run after the repo was archived: a mirror with no
   `.ghx.json` no longer gets a second clone in `ARCHIVED/`, and a move that
