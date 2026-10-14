@@ -102,7 +102,11 @@ the run flow hands it the table instead of printing it; anything that isn't a
 The root command runs through [fang](https://github.com/charmbracelet/fang): styled
 usage, examples and errors, and `ghx completion <shell>` and `ghx man`. The exit
 code is 0 or 1 as before. Under `NO_COLOR` fang still emits bold and reset codes,
-so `execute` strips ANSI itself. Because fang adds subcommands next to the root's
+so `execute` strips ANSI itself. On a terminal fang title-cases the first word of
+an error, which would mangle the file path that starts a config error
+(`<path>: concurrency must be an integer, ...`), so `errorHandler` keeps the
+case of any error whose first word is a path and otherwise leaves fang's default
+alone. Because fang adds subcommands next to the root's
 two positional arguments, an org named `help`, `completion` or `man` needs `--`
 before it.
 

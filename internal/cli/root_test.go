@@ -2,8 +2,13 @@ package cli_test
 
 import (
 	"bytes"
+	"errors"
+	"io"
+	"strings"
 	"testing"
 
+	"github.com/charmbracelet/fang"
+	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -124,4 +129,44 @@ func TestRun_CompletionWorksNextToTheTwoArguments(t *testing.T) {
 	code, out, _ := runRoot(t, "completion", "bash")
 	assert.Equal(t, 0, code)
 	assert.Contains(t, out, "bash completion V2 for ghx")
+}
+
+// fang title-cases the first word of an error on a terminal; a config error
+// starts with a file path, which must come out as it went in.
+func TestErrorStyles_KeepsAPathFirstWordAsIs(t *testing.T) {
+	const msg = `/tmp/home/.ghx.toml: concurrency must be an integer, got string "8"`
+	tests := []struct {
+		name string
+		msg  string
+		want string
+	}{
+		{"unix path", msg, msg},
+		{"windows path", `C:\Users\me\.ghx.toml: concurrency must be an integer`, `C:\Users\me\.ghx.toml: concurrency must be an integer`},
+		{"plain error is title-cased as before", "unknown flag: --nope", "Unknown flag: --nope"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			styles := cli.ErrorStyles(fangStyles(t), errors.New(tt.msg))
+
+			assert.Equal(t, tt.want, strings.TrimSpace(styles.ErrorText.UnsetMargins().UnsetWidth().Render(tt.msg)))
+		})
+	}
+}
+
+// fangStyles returns the styles fang hands its error handler, which it builds
+// from a colour scheme and doesn't export.
+func fangStyles(t *testing.T) fang.Styles {
+	t.Helper()
+	var got fang.Styles
+	cmd := &cobra.Command{
+		Use:  "probe",
+		RunE: func(*cobra.Command, []string) error { return errors.New("probe") },
+	}
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs(nil)
+	_ = fang.Execute(t.Context(), cmd, fang.WithErrorHandler(func(_ io.Writer, styles fang.Styles, _ error) {
+		got = styles
+	}))
+	return got
 }
