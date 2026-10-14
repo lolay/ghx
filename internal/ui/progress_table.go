@@ -18,6 +18,10 @@ import (
 	"github.com/lolay/ghx/internal/ghapi"
 )
 
+// repaintEvery is how often the live area is redrawn, which is what moves the
+// spinners and the running times while no repo finishes.
+const repaintEvery = 100 * time.Millisecond
+
 // columnDrops is the order the table gives up columns, by index into
 // repoColumns, while it is wider than the terminal.
 var columnDrops = []int{columnPushed, columnBranch, columnArchived, columnLanguage}
@@ -74,8 +78,8 @@ type tableRow struct {
 // Closing it from Stop would need to know whether another pass follows, and a
 // renderer can't.
 //
-// It prints a finished row the way the pterm renderer prints a log line: clear
-// the area, print, start the area again. A pterm AreaPrinter writes to out,
+// It prints a finished row by clearing the area, printing, and starting the
+// area again. A pterm AreaPrinter writes to out,
 // pterm's switches stay untouched, and the cursor target (the one pterm global
 // needed) points at out only between Start and Stop. Every method is safe for
 // concurrent use.
@@ -95,6 +99,19 @@ type tableProgress struct {
 	area       *pterm.AreaPrinter
 	quit       chan struct{} // closed by Stop to end the repaint goroutine
 	repainted  chan struct{} // closed when that goroutine has returned
+}
+
+// fdWriter gives any io.Writer the Fd method pterm's cursor code asks of its
+// writer. Only a Windows console reads the descriptor, and a console is the
+// os.File that Fd then reports.
+type fdWriter struct{ io.Writer }
+
+// Fd reports the descriptor of the wrapped file, or 0 when it isn't one.
+func (w fdWriter) Fd() uintptr {
+	if f, ok := w.Writer.(interface{ Fd() uintptr }); ok {
+		return f.Fd()
+	}
+	return 0
 }
 
 func newTableProgress(out io.Writer) *tableProgress {
@@ -191,7 +208,7 @@ func (p *tableProgress) Start(total int) {
 // spinners and the running times while no repo finishes.
 func (p *tableProgress) repaint(quit <-chan struct{}, repainted chan<- struct{}) {
 	defer close(repainted)
-	ticker := time.NewTicker(ptermRepaint)
+	ticker := time.NewTicker(repaintEvery)
 	defer ticker.Stop()
 	for {
 		select {
@@ -290,7 +307,8 @@ func (p *tableProgress) FinishTable() {
 	if len(p.rows) > 0 {
 		lines = append(lines, l.rule)
 	}
-	lines = append(lines, l.footer(p.totalsLocked()), l.bottom)
+	lines = append(lines, l.footerLines(p.totalsLocked())...)
+	lines = append(lines, l.bottom)
 	p.printLocked(lines...)
 }
 
@@ -386,8 +404,9 @@ func (p *tableProgress) progressLocked(now time.Time, more int) string {
 // Status mark: "60 repos · ✓ 3 cloned · ↓ 12 pulled · – 40 up to date · ⇣ 2
 // fetched only · ⚠ 1 skipped · ∅ 1 empty · ✗ 1 failed · 1m12s". Only the
 // cloned count is always shown; the others appear when they are not zero, then
-// come the repos that never finished. The caller holds p.mu.
-func (p *tableProgress) totalsLocked() string {
+// come the repos that never finished. The parts are returned apart, for a
+// footer too long for one line to wrap between them. The caller holds p.mu.
+func (p *tableProgress) totalsLocked() []string {
 	bySymbol := map[string]int{}
 	var interrupted, queued int
 	for _, row := range p.rows {
@@ -436,7 +455,7 @@ func (p *tableProgress) totalsLocked() string {
 		elapsed = p.stopped.Sub(p.began)
 	}
 	parts = append(parts, formatElapsed(elapsed))
-	return strings.Join(parts, " · ")
+	return parts
 }
 
 // frameLocked is the live area: the in-flight rows, a rule, the progress

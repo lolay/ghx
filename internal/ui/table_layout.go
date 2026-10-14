@@ -137,14 +137,46 @@ func (l *tableLayout) rows(repos []ghapi.RepoInfo, status []string) []string {
 	return lines[len(l.head) : len(lines)-1]
 }
 
+// innerWidth is how many columns of text a footer line holds between the
+// table's side borders.
+func (l *tableLayout) innerWidth() int {
+	box := table.StyleLight.Box
+	return l.width - text.StringWidthWithoutEscSequences(box.Left+box.PaddingLeft+box.PaddingRight+box.Right)
+}
+
 // footer is one line spanning the table, holding s (cut with "…" when it is
 // too long).
 func (l *tableLayout) footer(s string) string {
 	box := table.StyleLight.Box
-	inner := l.width - text.StringWidthWithoutEscSequences(box.Left+box.PaddingLeft+box.PaddingRight+box.Right)
+	inner := l.innerWidth()
 	s = truncate(s, inner)
 	pad := strings.Repeat(" ", max(inner-text.StringWidthWithoutEscSequences(s), 0))
 	return box.Left + box.PaddingLeft + s + pad + box.PaddingRight + box.Right
+}
+
+// footerLines is the footer for parts joined with " · ": one line when they
+// fit, else as many as they need, so a count at the end (the failures) is
+// never the one cut off.
+func (l *tableLayout) footerLines(parts []string) []string {
+	const sep = " · "
+	inner := l.innerWidth()
+	var lines []string
+	var cur string
+	for _, part := range parts {
+		switch {
+		case cur == "":
+			cur = part
+		case text.StringWidthWithoutEscSequences(cur+sep+part) <= inner:
+			cur += sep + part
+		default:
+			lines = append(lines, l.footer(cur))
+			cur = part
+		}
+	}
+	if cur != "" {
+		lines = append(lines, l.footer(cur))
+	}
+	return lines
 }
 
 // barWidth is the width of the progress bar for a footer that counts total

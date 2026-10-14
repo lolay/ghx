@@ -1,9 +1,6 @@
 package ui_test
 
 import (
-	"regexp"
-	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -105,44 +102,4 @@ func TestActionText_ShowsTheTimeOnlyWhenGitRan(t *testing.T) {
 			assert.Equal(t, tt.want, ui.ActionText(tt.action, tt.elapsed))
 		})
 	}
-}
-
-// TestPtermProgress_LeadsEachFinishedRepoWithItsSymbol checks the lines the
-// pterm renderer prints above its area: a symbol, then the name and action,
-// and none of pterm's SUCCESS, WARNING or ERROR prefixes.
-func TestPtermProgress_LeadsEachFinishedRepoWithItsSymbol(t *testing.T) {
-	p, buf := useRenderer(t, "pterm")
-	finished := []struct {
-		name   string
-		action cloner.Action
-		symbol string
-		line   string
-	}{
-		{"fresh", cloner.ActionCloned, "✓", "fresh cloned 1.2s"},
-		{"dirty", cloner.ActionFetchedOnly, "⇣", "dirty fetched only 1.2s"},
-		{"broken", cloner.ActionFailed, "✗", "broken failed 1.2s"},
-	}
-
-	within(t, func() {
-		p.Start(len(finished))
-		var wg sync.WaitGroup
-		for _, f := range finished {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				p.RepoDone(cloner.RepoResult{Name: f.name, Action: f.action}, 1200*time.Millisecond)
-			}()
-		}
-		wg.Wait()
-		p.Stop()
-	})
-
-	out := stripANSI(buf.String())
-	for _, f := range finished {
-		assert.Regexp(t, f.symbol+`\s+`+regexp.QuoteMeta(f.line), out)
-	}
-	for _, prefix := range []string{"SUCCESS", "WARNING", "ERROR"} {
-		assert.NotContains(t, out, prefix)
-	}
-	require.True(t, strings.HasSuffix(out, "\n"), "the cursor is left on a fresh line")
 }

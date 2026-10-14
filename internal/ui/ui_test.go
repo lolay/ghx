@@ -2,14 +2,11 @@ package ui_test
 
 import (
 	"bytes"
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/jedib0t/go-pretty/v6/text"
 	"github.com/pterm/pterm"
@@ -258,7 +255,7 @@ func TestSetupTerminal_DrawsProgressOnlyOnATerminal(t *testing.T) {
 	}
 }
 
-func TestNewProgress_NoRendererDrawsOnAFile(t *testing.T) {
+func TestNewProgress_AFileGetsNoProgress(t *testing.T) {
 	captureOut(t)
 	t.Cleanup(ui.ResetTerminal)
 	file, err := os.Create(filepath.Join(t.TempDir(), "log.txt"))
@@ -266,93 +263,22 @@ func TestNewProgress_NoRendererDrawsOnAFile(t *testing.T) {
 	t.Cleanup(func() { _ = file.Close() })
 	ui.SetupTerminal(file)
 
-	for _, name := range []string{"", "gopretty", "buildx", "indicatif", "pterm", "table"} {
-		t.Setenv("GHX_PROGRESS", name)
-		assert.Equal(t, cloner.NoProgress{}, ui.NewProgress(), "GHX_PROGRESS=%q on a file", name)
-	}
+	assert.Equal(t, cloner.NoProgress{}, ui.NewProgress())
+	_, ok := ui.NewProgress().(ui.RepoLister)
+	assert.False(t, ok, "no progress means the run flow prints the static table")
 }
 
-func TestNewProgress_RendererNames(t *testing.T) {
+func TestNewProgress_ATerminalGetsTheTableThatListsRepos(t *testing.T) {
 	captureOut(t)
 	t.Cleanup(ui.ResetTerminal)
 	ui.ResetTerminal()
-	tests := []struct {
-		name string
-		env  string
-	}{
-		{"unset means gopretty", ""},
-		{"gopretty", "gopretty"},
-		{"an unknown name means gopretty", "nonsense"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("GHX_PROGRESS", tt.env)
-			p := ui.NewProgress()
-			assert.NotEqual(t, cloner.NoProgress{}, p)
-			assert.IsType(t, ui.NewProgress(), p, "the same renderer each time")
-		})
-	}
-}
 
-func TestNewProgress_OnlyTheTableRendererListsRepos(t *testing.T) {
-	captureOut(t)
-	t.Cleanup(ui.ResetTerminal)
-	ui.ResetTerminal()
-	tests := []struct {
-		env   string
-		lists bool
-	}{
-		{"", false},
-		{"gopretty", false},
-		{"buildx", false},
-		{"indicatif", false},
-		{"pterm", false},
-		{"table", true},
-	}
-	for _, tt := range tests {
-		t.Run("GHX_PROGRESS="+tt.env, func(t *testing.T) {
-			t.Setenv("GHX_PROGRESS", tt.env)
-			_, ok := ui.NewProgress().(ui.RepoLister)
-			assert.Equal(t, tt.lists, ok)
-		})
-	}
-}
+	p := ui.NewProgress()
 
-func TestGoPrettyProgress_DrawsTheBarAndFinishesOnAFreshLine(t *testing.T) {
-	tests := []struct {
-		name string
-		done int
-	}{
-		{"every repo done", 4},
-		{"stopped early, as a cancelled sync is", 1},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			buf := captureOut(t)
-			t.Cleanup(ui.ResetTerminal)
-			ui.ResetTerminal()
-			t.Setenv("GHX_PROGRESS", "gopretty")
-
-			p := ui.NewProgress()
-			p.Start(4)
-			var wg sync.WaitGroup
-			for i := range tt.done {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					name := fmt.Sprintf("repo-%d", i)
-					p.RepoStarted(name, cloner.ProgressClone)
-					p.RepoDone(cloner.RepoResult{Name: name, Action: cloner.ActionCloned}, time.Millisecond)
-				}()
-			}
-			wg.Wait()
-			p.Stop()
-
-			out := buf.String()
-			assert.Contains(t, out, "Syncing repos")
-			assert.True(t, strings.HasSuffix(out, "\n"), "the cursor is left on a fresh line: %q", out)
-		})
-	}
+	assert.NotEqual(t, cloner.NoProgress{}, p)
+	_, ok := p.(ui.RepoLister)
+	assert.True(t, ok, "the renderer draws the repo table itself")
+	assert.IsType(t, ui.NewProgress(), p, "the same renderer each time")
 }
 
 func TestPrintRepoTable_FormatsEachColumn(t *testing.T) {

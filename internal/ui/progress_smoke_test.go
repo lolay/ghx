@@ -42,22 +42,9 @@ var ansiCodes = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
 // terminal would show.
 func stripANSI(s string) string { return ansiCodes.ReplaceAllString(s, "") }
 
-// renderers lists the GHX_PROGRESS names the smoke tests cover, and whether
-// each also prints a line for a repo that finishes (a one-line bar names only
-// the repo that started last).
-var renderers = []struct {
-	name     string
-	logsDone bool
-}{
-	{"buildx", true},
-	{"indicatif", false},
-	{"pterm", true},
-	{"table", true},
-}
-
-// useRenderer makes ui.NewProgress return the named renderer, drawing into
-// the returned buffer.
-func useRenderer(t *testing.T, name string) (cloner.Progress, *lockedBuffer) {
+// useRenderer makes ui.NewProgress draw into the returned buffer, as it does
+// on a terminal, and returns what it gives.
+func useRenderer(t *testing.T) (cloner.Progress, *lockedBuffer) {
 	t.Helper()
 	var buf lockedBuffer
 	prev := ui.Out
@@ -65,13 +52,11 @@ func useRenderer(t *testing.T, name string) (cloner.Progress, *lockedBuffer) {
 	t.Cleanup(func() { ui.Out = prev })
 	t.Cleanup(ui.ResetTerminal)
 	ui.ResetTerminal()
-	t.Setenv("GHX_PROGRESS", name)
 	return ui.NewProgress(), &buf
 }
 
-// waitFor blocks until the renderer has drawn name. A one-line renderer shows
-// only the repo that started last, so the test starts repos one at a time and
-// waits for each to be drawn before the next.
+// waitFor blocks until the renderer has drawn name, so a test can act on a
+// repo that is on screen as in flight.
 func waitFor(t *testing.T, buf *lockedBuffer, name string) {
 	t.Helper()
 	require.Eventually(t, func() bool { return strings.Contains(buf.String(), name) },
@@ -94,78 +79,68 @@ func within(t *testing.T, fn func()) {
 	}
 }
 
-// TestRenderers_SurviveConcurrentCallsAndNameEveryRepo drives each renderer
+// TestRenderer_SurvivesConcurrentCallsAndNamesEveryRepo drives the renderer
 // as CloneRepos does: Start, then RepoStarted and RepoDone from several
 // goroutines at once, then Stop. It must return, and the output must name
 // every repo.
-func TestRenderers_SurviveConcurrentCallsAndNameEveryRepo(t *testing.T) {
+func TestRenderer_SurvivesConcurrentCallsAndNamesEveryRepo(t *testing.T) {
 	results := []cloner.Action{
 		cloner.ActionCloned, cloner.ActionPulled, cloner.ActionFailed, cloner.ActionFetchedOnly,
 	}
-	for _, r := range renderers {
-		t.Run(r.name, func(t *testing.T) {
-			p, buf := useRenderer(t, r.name)
-			const repos = 12
+	p, buf := useRenderer(t)
+	const repos = 12
 
-			within(t, func() {
-				p.Start(repos)
-				var starting sync.Mutex
-				var wg sync.WaitGroup
-				for i := range repos {
-					wg.Add(1)
-					go func() {
-						defer wg.Done()
-						repo := fmt.Sprintf("repo-%02d", i)
-						action := cloner.ProgressPull
-						if i%2 == 0 {
-							action = cloner.ProgressClone
-						}
-						starting.Lock()
-						p.RepoStarted(repo, action)
-						waitFor(t, buf, repo)
-						starting.Unlock()
-						time.Sleep(time.Duration(i%4) * 60 * time.Millisecond)
-						p.RepoDone(cloner.RepoResult{Name: repo, Action: results[i%len(results)]}, time.Duration(i)*time.Millisecond)
-					}()
+	within(t, func() {
+		p.Start(repos)
+		var starting sync.Mutex
+		var wg sync.WaitGroup
+		for i := range repos {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				repo := fmt.Sprintf("repo-%02d", i)
+				action := cloner.ProgressPull
+				if i%2 == 0 {
+					action = cloner.ProgressClone
 				}
-				wg.Wait()
-				p.Stop()
-			})
+				starting.Lock()
+				p.RepoStarted(repo, action)
+				waitFor(t, buf, repo)
+				starting.Unlock()
+				time.Sleep(time.Duration(i%4) * 60 * time.Millisecond)
+				p.RepoDone(cloner.RepoResult{Name: repo, Action: results[i%len(results)]}, time.Duration(i)*time.Millisecond)
+			}()
+		}
+		wg.Wait()
+		p.Stop()
+	})
 
-			out := buf.String()
-			for i := range repos {
-				assert.Contains(t, out, fmt.Sprintf("repo-%02d", i))
-			}
-		})
+	out := buf.String()
+	for i := range repos {
+		assert.Contains(t, out, fmt.Sprintf("repo-%02d", i))
 	}
 }
 
-// TestRenderers_ToleratePartialRuns covers what a cancelled sync and an
-// unusable repo name do to a renderer: a RepoDone with no RepoStarted, a
+// TestRenderer_ToleratesPartialRuns covers what a cancelled sync and an
+// unusable repo name do to the renderer: a RepoDone with no RepoStarted, a
 // RepoStarted with no RepoDone, a Stop before the count is reached, a Stop
 // with nothing started, and a second sync on the same value.
-func TestRenderers_ToleratePartialRuns(t *testing.T) {
-	for _, r := range renderers {
-		t.Run(r.name, func(t *testing.T) {
-			p, buf := useRenderer(t, r.name)
+func TestRenderer_ToleratesPartialRuns(t *testing.T) {
+	p, buf := useRenderer(t)
 
-			within(t, func() {
-				p.Start(5)
-				p.RepoDone(cloner.RepoResult{Name: "bad-name", Action: cloner.ActionSkippedName}, 0)
-				p.RepoStarted("quick", cloner.ProgressClone)
-				waitFor(t, buf, "quick")
-				p.RepoDone(cloner.RepoResult{Name: "quick", Action: cloner.ActionCloned}, time.Millisecond)
-				p.RepoStarted("stuck", cloner.ProgressPull)
-				waitFor(t, buf, "stuck")
-				p.Stop()
+	within(t, func() {
+		p.Start(5)
+		p.RepoDone(cloner.RepoResult{Name: "bad-name", Action: cloner.ActionSkippedName}, 0)
+		p.RepoStarted("quick", cloner.ProgressClone)
+		waitFor(t, buf, "quick")
+		p.RepoDone(cloner.RepoResult{Name: "quick", Action: cloner.ActionCloned}, time.Millisecond)
+		p.RepoStarted("stuck", cloner.ProgressPull)
+		waitFor(t, buf, "stuck")
+		p.Stop()
 
-				p.Start(1)
-				p.Stop()
-			})
+		p.Start(1)
+		p.Stop()
+	})
 
-			if r.logsDone {
-				assert.Contains(t, buf.String(), "bad-name", "a repo that finished without starting is still logged")
-			}
-		})
-	}
+	assert.Contains(t, buf.String(), "bad-name", "a repo that finished without starting is still logged")
 }

@@ -2,37 +2,21 @@ package ui
 
 import (
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/lolay/ghx/internal/cloner"
 	"github.com/lolay/ghx/internal/ghapi"
 )
 
-// progressEnv names the temporary variable that picks a progress renderer
-// while the candidates are compared; the losers are deleted afterwards.
-const progressEnv = "GHX_PROGRESS"
-
-// NewProgress returns the Progress for a sync: cloner.NoProgress when the
-// progress bar can't draw (a pipe, a file, a console without ANSI support:
-// see SetupTerminal), otherwise the renderer GHX_PROGRESS names. Unset or an
-// unknown name means "gopretty". It writes to Out as Out is now.
+// NewProgress returns the Progress for a sync: cloner.NoProgress when nothing
+// can draw (a pipe, a file, a console without ANSI support: see
+// SetupTerminal), otherwise the live repo table, which is also a RepoLister.
+// It writes to Out as Out is now.
 func NewProgress() cloner.Progress {
 	if !animate {
 		return cloner.NoProgress{}
 	}
-	switch os.Getenv(progressEnv) {
-	case "buildx":
-		return newBuildxProgress(Out)
-	case "indicatif":
-		return newIndicatifProgress(Out)
-	case "pterm":
-		return newPtermProgress(Out)
-	case "table":
-		return newTableProgress(Out)
-	default:
-		return newGoPrettyProgress(Out)
-	}
+	return newTableProgress(Out)
 }
 
 // formatSeconds shows d as tenths of a second ("1.2s"), or as minutes and

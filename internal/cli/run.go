@@ -164,10 +164,10 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 		previousRepos = m.Repos
 	}
 
-	// A live renderer draws the repo table itself, with a Status column that
-	// follows each repo, so it gets the repos in place of the static table. A
-	// dry run, a pipe and a file print the static table: there is no sync to
-	// follow, or no terminal to follow it on.
+	// On a terminal the progress renderer draws the repo table itself, with a
+	// Status column that follows each repo, so it gets the repos in place of the
+	// static table. A dry run, a pipe and a file print the static table: there
+	// is no sync to follow, or no terminal to follow it on.
 	progress := ui.NewProgress()
 	lister, drawsTable := progress.(ui.RepoLister)
 	if drawsTable && !dryRun {
@@ -246,9 +246,10 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 	}
 	summary.Results = append(summary.Results, cleanFailures...)
 
-	// A live table is one piece from its top to its close, so nothing is
-	// printed between the passes: the archived rows already say "yes" under
-	// Archived, and the note on skipping them waits for the close.
+	// The live table on a terminal is one piece from its top to its close, so
+	// nothing is printed between the passes: the archived rows already say
+	// "yes" under Archived, and the note on skipping them waits for the close.
+	// Without a terminal the notes print where they happen.
 	var afterTable string
 	if len(archivedRepos) > 0 {
 		if shouldDelete {
@@ -289,8 +290,8 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 	if err := manifest.Write(outputDir, org, allRepos); err != nil {
 		return fmt.Errorf("writing manifest: %w", err)
 	}
-	// The table's closing footer already holds the counts, so under the table
-	// renderer only the lists that follow them are left to print.
+	// The table's closing footer already holds the counts, so on a terminal
+	// only the lists that follow them are left to print.
 	if drawsTable && !dryRun {
 		ui.PrintSummaryLists(summary)
 	} else {

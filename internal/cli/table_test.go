@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jedib0t/go-pretty/v6/text"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -18,11 +19,29 @@ import (
 // write.
 var ansiCodes = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
 
-// tableWorld is a world with an active and an archived repo, and the live
-// table renderer selected.
+// terminal makes the rest of the test a run on a terminal that takes ANSI
+// codes: ui.NewProgress then gives the live table, with no variable to say so.
+// The null device is a character device, as a console is, on every OS, and a
+// Windows console may take no ANSI codes under `go test`, so the test says it
+// does. The package's non-terminal default (TestMain) comes back afterwards.
+func terminal(t *testing.T) {
+	t.Helper()
+	null, err := os.Open(os.DevNull)
+	require.NoError(t, err)
+	supported := text.ANSICodesSupported
+	text.ANSICodesSupported = true
+	ui.SetupTerminal(null)
+	t.Cleanup(func() {
+		text.ANSICodesSupported = supported
+		ui.SetupTerminal(stdoutFile)
+		_ = null.Close()
+	})
+}
+
+// tableWorld is a world with an active and an archived repo, on a terminal.
 func tableWorld(t *testing.T) *world {
 	t.Helper()
-	t.Setenv("GHX_PROGRESS", "table")
+	terminal(t)
 	w := newWorld(t)
 	w.addRepo("alpha")
 	w.addRepo("beta")
@@ -69,19 +88,28 @@ func TestRun_TheLiveTableShowsRowsStillQueuedWhenArchivedReposAreSkipped(t *test
 	assert.Less(t, strings.Index(out, "3 repos · "), strings.Index(out, "Skipping 1 archived repo(s) (--delete)"))
 }
 
-func TestRun_OtherRenderersAnnounceTheArchivedPass(t *testing.T) {
-	for _, renderer := range []string{"gopretty", "buildx", "indicatif", "pterm"} {
-		t.Run(renderer, func(t *testing.T) {
-			w := tableWorld(t)
-			t.Setenv("GHX_PROGRESS", renderer)
+func TestRun_ANonTerminalAnnouncesTheArchivedPass(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("alpha")
+	w.addRepo("beta")
+	w.addRepo("vault", func(r *ghapitest.Repo) { r.Archived = true })
 
-			out := plain(w.mustRun())
+	out := plain(w.mustRun())
 
-			assert.Contains(t, out, "Cloning 1 archived repo(s) into ARCHIVED/...")
-			assert.Equal(t, 1, strings.Count(out, "Repos to export"), "the static table")
-			assert.Contains(t, out, "Total: 3 repos")
-		})
-	}
+	assert.Contains(t, out, "Cloning 1 archived repo(s) into ARCHIVED/...", "the live table prints this nowhere")
+	assert.Equal(t, 1, strings.Count(out, "Repos to export"), "the static table")
+	assert.Contains(t, out, "Total: 3 repos")
+}
+
+func TestRun_ANonTerminalPrintsTheDeleteNoteBeforeTheSummary(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("alpha")
+	w.addRepo("vault", func(r *ghapitest.Repo) { r.Archived = true })
+
+	out := plain(w.mustRun("--delete"))
+
+	require.Contains(t, out, "Skipping 1 archived repo(s) (--delete)")
+	assert.Less(t, strings.Index(out, "Skipping 1 archived repo(s) (--delete)"), strings.Index(out, "Sync Summary"))
 }
 
 // failingWorld is tableWorld with a repo whose clone URL points nowhere, so
@@ -131,19 +159,17 @@ func TestRun_TheTableRendererPrintsNoListsWhenEverythingWorked(t *testing.T) {
 	assert.NotContains(t, out, "Skipped (")
 }
 
-func TestRun_OtherRenderersPrintTheSummaryAsBefore(t *testing.T) {
-	for _, renderer := range []string{"gopretty", "buildx", "indicatif", "pterm"} {
-		t.Run(renderer, func(t *testing.T) {
-			w := failingWorld(t)
-			t.Setenv("GHX_PROGRESS", renderer)
+func TestRun_ANonTerminalPrintsTheFullSummary(t *testing.T) {
+	w := failingWorld(t)
+	// failingWorld is on a terminal; a pipe is what the test is about.
+	ui.SetupTerminal(stdoutFile)
 
-			out := plain(w.mustRun())
+	out := plain(w.mustRun())
 
-			assert.Contains(t, out, "Sync Summary")
-			assert.Regexp(t, `cloned\s+│\s+3\s+│`, out)
-			assert.Contains(t, out, "Failed repos:\n  ✗ broken  ")
-		})
-	}
+	assert.NotContains(t, out, "STATUS")
+	assert.Contains(t, out, "Sync Summary")
+	assert.Regexp(t, `cloned\s+│\s+3\s+│`, out)
+	assert.Contains(t, out, "Failed repos:\n  ✗ broken  ")
 }
 
 func TestRun_ADryRunPrintsTheStaticTable(t *testing.T) {
@@ -161,24 +187,28 @@ func TestRun_ADryRunPrintsTheStaticTable(t *testing.T) {
 }
 
 func TestRun_ANonTerminalPrintsTheStaticTable(t *testing.T) {
-	w := tableWorld(t)
-	file, err := os.Create(filepath.Join(t.TempDir(), "log.txt"))
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = file.Close() })
-	// The null device is a character device, as a console is, on every OS;
-	// setting it up again after the test puts the terminal back as it began.
-	null, err := os.Open(os.DevNull)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = null.Close() })
-	t.Cleanup(func() { ui.SetupTerminal(null) })
-	ui.SetupTerminal(file)
+	w := newWorld(t)
+	w.addRepo("alpha")
+	w.addRepo("beta")
+	w.addRepo("vault", func(r *ghapitest.Repo) { r.Archived = true })
 
 	out := w.mustRun()
 
 	assert.Equal(t, 1, strings.Count(out, "Repos to export"))
 	assert.Equal(t, 1, strings.Count(out, "Total: 3 repos"))
 	assert.NotContains(t, out, "STATUS")
-	assert.NotContains(t, out, "Syncing repos")
+	assert.NotContains(t, out, "Syncing")
 	assert.NotContains(t, out, "\x1b[", "a log file gets no escape codes")
 	assert.Contains(t, out, "Sync Summary")
+}
+
+func TestRun_ATerminalDrawsTheLiveTableWithoutAnyVariable(t *testing.T) {
+	w := tableWorld(t)
+
+	out := plain(w.mustRun())
+
+	assert.Contains(t, out, "STATUS")
+	assert.Equal(t, 3, strings.Count(out, "✓ cloned"))
+	assert.NotContains(t, out, "Total: ", "no static table")
+	assert.NotContains(t, out, "Sync Summary")
 }

@@ -284,6 +284,37 @@ func TestTableProgress_TheFooterCountsOneClassPerMarkInOrder(t *testing.T) {
 		`⚠ 2 skipped · ∅ 1 empty · ✗ 2 failed · \d+s +│$`, lines[len(lines)-2])
 }
 
+func TestTableProgress_ALongFooterWrapsBetweenCountsInsteadOfCuttingOneOff(t *testing.T) {
+	needsANSICursor(t)
+	done := []cloner.Action{
+		cloner.ActionCloned, cloner.ActionPulled, cloner.ActionUpToDate, cloner.ActionFetchedOnly,
+		cloner.ActionSkippedName, cloner.ActionSkippedEmpty, cloner.ActionFailed,
+	}
+	p, lister, buf := newTable(t, 100, 40, tableRepos(len(done)))
+
+	within(t, func() {
+		p.Start(len(done))
+		for i, action := range done {
+			name := fmt.Sprintf("repo-%02d", i)
+			p.RepoStarted(name, cloner.ProgressPull)
+			p.RepoDone(cloner.RepoResult{Name: name, Action: action}, 12*time.Minute+59*time.Second)
+		}
+		p.Stop()
+		lister.FinishTable()
+	})
+
+	scr := screen(buf)
+	lines := strings.Split(scr, "\n")
+	closing := strings.Join(lines[len(lines)-4:len(lines)-1], "\n")
+	assert.NotContains(t, closing, "…", "no count is cut off")
+	assert.Contains(t, closing, "✗ 1 failed")
+	assert.Contains(t, closing, "7 repos · ✓ 1 cloned")
+	assert.Contains(t, lines[len(lines)-2], "✗ 1 failed", "the last line holds the last counts")
+	assert.NotContains(t, lines[len(lines)-2], "7 repos", "and the first line the first")
+	assertOneWidth(t, scr)
+	assert.Regexp(t, `\d+m?\d*s +│\n└`, scr, "the time ends the last footer line")
+}
+
 func TestTableProgress_TheFooterShowsOnlyTheClassesThatHaveRepos(t *testing.T) {
 	needsANSICursor(t)
 	p, lister, buf := newTable(t, 200, 40, tableRepos(2))

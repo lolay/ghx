@@ -10,8 +10,8 @@ import (
 // Out again, as they do before main calls SetupTerminal.
 func ResetTerminal() { animate = true }
 
-// StatusMark and ActionText expose the helpers the pterm and table renderers
-// share.
+// StatusMark and ActionText expose the helpers the table renderer and the
+// summary share.
 var (
 	StatusMark = statusMark
 	ActionText = actionText

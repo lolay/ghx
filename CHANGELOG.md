@@ -39,6 +39,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   only · ⚠ 1 skipped · ∅ 1 empty · ✗ 1 failed · 1m12s`), showing a class only
   when it has repos.
 
+- On a terminal, the live repo table replaces the progress bar: fixed columns
+  that never shift, a row per repo that scrolls into the terminal's history as it
+  finishes, the repos in flight and a progress line in the footer, and the
+  totals at the close (wrapped between counts when the line is too long),
+  followed by the lists of repos that need a look. Piped or
+  redirected output keeps the static table and the full summary, with no escape
+  codes.
+
 ### Added
 - `ghx completion <shell>` prints a shell completion script, and `ghx man` a man
   page. An organization named `help`, `completion` or `man` needs `--` before it
