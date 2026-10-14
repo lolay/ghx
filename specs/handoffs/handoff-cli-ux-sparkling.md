@@ -2,12 +2,12 @@
 
 - **Branch:** `claude/magical-ride-7h4rhi` in `lolay/ghx` (assigned by the cloud
   session; cut from `main` at d984df8).
-- **Plan:** `specs/handoffs/plan-cli-ux-sparkling.md` (re-opened for wave 4).
+- **Plan:** `specs/handoffs/plan-cli-ux-sparkling.md` (complete after wave 4 and its fix-up).
 - **Mode:** unattended (confirmed 2026-10-13; runner=cloud).
 - **Done:** wave 1 [exec] `ghx s1-s5`, 56d21d8..33a21fd, review PASS. No fix-ups,
   retries or checkpoints.
   Wave 2 [exec] `ghx s6-s7` (re-plan), 7ee0a3c..0592684, review PASS.
-- **Spend:** ~$25.8 of ~$4.6 expected (Token log in the plan).
+- **Spend:** ~$27.3 of ~$4.6 expected (Token log in the plan).
   Wave 3 [exec] `ghx s8-s10`, c7bf5b6..4a5e995, review CONCERNS (live-area box
   drawing: the column-closing rule sits above the in-flight rows, not above the footer).
   Fix-up 3-fix 683d367, review PASS.
@@ -23,27 +23,23 @@
   Wave 4 [exec] `ghx s11-s12`, 02d076d..f0d4743: marks (↓ pulled, – up to date,
   ⇣ fetched only) and the table as the only progress display (mpb gone);
   review CONCERNS on two doc lines.
-- **Next unit:** fix-up 4-fix (automatic, 1 of 2).
+  Fix-up 4-fix 6e928e3..195a501, review PASS.
+- **Next:** open a PR (waits for Gary); last commit before merge removes or
+  promotes this plan and handoff.
 - **Later:** Gary picks a renderer; a follow-up keeps it, deletes the rest and
   `GHX_PROGRESS`, tidies `go.mod`, updates `specs/`, and removes or promotes this
   plan and handoff before the branch merges.
-- **Resume:** paste the plan's Kickoff prompt into a new session on this branch.
+- **Resume:** none needed for this plan.
 
 ## How to try it
 
-    make build
-    GHX_PROGRESS=gopretty  ./bin/ghx <org> <dir>   # original bar, also the default
-    GHX_PROGRESS=buildx    ./bin/ghx <org> <dir>
-    GHX_PROGRESS=indicatif ./bin/ghx <org> <dir>
-    GHX_PROGRESS=pterm     ./bin/ghx <org> <dir>   # now with ✓ / ⚠ / ✗
-    GHX_PROGRESS=table     ./bin/ghx <org> <dir>   # live repo table with a Status column
-    ./bin/ghx --help
-
-Run twice against the same dir to see pulls. Piped output gets no progress.
+    git pull origin claude/magical-ride-7h4rhi && make build
+    ./bin/ghx <org> <dir>          # live table on a terminal
+    ./bin/ghx <org> <dir> | cat    # static table and full summary
 
 ## Pending question
 
-None. Gary chose the table as permanent and asked for download-style marks.
+Open a PR now? (and remove the plan and handoff in a last clean-up commit)
 
 ## Decisions so far
 

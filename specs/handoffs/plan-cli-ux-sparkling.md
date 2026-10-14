@@ -1,7 +1,7 @@
 ```
---- KICKOFF: begin orchestration at [deep] ---
+--- KICKOFF: plan complete ---
 
-  Status: 4/4 groups done | last review: wave-4 CONCERNS | current: ghx s11-s12 [exec] fix-up 4-fix | updated 2026-10-14 | over expected: ~$25.8 of ~$4.6
+  Status: 4/4 groups done | completed 2026-10-14 | over expected: ~$27.3 of ~$4.6
 
   mode: unattended | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch claude/magical-ride-7h4rhi) | guard 3x min $50 | fixups 2 | confirmed 2026-10-13 session bd9c01f5-fe1c-5a92-ab0c-95720d491a10: unattended
 
@@ -35,10 +35,10 @@
 | 2 [exec] ghx s6-s7 | — | — | ~6.2M (output est.) | ~$2.6 (output est.) |
 | 3 [exec] ghx s8-s10 | — | — | ~8.9M (output est.) | ~$3.5 (output est.) |
 | 3-fix [exec] ghx s8-s10 | — | — | ~1.3M (output est.) | ~$0.85 (output est.) |
-| 4 [exec] ghx s11-s12 | — | — | — | — |
-| 4-fix [exec] ghx s11-s12 | — | — | — | — |
-| orchestrator | ~3.1M | ~$2.8 | ~19M | ~$8.0 |
-| **Total** | ~7.7M | ~$4.6 | ~47M | ~$19.1 |
+| 4 [exec] ghx s11-s12 | — | — | ~7.4M (output est.) | ~$3.0 (output est.) |
+| 4-fix [exec] ghx s11-s12 | — | — | ~0.6M (output est.) | ~$0.45 (output est.) |
+| orchestrator | ~3.1M | ~$2.8 | ~35M | ~$12.7 |
+| **Total** | ~7.7M | ~$4.6 | ~70M | ~$27.3 |
 
 Expected values are estimates, good to about 2-3× per wave.
 
@@ -418,6 +418,7 @@ review wave-2 (ghx s6,s7) 7ee0a3c..0592684: PASS - make ci green (race x3 on ui 
 review wave-3 (ghx s8,s9,s10) c7bf5b6..4a5e995: CONCERNS - live area box drawing is wrong: the ┴ rule sits above the in-flight rows (closing columns the rows still use) instead of between them and the footer, and on the first frame it sits right under the header separator (two separators in a row); progress_table.go frameLocked concatenates [l.rule, rows..., footer, bottom] and progress_table_test.go:385-395 locks that order in; the rule belongs directly above the merged footer - 2026-10-13
 review wave-3-fix (ghx s8,s9,s10) c7bf5b6..683d367: PASS - live area is now in-flight rows, ┴ rule, footer, border; rule omitted when nothing sits above it; tests lock the order; make ci green; checked in a pty at 70x14; passed unattended: gate 1 (fix-up 1 of 2) - 2026-10-13
 review wave-4 (ghx s11,s12) 02d076d..f0d4743: CONCERNS - two doc defects, no code defects: README Output bullet says `--dry-run` gets the pass notes and the full summary, but run.go returns before both (a dry run gets only the static table and "Dry run complete"); internal/ui/status.go:20-21 statusMark comment still says the pterm and table renderers share it, though s12 deleted the pterm renderer - 2026-10-14
+review wave-4-fix (ghx s11,s12) 02d076d..195a501: PASS - README dry-run wording and statusMark comment fixed, CHANGELOG blank line and live-table comment nits carried; docs and comments only; make ci green; passed unattended: gate 1 (fix-up 1 of 2) - 2026-10-14
 
 ## Token log
 
@@ -444,6 +445,10 @@ tokens review-wave-3-fix ghx-s8-s9-s10 (claude-opus-5-5): input ~20 / cache read
 tokens orchestrator-wave-3-fix ghx-s8-s9-s10 (claude-opus-5-5): input ~68 / cache read ~13M / cache write ~0 5m + ~76k 1h / output ~28k | ~$3.72 API-equiv
 tokens wave-4 ghx-s11-s12 (claude-sonnet-5-5): input ~100 / cache read ~6.5M / cache write ~170k / output ~52k | ~$2.26 API-equiv (output est.) session bd9c01f5-fe1c-5a92-ab0c-95720d491a10
 tokens review-wave-4 ghx-s11-s12 (claude-opus-5-5): input ~30 / cache read ~600k / cache write ~63k / output ~15k | ~$0.74 API-equiv (output est.) session bd9c01f5-fe1c-5a92-ab0c-95720d491a10
+tokens orchestrator-wave-4 ghx-s11-s12 (claude-opus-5-5): input ~7 / cache read ~1.7M / cache write ~0 5m + ~22k 1h / output ~8k | ~$0.68 API-equiv
+tokens wave-4-fix ghx-s11-s12 (claude-sonnet-5-5): input ~14 / cache read ~430k / cache write ~28k / output ~7k | ~$0.22 API-equiv (output est.) session bd9c01f5-fe1c-5a92-ab0c-95720d491a10
+tokens review-wave-4-fix ghx-s11-s12 (claude-opus-5-5): input ~12 / cache read ~88k / cache write ~18k / output ~6.2k | ~$0.23 API-equiv (output est.) session bd9c01f5-fe1c-5a92-ab0c-95720d491a10
+tokens orchestrator-wave-4-fix ghx-s11-s12 (claude-opus-5-5): input ~6 / cache read ~880k / cache write ~0 5m + ~13k 1h / output ~1.1k | ~$0.30 API-equiv
 
 ## Completion summary (wave 1)
 
@@ -466,3 +471,11 @@ tokens review-wave-4 ghx-s11-s12 (claude-opus-5-5): input ~30 / cache read ~600k
 - Cost: plan total ~$19.1 API-equiv against ~$4.6 expected (three re-plans).
 - Decisions: widths fixed at SetRepos; finished rows stream into scrollback in finish order; FinishTable closes the table; footer and rules hand-drawn from StyleLight characters; `ui.PrintSummaryLists` under the table renderer; archived-pass and --delete notes kept out of the table.
 - Next, outside the plan: merge `origin/main` (ee8d164) as Gary asked.
+
+## Completion summary (wave 4)
+
+- Merges of `origin/main` by the parent: b62310c (ee8d164, lolay/ghx#6) and bb82990 (lolay/ghx#8, lolay/ghx#9).
+- Wave 4 [exec] `ghx s11-s12` (re-plan): 02d076d..f0d4743, review CONCERNS (two doc lines); automatic fix-up 4-fix 6e928e3..195a501, review PASS.
+- Result: the live repo table is the only progress display; marks ✓ cloned, ↓ pulled, – up to date, ⇣ fetched only, ⚠ skipped, ∅ empty, ✗ failed; mpb removed.
+- Cost: ~$27.3 API-equiv against ~$4.6 expected (four re-plans and two merges).
+- Pending: PR, and the clean-up commit that removes or promotes this plan and its handoff before merge.
