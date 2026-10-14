@@ -11,3 +11,6 @@ var Run = execute
 
 // PlainWriter is the ANSI-stripping writer Run uses under NO_COLOR.
 var PlainWriter = plainWriter
+
+// ErrorStyles picks the styles fang's error handler renders err with.
+var ErrorStyles = errorStyles

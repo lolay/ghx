@@ -147,6 +147,8 @@ func ResolveToken(flag string, home, local Config) (string, Source, error) {
 	return "", "", fmt.Errorf("%w", ErrNoToken)
 }
 
+// asInt accepts only integer types. Load rejects a float for an integer key
+// before resolution, so a float here is a caller bug and falls through.
 func asInt(v any) (int, bool) {
 	switch n := v.(type) {
 	case int64:
@@ -154,8 +156,6 @@ func asInt(v any) (int, bool) {
 	case int:
 		return n, true
 	case int32:
-		return int(n), true
-	case float64:
 		return int(n), true
 	}
 	return 0, false

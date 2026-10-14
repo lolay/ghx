@@ -81,7 +81,9 @@ func TestResolveInt(t *testing.T) {
 		{"local beats home", nil, config.Config{"k": int64(1)}, config.Config{"k": int64(2)}, 2, config.SourceLocal},
 		{"home when only home has it", nil, config.Config{"k": int64(1)}, config.Config{}, 1, config.SourceHome},
 		{"default when unset", nil, config.Config{}, config.Config{}, 4, config.SourceDefault},
-		{"TOML float truncates", nil, config.Config{}, config.Config{"k": 2.9}, 2, config.SourceLocal},
+		{"float falls through to home", nil, config.Config{"k": int64(1)}, config.Config{"k": 2.9}, 1, config.SourceHome},
+		// Load rejects the wrong-type rows below before resolution; they pin the
+		// resolver's defensive branch.
 		{"int value", nil, config.Config{}, config.Config{"k": 3}, 3, config.SourceLocal},
 		{"int32 value", nil, config.Config{}, config.Config{"k": int32(5)}, 5, config.SourceLocal},
 		{"wrong type in local falls through to home", nil, config.Config{"k": int64(1)}, config.Config{"k": "two"}, 1, config.SourceHome},

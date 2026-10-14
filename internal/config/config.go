@@ -63,8 +63,10 @@ func MigrateLegacyFile(dir, legacyName, newName string) (migrated bool, message 
 // Load loads the home-directory config and, if localDir is non-empty, the
 // per-directory config. Either may be absent (empty map returned). Legacy
 // .gh-export.toml files are migrated in place; any informational messages
-// produced by the migration are returned for the caller to display.
-func Load(localDir string) (home, local Config, messages []string, err error) {
+// produced by the migration, and a warning for each unknown key, are returned
+// for the caller to display. A value of the wrong type for its key is an error
+// that wraps ErrInvalidValue and names the file and key.
+func Load(localDir string) (home, local Config, notices []Notice, err error) {
 	home = Config{}
 	local = Config{}
 
@@ -76,28 +78,38 @@ func Load(localDir string) (home, local Config, messages []string, err error) {
 	if _, msg, err := MigrateLegacyFile(homeDir, LegacyConfigFilename, ConfigFilename); err != nil {
 		return nil, nil, nil, err
 	} else if msg != "" {
-		messages = append(messages, msg)
+		notices = append(notices, Notice{Text: msg})
 	}
 
 	homePath := filepath.Join(homeDir, ConfigFilename)
 	if err := readTOML(homePath, &home); err != nil {
 		return nil, nil, nil, err
 	}
+	homeNotices, err := check(homePath, home)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	notices = append(notices, homeNotices...)
 
 	if localDir != "" {
 		if _, msg, err := MigrateLegacyFile(localDir, LegacyConfigFilename, ConfigFilename); err != nil {
 			return nil, nil, nil, err
 		} else if msg != "" {
-			messages = append(messages, msg)
+			notices = append(notices, Notice{Text: msg})
 		}
 
 		localPath := filepath.Join(localDir, ConfigFilename)
 		if err := readTOML(localPath, &local); err != nil {
 			return nil, nil, nil, err
 		}
+		localNotices, err := check(localPath, local)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		notices = append(notices, localNotices...)
 	}
 
-	return home, local, messages, nil
+	return home, local, notices, nil
 }
 
 // readTOML decodes a TOML file into out. A missing file is not an error;

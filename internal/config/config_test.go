@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -92,8 +93,10 @@ func TestLoad_MigratesLegacyFilesInHomeAndLocal(t *testing.T) {
 	assert.Equal(t, config.Config{"token": "legacy-home"}, homeCfg)
 	assert.Equal(t, config.Config{"token": "legacy-local"}, localCfg)
 	require.Len(t, msgs, 2)
-	assert.Contains(t, msgs[0], "Renamed legacy")
-	assert.Contains(t, msgs[1], "Renamed legacy")
+	assert.Contains(t, msgs[0].Text, "Renamed legacy")
+	assert.Contains(t, msgs[1].Text, "Renamed legacy")
+	assert.False(t, msgs[0].IsWarning)
+	assert.False(t, msgs[1].IsWarning)
 	for _, dir := range []string{home, local} {
 		assert.NoFileExists(t, filepath.Join(dir, config.LegacyConfigFilename))
 		assert.FileExists(t, filepath.Join(dir, config.ConfigFilename))
@@ -111,7 +114,8 @@ func TestLoad_BothFilesExistKeepsLegacyAndReadsNew(t *testing.T) {
 
 	assert.Equal(t, config.Config{"token": "new"}, localCfg)
 	require.Len(t, msgs, 1)
-	assert.Contains(t, msgs[0], "already exists; leaving legacy file in place")
+	assert.Contains(t, msgs[0].Text, "already exists; leaving legacy file in place")
+	assert.False(t, msgs[0].IsWarning)
 	assert.Equal(t, `token = "old"`, readFile(t, legacy))
 }
 
@@ -140,6 +144,79 @@ func TestLoad_InvalidTOMLReturnsErrorNamingTheFile(t *testing.T) {
 			assert.Contains(t, err.Error(), path)
 		})
 	}
+}
+
+func TestLoad_RejectsWrongTypes(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		wantErr []string
+	}{
+		{"string for int", `concurrency = "8"`, []string{`concurrency must be an integer, got string "8"`}},
+		{"fractional float for int", `concurrency = 4.9`, []string{`concurrency must be an integer, got float 4.9`}},
+		{"whole float for int", `max-size = 8.0`, []string{`max-size must be an integer, got float 8`}},
+		{"int for bool", `dry-run = 1`, []string{`dry-run must be a boolean, got integer 1`}},
+		{"bool for string", `token = true`, []string{`token must be a string, got boolean true`}},
+		{"underscored key is checked too", `max_size = "big"`, []string{`max-size must be an integer, got string "big"`}},
+		{
+			"two bad keys are reported together, sorted",
+			"dry-run = \"yes\"\nconcurrency = \"8\"\n",
+			[]string{`concurrency must be an integer, got string "8"`, `dry-run must be a boolean, got string "yes"`},
+		},
+	}
+	for _, where := range []string{"home", "local"} {
+		for _, tt := range tests {
+			t.Run(where+"/"+tt.name, func(t *testing.T) {
+				homeDir := isolateHome(t)
+				localDir := t.TempDir()
+				dir := homeDir
+				if where == "local" {
+					dir = localDir
+				}
+				path := writeFile(t, dir, config.ConfigFilename, tt.content)
+
+				_, _, _, err := config.Load(localDir)
+
+				require.Error(t, err)
+				assert.True(t, errors.Is(err, config.ErrInvalidValue), "err = %v", err)
+				for _, want := range tt.wantErr {
+					assert.Contains(t, err.Error(), path+": "+want)
+				}
+			})
+		}
+	}
+}
+
+func TestLoad_WarnsOnUnknownKeys(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		wantKey string
+	}{
+		{"a misspelled key", "concurency = 8\nprotocol = \"ssh\"\n", "concurency"},
+		{"ssh, which is flag-only", "ssh = true\nprotocol = \"ssh\"\n", "ssh"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			home := isolateHome(t)
+			path := writeFile(t, home, config.ConfigFilename, tt.content)
+
+			homeCfg, _, notices, err := config.Load("")
+
+			require.NoError(t, err)
+			require.Len(t, notices, 1)
+			assert.True(t, notices[0].IsWarning)
+			assert.Equal(t, path+`: unknown key "`+tt.wantKey+`" ignored`, notices[0].Text)
+			assert.Equal(t, "ssh", homeCfg["protocol"], "known values still load")
+		})
+	}
+}
+
+func TestIsKey(t *testing.T) {
+	assert.True(t, config.IsKey("concurrency"))
+	assert.True(t, config.IsKey("dry-run"))
+	assert.False(t, config.IsKey("ssh"))
+	assert.False(t, config.IsKey("concurency"))
 }
 
 func TestLoad_ReturnsErrorWhenHomeDirectoryIsUnset(t *testing.T) {

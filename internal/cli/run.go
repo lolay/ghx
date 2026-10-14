@@ -27,12 +27,16 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 		return fmt.Errorf("creating output directory: %w", err)
 	}
 
-	homeCfg, localCfg, msgs, err := config.Load(outputDir)
+	homeCfg, localCfg, notices, err := config.Load(outputDir)
 	if err != nil {
 		return err
 	}
-	for _, m := range msgs {
-		ui.Println(text.Faint.Sprint(m))
+	for _, n := range notices {
+		if n.IsWarning {
+			ui.Println(text.FgYellow.Sprint(n.Text))
+		} else {
+			ui.Println(text.Faint.Sprint(n.Text))
+		}
 	}
 
 	// --ssh is a shortcut that forces protocol=ssh even if --protocol
