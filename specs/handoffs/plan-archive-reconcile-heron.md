@@ -1,7 +1,7 @@
 ```
 --- KICKOFF: begin orchestration at [deep] ---
 
-  Status: 1/2 groups done | last review: wave-1-fix PASS | current: ghx m1 s2-s4 [exec] | over expected: ~$9.8 of ~$8.0 | updated 2026-10-14
+  Status: 2/2 groups done | last review: wave-2 CONCERNS | current: 2-fix ghx m1 s2-s4 [exec] | over expected: ~$12.3 of ~$8.0 | updated 2026-10-14
 
   mode: unattended | proposed unattended (harness=claude-code runner=cloud; CLAUDE_CODE_REMOTE=true, assigned branch claude/fervent-heisenberg-72nmt2) | guard 3x min $50 | fixups 2 | confirmed 2026-10-14 session db99f13c-13a7-5420-b626-79e0efa04ff4: Unattended (Recommended)
 
@@ -34,6 +34,7 @@
 | 1 [deep] ghx m1 s1 | ~6.1M | ~$3.2 |
 | 1-fix [deep] ghx m1 s1 | — | — |
 | 2 [exec] ghx m1 s2-s4 | ~2.3M | ~$1.0 |
+| 2-fix [exec] ghx m1 s2-s4 | — | — |
 | orchestrator | ~4.3M | ~$3.8 |
 | **Total** | ~13M | ~$8.0 |
 
@@ -94,13 +95,13 @@ Acceptance: `make ci` passes; the two new cli tests and the helper table tests p
 
 Re-planned 2026-10-14 after wave 1, before wave 2 ran (Gary's requests): s2 added for the Visibility change, s3 trimmed to the cases wave 1 didn't already test, s4 adjusted for docs wave 1 already wrote. `origin/main` (`051e844`, #11) is merged into the branch by the parent before this wave, so these steps build on main's live-table changes.
 
-#### s2 - [exec] Show archived as a visibility state
+#### s2 - [exec] Show archived as a visibility state (done)
 
 In `internal/ui/ui.go` `repoColumns`, the Visibility cell reads `archived` when `r.Archived`, else `private` or `public` (archived wins, so an archived private repo shows `archived`). Remove the separate Archived column: drop it from `repoColumns`, drop `columnArchived` and every use of it, including the live table's column-dropping order in `internal/ui/progress_table.go` (as merged from main), and fix the column indexes that follow it. Update `internal/ui` tests (`progress_table_test.go` column lists and drop order, `ui_test.go`, table golden output if any) and `internal/cli/table_test.go` for the new cells and the missing column. Fix any comment that points at the Archived column, such as the note in `internal/cli/run.go` that archived rows "say yes under Archived".
 
 Acceptance: `make ci` passes; a test asserts each of the three Visibility values, including an archived private repo reading `archived`; no table output has an Archived column.
 
-#### s3 - [exec] Cover the remaining reconcile edge cases in cli tests
+#### s3 - [exec] Cover the remaining reconcile edge cases in cli tests (done)
 
 Wave 1 already tests dry-run unarchive, a wiki moving with its repo, an excluded archived repo, origin mismatch (archived and removed, with and without `--delete`), a clone with no origin, host/owner/case-insensitive matching, and a conflict that keeps both copies (`internal/cli/reconcile_test.go`). Add, using the `world` harness:
 
@@ -110,7 +111,7 @@ Wave 1 already tests dry-run unarchive, a wiki moving with its repo, an excluded
 
 Acceptance: `make ci` passes; each case fails if its behavior is reverted.
 
-#### s4 - [fast] Document reconciled placement and the visibility column
+#### s4 - [fast] Document reconciled placement and the visibility column (done)
 
 - `specs/terminal-output.md`: describe the Visibility column's three values and the removed Archived column, and the live table's column-dropping order without it; keep the Status marks table consistent with the conflict action (wave 1's 1-fix may already have done that part).
 - Add `specs/repo-layout.md`: where each repo lives (`<out>/x`, `<out>/<archived-dir>/x`, `<out>/<deleted-dir>/x`, wikis beside them), the reconcile rules from the Design, and the origin check. Link it from `README.md` where the README describes `ARCHIVED/` and `DELETED/`.
@@ -126,6 +127,7 @@ Acceptance: `make ci` passes; README, specs and changelog agree with the code.
 
 review wave-1 (ghx m1 s1) b884660..976fa01: CONCERNS - specs/terminal-output.md:67 Status marks table still says the yellow ⚠ means "every skip", but the new conflict action uses ⚠ too and the README legend now says "skipped or a conflict", so the docs disagree (AGENTS.md: update the doc in the same change); code meets the spec, make ci passes - 2026-10-14
 review wave-1-fix (ghx m1 s1) b884660..421f8c1: PASS - specs/terminal-output.md:67 now says the yellow ⚠ covers every skip (unusable name, origin mismatch) and a conflict, matching the README legend and internal/ui glyphs - 2026-10-14
+review wave-2 (ghx m1 s2-s4) 493952a..f10da43: CONCERNS - s3's TestRun_AMoveThatFailedIsRetriedByTheNextRun never makes a move fail: a file at <out>/ARCHIVED makes exists(want) see ENOTDIR and report a conflict before MoveRepo, so a regression that stops retrying after ActionFailed would pass; on Windows the same setup likely reaches MoveRepo and fails, contradicting the test comment and specs/repo-layout.md. Fix: make the move really fail (e.g. a dangling symlink at <out>/ARCHIVED so Lstat gives ENOENT and MkdirAll fails; skip if os.Symlink fails), assert `beta: failed` on run 1, and word the repo-layout.md sentence so it holds on every OS; s2 and s4 passed, make ci passes - 2026-10-14
 
 ## Token log
 
@@ -143,3 +145,6 @@ tokens review-wave-1 ghx-m1-s1 (claude-opus-5-5): input ~30 / cache read ~610k /
 tokens wave-1-fix ghx-m1-s1 (claude-opus-5-5): input ~16 / cache read ~470k / cache write ~23k / output ~8k | ~$0.37 API-equiv (output est.) session db99f13c-13a7-5420-b626-79e0efa04ff4
 tokens review-wave-1-fix ghx-m1-s1 (claude-opus-5-5): input ~12 / cache read ~78k / cache write ~15k / output ~6k | ~$0.21 API-equiv (output est.) session db99f13c-13a7-5420-b626-79e0efa04ff4
 tokens orchestrator-wave-1 ghx-m1-s1 (claude-opus-5-5): input ~44 / cache read ~4.6M / cache write ~0 5m + ~40k 1h / output ~15k | ~$1.53 API-equiv
+tokens wave-2 ghx-m1-s2-s4 (claude-sonnet-5-5): input ~60 / cache read ~3M / cache write ~140k / output ~30k | ~$1.25 API-equiv (output est.) session db99f13c-13a7-5420-b626-79e0efa04ff4
+tokens review-wave-2 ghx-m1-s2-s4 (claude-opus-5-5): input ~16 / cache read ~200k / cache write ~39k / output ~8k | ~$0.40 API-equiv (output est.) session db99f13c-13a7-5420-b626-79e0efa04ff4
+tokens orchestrator-wave-1-fix ghx-m1-s1 (claude-opus-5-5): input ~20 / cache read ~2.4M / cache write ~0 5m + ~17k 1h / output ~9.3k | ~$0.81 API-equiv

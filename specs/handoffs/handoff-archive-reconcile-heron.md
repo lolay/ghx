@@ -7,9 +7,9 @@ Scratch for the orchestrate run of
 - **Branch:** `claude/fervent-heisenberg-72nmt2` in `lolay/ghx` (assigned by the
   cloud session; cut from `main` at `9785f6f`).
 - **Mode:** unattended, confirmed 2026-10-14 in session db99f13c (dialog: "Unattended (Recommended)", "This session (Recommended)").
-- **Done:** wave 1 [deep] ghx m1 s1, `b884660..976fa01`, review CONCERNS (one doc line); 1-fix `421f8c1` PASS. 1/2 waves.
-- **Spend:** ~$9.8 of ~$8.0 expected (guard: $50). Over expected: wave 1 [deep] ran ~$4.2 against ~$3.2, 1-fix ~$0.6 unplanned, the parent ~$5.1 so far.
-- **Next unit:** wave 2 [exec] ghx m1 s2-s4. `origin/main` (`051e844`) is merged.
+- **Done:** wave 1 [deep] ghx m1 s1, `b884660..976fa01`, review CONCERNS (one doc line); 1-fix `421f8c1` PASS. Wave 2 [exec] ghx m1 s2-s4, `493952a..f10da43` (`1fd4ecf` visibility, `15d38ae` tests, `f10da43` docs), review CONCERNS: the failed-move retry test never makes a move fail. 2/2 waves; fix-up pending.
+- **Spend:** ~$12.3 of ~$8.0 expected (guard: $50). Over expected: wave 1 [deep] ran ~$4.2 against ~$3.2, 1-fix ~$0.6 unplanned, the parent ~$5.1 so far.
+- **Next unit:** 2-fix [exec] ghx m1 s2-s4 (automatic fix-up, 1 of 2).
 - **Resume:** paste the plan's Kickoff prompt into a new session.
 
 ## Pending question
@@ -27,6 +27,7 @@ None. Wave 1 is next.
   the destination first and reports a conflict instead.
 - The `.ghx.json` schema doesn't change.
 - Wave 1 (review flagged the doc gap, otherwise passed the spec): the origin is read with `git --git-dir=<dir>/.git config --local --get remote.origin.url` (no repo discovery, no global config). A removed directory without `.git` is now reported `skipped (origin mismatch)` instead of being moved to `DELETED/`. The conflict check comes before the `--delete` branch, so with both copies present under `--delete` nothing is deleted. A wiki gets the same checks as its repo and follows a move but not a `--delete`. New actions: `moved (unarchived)`, `skipped (origin mismatch)`, `conflict`; `cloner.HasGitDir` is now exported; `handleRemovedAndArchived` is now `handleRemoved`; tests live in `internal/cli/reconcile_test.go`.
+- Wave 2: the live table's drop order is now Last Pushed, Default Branch, Language; the footer-order test joins wrapped footer lines since the narrower table wraps it.
 - Gary, 2026-10-14: the Visibility column reads `public`, `private` or `archived` (archived wins), and the separate Archived column is dropped (wave 2 s2).
 
 ## Environment notes
@@ -39,4 +40,4 @@ None. Wave 1 is next.
 
 - Re-plan of wave 2 before it ran, on Gary's requests: s2 (Visibility shows archived, Archived column dropped) added; the edge-case tests trimmed to what wave 1 didn't cover (s3); the docs step (s4) adjusted for docs wave 1 already wrote and for the Visibility change. Wave 2 keeps its planned ~$1.0 expected, which now understates it.
 - `origin/main` gained `051e844` (#11, live table order) after the branch was cut. It conflicts with wave 1 in `internal/cli/run.go`. The parent merged it as bookkeeping after 1-fix and before wave 2's snapshot, with a merge commit (no rebase; the branch is pushed). The only conflict was the `sort` import, which the branch no longer uses; `make ci` passes on the merge. Not a worker step, because `check_wave.py` would count main's commit in the worker's range.
-- Follow-ups wave 1 found, not in scope: `--delete` still leaves `<out>/x.wiki` behind; a move into `DELETED/` still silently replaces an existing `DELETED/x`. Review nit, not blocking: under `--delete` the conflict detail says "syncing ARCHIVED/x", but archived repos aren't synced then.
+- Follow-ups wave 1 found, not in scope: `--delete` still leaves `<out>/x.wiki` behind; a move into `DELETED/` still silently replaces an existing `DELETED/x`. Wave 2 also found: a removed repo's `<out>/x.wiki` isn't moved to `DELETED/` (documented as is in `specs/repo-layout.md`). Review nit, not blocking: under `--delete` the conflict detail says "syncing ARCHIVED/x", but archived repos aren't synced then.
