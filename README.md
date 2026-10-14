@@ -148,8 +148,9 @@ value for that one organization:
 > `.ghx.toml` and `.ghx.json` in place on the first run, with an informational
 > message.
 
-Every command-line option can be set as a config key, hyphenated like the flag.
-Underscores in keys are accepted and read as hyphens:
+Every command-line option except `--ssh` can be set as a config key, hyphenated
+like the flag; `protocol` covers `--ssh`. Underscores in keys are accepted and
+read as hyphens:
 
 ```toml
 token = "ghp_xxxxx"
@@ -159,6 +160,7 @@ include = "^web-"
 exclude = "^test-"
 clone-wiki = true
 concurrency = 8
+dry-run = false
 git-author = "Your Name"
 git-email = "you@example.com"
 delete = false
@@ -193,8 +195,10 @@ Command-line flags always win. The full order, highest precedence first:
 4. `~/.ghx.toml` (`%USERPROFILE%\.ghx.toml` on Windows)
 5. The built-in default
 
-A config value of the wrong type (for example `concurrency = "8"`) is ignored and
-the next source is used. A TOML float given for an integer key is truncated.
+A config value of the wrong type (for example `concurrency = "8"`), or a float
+given for an integer key (`concurrency = 8.0` included), stops the run with an
+error that names the file and the key. A key `ghx` does not know (a typo such as
+`concurency`, or `ssh`) gets a warning and is ignored.
 
 | Option | Default |
 |--------|---------|

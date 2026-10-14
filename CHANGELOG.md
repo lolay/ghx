@@ -8,6 +8,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Changed
+- A config value of the wrong type (`concurrency = "8"`), or a float for an
+  integer key, stops the run with an error naming the file and key, where it
+  was silently ignored or truncated. An unknown config key gets a warning and
+  is ignored.
 - `ghx --help` and command errors are styled with fang: a titled usage block,
   examples, and an error message with a pointer to `--help`. Piped output, and
   any output under `NO_COLOR`, has no escape codes. The exit code is still 0 on
