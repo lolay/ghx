@@ -38,7 +38,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   mark (`60 repos · ✓ 3 cloned · ↓ 12 pulled · – 40 up to date · ⇣ 2 fetched
   only · ⚠ 1 skipped · ∅ 1 empty · ✗ 1 failed · 1m12s`), showing a class only
   when it has repos.
-
 - On a terminal, the live repo table replaces the progress bar: fixed columns
   that never shift, a row per repo that scrolls into the terminal's history as it
   finishes, the repos in flight and a progress line in the footer, and the

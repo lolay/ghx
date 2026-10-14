@@ -38,15 +38,15 @@ var glyphs = map[cloner.Action]string{
 // noteGlyph marks a repo that synced but has something to say.
 const noteGlyph = "·"
 
-// animate is whether progress bars draw on Out; SetupTerminal decides.
+// animate is whether the live table draws on Out; SetupTerminal decides.
 var animate = true
 
 // SetupTerminal decides, once at startup, whether f (os.Stdout) can show the
-// animated progress bar: it must be a terminal that takes ANSI escape codes,
-// since the bar redraws itself with cursor movements. go-pretty has by now
-// turned on virtual terminal processing for a Windows console, or turned
-// colors off where it couldn't (text.ANSICodesSupported); a pipe or a file
-// gets no bar, so a log isn't full of redraws.
+// live table: it must be a terminal that takes ANSI escape codes, since the
+// table redraws itself with cursor movements. go-pretty has by now turned on
+// virtual terminal processing for a Windows console, or turned colors off
+// where it couldn't (text.ANSICodesSupported); a pipe or a file gets no table,
+// so a log isn't full of redraws.
 func SetupTerminal(f *os.File) {
 	animate = text.ANSICodesSupported && isTerminal(f)
 }
