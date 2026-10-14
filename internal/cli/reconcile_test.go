@@ -181,13 +181,19 @@ func TestRun_AMoveThatFailedIsRetriedByTheNextRun(t *testing.T) {
 	w.addRepo("beta")
 	w.mustRun()
 	w.archiveRepo("beta")
-	// A file where the archive directory belongs: the move can't be made (the
-	// path under it can't be checked, so it counts as taken).
+	// A dangling symlink where the archive directory belongs. Lstat of a path
+	// under it says "not found", so the reconcile sees no conflict and goes on
+	// to MoveRepo, whose MkdirAll then fails. A plain file there would make the
+	// check itself fail on Unix (not a directory), which is a conflict instead.
 	squatter := filepath.Join(w.out, "ARCHIVED")
-	require.NoError(t, os.WriteFile(squatter, []byte("in the way\n"), 0o644))
+	if err := os.Symlink(filepath.Join(w.out, "nowhere"), squatter); err != nil {
+		t.Skipf("can't make a symlink here: %v", err)
+	}
 
 	out, _ := w.run()
 
+	assert.Contains(t, out, "beta: failed", "the move was tried and failed, not reported as a conflict")
+	assert.NotContains(t, out, "conflict")
 	assert.NotContains(t, out, "moved (archived)", "nothing moved")
 	assert.DirExists(t, filepath.Join(w.out, "beta", ".git"), "the clone stays where it was")
 
