@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -55,15 +54,18 @@ type tableRow struct {
 // instead of printing the static table.
 //
 // The first Start prints the table's top (title, border, header) as ordinary
-// output. Each repo that finishes prints its row, in the order repos finish,
-// above the live area, which holds only what is still moving: the in-flight
-// rows with a spinner and a running time, and a footer row spanning the table
-// with the progress, "Syncing 34/60 [=====>---] 57% 12s · 4 running · 22
-// queued", counted over every repo the table lists, across both passes. The
-// live area is never taller than the terminal; with more repos in flight than
-// fit it shows the first ones and "+N more running" in the footer. FinishTable
-// closes the table: any row never finished, then the bottom border and a
-// footer with the totals.
+// output. Rows print above the live area in the order SetRepos listed them,
+// each once every row before it has finished, so the scrollback keeps the
+// list's order however the workers finish. The live area holds what has not
+// printed yet: the in-flight rows with a spinner and a running time, the
+// finished rows held back behind one still running, and a footer row spanning
+// the table with the progress, "Syncing 34/60 [=====>---] 57% 12s · 4 running
+// · 22 queued", counted over every repo the table lists, across both passes.
+// The live area is never taller than the terminal. When its rows don't fit,
+// the held rows give way first, counted in the footer as "+N done, waiting on
+// <the repo holding them>", then the last in-flight rows, as "+N more
+// running". FinishTable closes the table: every row not printed yet (held,
+// interrupted or queued), then the bottom border and a footer with the totals.
 //
 // The table's geometry is measured once, when SetRepos gets the repos (see
 // tableLayout): every column is as wide as its widest value, so rows printed
@@ -89,6 +91,7 @@ type tableProgress struct {
 
 	mu         sync.Mutex
 	rows       []*tableRow
+	printed    int // rows[:printed] are in the scrollback; the rest wait
 	byName     map[string]*tableRow
 	layout     *tableLayout
 	listed     bool      // SetRepos was called
@@ -142,6 +145,7 @@ func (p *tableProgress) SetRepos(repos []ghapi.RepoInfo) {
 		p.rows[i] = row
 		p.byName[r.Name] = row
 	}
+	p.printed = 0
 	p.listed, p.topPrinted, p.closed = true, false, false
 	p.began, p.stopped = time.Time{}, time.Time{}
 	width, _ := p.size()
@@ -235,7 +239,10 @@ func (p *tableProgress) RepoStarted(name, action string) {
 	row.state, row.verb, row.started = rowRunning, progressVerb(action), time.Now()
 }
 
-// RepoDone records the repo's result and prints its row above the live area.
+// RepoDone records the repo's result and prints, above the live area, every
+// row it no longer holds back: the run of finished rows from the first one not
+// yet printed. A repo that finishes ahead of one listed before it stays in the
+// live area until that one is done.
 func (p *tableProgress) RepoDone(r cloner.RepoResult, elapsed time.Duration) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -245,11 +252,19 @@ func (p *tableProgress) RepoDone(r cloner.RepoResult, elapsed time.Duration) {
 	row := p.rowLocked(r.Name)
 	row.state, row.action, row.elapsed = rowDone, r.Action, elapsed
 
-	// Clearing the area leaves the cursor where it began, so the row takes its
-	// place and the area starts again beneath it.
+	from := p.printed
+	for p.printed < len(p.rows) && p.rows[p.printed].state == rowDone {
+		p.printed++
+	}
 	now := time.Now()
+	if p.printed == from {
+		p.area.Update(p.frameLocked(now))
+		return
+	}
+	// Clearing the area leaves the cursor where it began, so the rows take its
+	// place and the area starts again beneath them.
 	p.area.Clear()
-	p.printLocked(p.rowLinesLocked([]*tableRow{row}, now)...)
+	p.printLocked(p.rowLinesLocked(p.rows[from:p.printed], now)...)
 	_, _ = p.area.Start(p.frameLocked(now))
 }
 
@@ -283,9 +298,10 @@ func (p *tableProgress) Stop() {
 }
 
 // FinishTable closes the table, once per SetRepos: the top if no pass ever
-// started, a row for each repo that never finished (queued, or interrupted),
-// then the bottom border with the totals. It does nothing when SetRepos has
-// not been called, a live area is still on screen, or the table is closed.
+// started, every row not printed yet in list order (finished but held back,
+// interrupted, or queued), then the bottom border with the totals. It does
+// nothing when SetRepos has not been called, a live area is still on screen,
+// or the table is closed.
 func (p *tableProgress) FinishTable() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -294,14 +310,9 @@ func (p *tableProgress) FinishTable() {
 	}
 	p.closed = true
 	p.printTopLocked()
-	var unfinished []*tableRow
-	for _, row := range p.rows {
-		if row.state != rowDone {
-			unfinished = append(unfinished, row)
-		}
-	}
 	l := p.layoutLocked()
-	lines := p.rowLinesLocked(unfinished, time.Now())
+	lines := p.rowLinesLocked(p.rows[p.printed:], time.Now())
+	p.printed = len(p.rows)
 	// With no rows at all the header's separator is the line above the footer,
 	// and a rule would be a second one.
 	if len(p.rows) > 0 {
@@ -380,8 +391,8 @@ func (p *tableProgress) countsLocked() (done, running, queued int) {
 
 // progressLocked is the text of the live footer, counted over every repo the
 // table lists, across both passes; more is how many in-flight rows the frame
-// left out. The caller holds p.mu.
-func (p *tableProgress) progressLocked(now time.Time, more int) string {
+// left out, and held how many finished rows it left out. The caller holds p.mu.
+func (p *tableProgress) progressLocked(now time.Time, more, held int) string {
 	done, running, queued := p.countsLocked()
 	var elapsed time.Duration
 	if !p.began.IsZero() {
@@ -390,9 +401,16 @@ func (p *tableProgress) progressLocked(now time.Time, more int) string {
 	var suffix string
 	bar := p.layoutLocked().barWidth(len(p.rows))
 	if more > 0 {
-		// The rare footer that says more is in flight than the frame shows
-		// gives the words their room out of the bar's.
-		suffix = fmt.Sprintf(" · +%d more running", more)
+		suffix += fmt.Sprintf(" · +%d more running", more)
+	}
+	if held > 0 {
+		// Rows are held only behind an unfinished one, so rows[p.printed] is
+		// the repo they wait on.
+		suffix += fmt.Sprintf(" · +%d done, waiting on %s", held, p.rows[p.printed].info.Name)
+	}
+	if suffix != "" {
+		// The rare footer that says the frame left rows out gives the words
+		// their room out of the bar's.
 		if bar -= text.StringWidthWithoutEscSequences(suffix); bar < footerBarMin {
 			bar = 0
 		}
@@ -458,22 +476,26 @@ func (p *tableProgress) totalsLocked() []string {
 	return parts
 }
 
-// frameLocked is the live area: the in-flight rows, a rule, the progress
-// footer and the closing border, each line ending in a newline. It is never taller than the terminal
-// less two lines, nor wider than the terminal. With too many repos in flight
-// for that, it shows the first ones and counts the rest in the footer. The
-// caller holds p.mu.
+// frameLocked is the live area: the rows not printed yet that are in flight or
+// finished, in list order, then a rule, the progress footer and the closing
+// border, each line ending in a newline. It is never taller than the terminal
+// less two lines, nor wider than the terminal. When the rows don't fit, the
+// finished ones are left out first, then the last in-flight ones, and the
+// footer counts both. The caller holds p.mu.
 func (p *tableProgress) frameLocked(now time.Time) string {
 	width, height := p.size()
 	l := p.layoutLocked()
 
-	var running []*tableRow
-	for _, row := range p.rows {
-		if row.state == rowRunning {
+	var live, running []*tableRow
+	for _, row := range p.rows[p.printed:] {
+		switch row.state {
+		case rowRunning:
 			running = append(running, row)
+			live = append(live, row)
+		case rowDone:
+			live = append(live, row)
 		}
 	}
-	slices.SortStableFunc(running, func(a, b *tableRow) int { return a.started.Compare(b.started) })
 
 	// Besides the rows: the rule, the footer and the closing border. With no
 	// room even for those (a terminal only a few lines tall) the footer stands
@@ -481,17 +503,23 @@ func (p *tableProgress) frameLocked(now time.Time) string {
 	room := height - 2 - 3
 	var lines []string
 	if room >= 0 {
-		shown := running[:min(len(running), room)]
+		shown, held := live, 0
+		if len(live) > room {
+			// Every in-flight row is moving, and a held row only waits, so
+			// the held ones give way first.
+			shown, held = running[:min(len(running), room)], len(live)-len(running)
+		}
+		more := len(live) - len(shown) - held
 		lines = p.rowLinesLocked(shown, now)
 		// The rule closes the columns of the rows above it. With no row above
 		// (the header's separator is the line before), a rule would be a second
 		// separator in a row.
-		if done, _, _ := p.countsLocked(); done > 0 || len(shown) > 0 {
+		if p.printed > 0 || len(shown) > 0 {
 			lines = append(lines, l.rule)
 		}
-		lines = append(lines, l.footer(p.progressLocked(now, len(running)-len(shown))), l.bottom)
+		lines = append(lines, l.footer(p.progressLocked(now, more, held)), l.bottom)
 	} else {
-		lines = []string{l.footer(p.progressLocked(now, 0))}
+		lines = []string{l.footer(p.progressLocked(now, 0, 0))}
 	}
 
 	var b strings.Builder

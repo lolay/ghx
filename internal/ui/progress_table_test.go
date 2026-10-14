@@ -186,15 +186,11 @@ var results = []cloner.Action{
 	cloner.ActionCloned, cloner.ActionPulled, cloner.ActionFailed, cloner.ActionFetchedOnly,
 }
 
-func TestTableProgress_FinishedRowsStreamIntoOneTableInCompletionOrder(t *testing.T) {
+func TestTableProgress_FinishedRowsStreamIntoOneTableInListOrder(t *testing.T) {
 	needsANSICursor(t)
 	const repos = 12
 	p, lister, buf := newTable(t, 200, 40, tableRepos(repos))
 
-	// The renderer orders rows as RepoDone reaches it, so the test records
-	// the order under a lock of its own that the call also sits inside.
-	var mu sync.Mutex
-	var order []string
 	within(t, func() {
 		p.Start(repos)
 		var wg sync.WaitGroup
@@ -209,9 +205,6 @@ func TestTableProgress_FinishedRowsStreamIntoOneTableInCompletionOrder(t *testin
 				}
 				p.RepoStarted(name, action)
 				time.Sleep(time.Duration((i*7)%5) * 25 * time.Millisecond)
-				mu.Lock()
-				defer mu.Unlock()
-				order = append(order, name)
 				p.RepoDone(cloner.RepoResult{Name: name, Action: results[i%len(results)]}, time.Duration(i+1)*100*time.Millisecond)
 			}()
 		}
@@ -239,7 +232,11 @@ func TestTableProgress_FinishedRowsStreamIntoOneTableInCompletionOrder(t *testin
 			assert.Contains(t, line, symbol+" "+ui.ActionText(action, time.Duration(i+1)*100*time.Millisecond), name)
 		}
 	}
-	assert.Equal(t, order, rows, "every repo is in the table once, in the order it finished")
+	var want []string
+	for i := range repos {
+		want = append(want, fmt.Sprintf("repo-%02d", i))
+	}
+	assert.Equal(t, want, rows, "every repo is in the table once, in list order, however they finished")
 
 	// The table is closed by the rule, the totals and the bottom border.
 	require.GreaterOrEqual(t, len(lines), 3)
@@ -481,6 +478,138 @@ func TestTableProgress_TheLiveAreaHoldsOnlyWhatIsInFlight(t *testing.T) {
 		assert.NotContains(t, scr, "done,", "the window footer is gone")
 		assert.LessOrEqual(t, len(live), height-2, "the area leaves two lines of the terminal")
 	})
+}
+
+func TestTableProgress_ARowThatFinishesEarlyWaitsForTheRowsAboveIt(t *testing.T) {
+	needsANSICursor(t)
+	p, lister, buf := newTable(t, 120, 20, tableRepos(4))
+
+	within(t, func() {
+		p.Start(4)
+		for i := range 3 {
+			p.RepoStarted(fmt.Sprintf("repo-%02d", i), cloner.ProgressClone)
+		}
+		// repo-01 and repo-02 finish while repo-00 is still cloning.
+		p.RepoDone(cloner.RepoResult{Name: "repo-02", Action: cloner.ActionCloned}, 2*time.Second)
+		p.RepoDone(cloner.RepoResult{Name: "repo-01", Action: cloner.ActionPulled}, time.Second)
+
+		scr := waitForScreen(t, buf, "Syncing 2/4", "1 running · 1 queued")
+		assertOneWidth(t, scr)
+		lines := tableLines(scr)
+		// The live area holds all three in list order, the finished ones with
+		// their result, under the header: none is in the scrollback yet.
+		require.Len(t, lines, 11, scr)
+		assert.Contains(t, lines[5], "repo-00")
+		assert.Regexp(t, `cloning \d+\.\ds`, lines[5])
+		assert.Contains(t, lines[6], "repo-01")
+		assert.Contains(t, lines[6], "↓ pulled 1.0s")
+		assert.Contains(t, lines[7], "repo-02")
+		assert.Contains(t, lines[7], "✓ cloned 2.0s")
+		assert.NotContains(t, scr, "waiting on", "the held rows fit, so the footer needn't count them")
+
+		// repo-00 finishing lets all three print, in order.
+		p.RepoDone(cloner.RepoResult{Name: "repo-00", Action: cloner.ActionCloned}, 3*time.Second)
+		scr = waitForScreen(t, buf, "Syncing 3/4", "0 running · 1 queued")
+		lines = tableLines(scr)
+		require.Len(t, lines, 11, scr)
+		assert.Contains(t, lines[5], "✓ cloned 3.0s")
+		assert.Contains(t, lines[6], "repo-01")
+		assert.Contains(t, lines[7], "repo-02")
+		assert.True(t, strings.HasPrefix(lines[8], "├") && strings.Contains(lines[8], "┴"), lines[8])
+
+		p.RepoStarted("repo-03", cloner.ProgressPull)
+		p.RepoDone(cloner.RepoResult{Name: "repo-03", Action: cloner.ActionUpToDate}, time.Second)
+		p.Stop()
+		lister.FinishTable()
+	})
+
+	var rows []string
+	for _, line := range strings.Split(screen(buf), "\n") {
+		if name := regexp.MustCompile(`repo-\d\d`).FindString(line); name != "" {
+			rows = append(rows, name)
+		}
+	}
+	assert.Equal(t, []string{"repo-00", "repo-01", "repo-02", "repo-03"}, rows, "each row printed once, in list order")
+}
+
+func TestTableProgress_HeldRowsGiveWayFirstWhenTheLiveAreaIsFull(t *testing.T) {
+	needsANSICursor(t)
+	// A 10-line terminal leaves room for 5 rows in the live area.
+	const total, height = 20, 10
+	repos := tableRepos(total)
+	repos[0].Name = "bigrepo"
+	p, _, buf := newTable(t, 140, height, repos)
+
+	within(t, func() {
+		p.Start(total)
+		defer p.Stop()
+		p.RepoStarted("bigrepo", cloner.ProgressClone)
+		// Four repos behind bigrepo finish, filling the area with it.
+		for i := 1; i <= 4; i++ {
+			name := fmt.Sprintf("repo-%02d", i)
+			p.RepoStarted(name, cloner.ProgressPull)
+			p.RepoDone(cloner.RepoResult{Name: name, Action: cloner.ActionPulled}, time.Second)
+		}
+		scr := waitForScreen(t, buf, "Syncing 4/20")
+		assert.Contains(t, scr, "repo-04", "five rows still fit")
+		assert.NotContains(t, scr, "waiting on")
+
+		// A fifth finished row and three more in flight don't fit: the
+		// finished ones make way for the in-flight ones.
+		p.RepoStarted("repo-05", cloner.ProgressPull)
+		p.RepoDone(cloner.RepoResult{Name: "repo-05", Action: cloner.ActionPulled}, time.Second)
+		for i := 6; i <= 8; i++ {
+			p.RepoStarted(fmt.Sprintf("repo-%02d", i), cloner.ProgressPull)
+		}
+		scr = waitForScreen(t, buf, "4 running · 11 queued · +5 done, waiting on bigrepo")
+		assertOneWidth(t, scr)
+		all := strings.Split(scr, "\n")
+		live := all[len(all)-7:]
+		for i, name := range []string{"bigrepo", "repo-06", "repo-07", "repo-08"} {
+			assert.Contains(t, live[i], name)
+		}
+		for i := 1; i <= 5; i++ {
+			assert.NotContains(t, scr, fmt.Sprintf("repo-%02d", i), "a held row is counted, not shown")
+		}
+		assert.LessOrEqual(t, len(live), height-2)
+
+		// Past the room for in-flight rows too, the footer counts both.
+		p.RepoStarted("repo-09", cloner.ProgressPull)
+		p.RepoStarted("repo-10", cloner.ProgressPull)
+		waitForScreen(t, buf, "+1 more running · +5 done, waiting on bigrepo")
+
+		// bigrepo finishing prints it and the five held behind it.
+		p.RepoDone(cloner.RepoResult{Name: "bigrepo", Action: cloner.ActionCloned}, time.Minute)
+		scr = waitForScreen(t, buf, "Syncing 6/20")
+		assert.NotContains(t, scr, "waiting on")
+		for i := 1; i <= 5; i++ {
+			assert.Contains(t, scr, fmt.Sprintf("repo-%02d", i))
+		}
+	})
+}
+
+func TestTableProgress_ACancelPrintsHeldRowsInListOrder(t *testing.T) {
+	needsANSICursor(t)
+	p, lister, buf := newTable(t, 200, 40, tableRepos(4))
+
+	within(t, func() {
+		p.Start(4)
+		p.RepoStarted("repo-00", cloner.ProgressClone)
+		p.RepoStarted("repo-01", cloner.ProgressPull)
+		p.RepoDone(cloner.RepoResult{Name: "repo-01", Action: cloner.ActionPulled}, time.Second)
+		waitForScreen(t, buf, "Syncing 1/4")
+		p.Stop()
+		lister.FinishTable()
+	})
+
+	lines := strings.Split(screen(buf), "\n")
+	require.GreaterOrEqual(t, len(lines), 8)
+	rows := lines[len(lines)-7 : len(lines)-3]
+	for i, want := range []string{"interrupted", "↓ pulled 1.0s", "queued", "queued"} {
+		assert.Contains(t, rows[i], fmt.Sprintf("repo-%02d", i))
+		assert.Contains(t, rows[i], want)
+	}
+	assert.Regexp(t, `│ 4 repos · ✓ 0 cloned · ↓ 1 pulled · 1 interrupted · 2 queued · \d+s +│`, lines[len(lines)-2])
 }
 
 func TestTableProgress_TheRuleSitsDirectlyAboveTheFooter(t *testing.T) {

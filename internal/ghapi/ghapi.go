@@ -4,10 +4,13 @@
 package ghapi
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/google/go-github/v67/github"
@@ -61,8 +64,12 @@ func ValidateToken(ctx context.Context, token string) (string, error) {
 }
 
 // ListOrgRepos pages through all repositories in the given org and
-// returns them as RepoInfo values. Uses type=all to match the Python
-// behavior (subsequent --type filtering happens in FilterRepos).
+// returns them as RepoInfo values, sorted by name. Uses type=all to match the
+// Python behavior (subsequent --type filtering happens in FilterRepos).
+//
+// The API lists repos by creation date. Sorting here, at the source, makes
+// the sync hand repos to its workers alphabetically and keeps the repo
+// tables and the manifest in the same order from run to run.
 func ListOrgRepos(ctx context.Context, token, org string) ([]RepoInfo, error) {
 	client := newClient(token)
 
@@ -87,7 +94,18 @@ func ListOrgRepos(ctx context.Context, token, org string) ([]RepoInfo, error) {
 		}
 		opts.Page = resp.NextPage
 	}
+	slices.SortFunc(all, compareNames)
 	return all, nil
+}
+
+// compareNames orders repos by name ignoring case, so "Zeta" doesn't sort
+// ahead of "alpha". GitHub keeps names unique regardless of case; the
+// case-sensitive tie-break only makes the order total.
+func compareNames(a, b RepoInfo) int {
+	return cmp.Or(
+		strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)),
+		strings.Compare(a.Name, b.Name),
+	)
 }
 
 func toRepoInfo(r *github.Repository) RepoInfo {
