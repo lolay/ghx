@@ -7,12 +7,12 @@
 - **Review log:** wave-1 CONCERNS (fang title-cased the config path in terminal errors); wave-1-fix CONCERNS (a path with no separator still title-cased); wave-1-fix2 PASS.
 - **Fix-ups, retries, checkpoints:** 1-fix (first CONCERNS, no gate); 1-fix2 (gate 1 passed unattended, fix-up 2 of 2). No retries.
 - **Spend:** ~$8.14 of ~$4.0 expected (guard $50). Waves ~$2.75, orchestrator ~$5.39.
-- **Next:** nothing in the plan. Waiting on Gary: open the PR (title along the lines of "Check config values and bump x/text", body `Closes #1`), then the cleanup commit that removes this plan and handoff before merge.
+- **Next:** PR open against `main` (Closes #1), watching CI and review. The cleanup commit removing this plan and handoff lands last, before merge.
 - **Resume:** paste the plan's Kickoff prompt (it will find the plan complete).
 
 ## Pending question (verbatim)
 
-Open a PR for `claude/charming-allen-aaonrw` into `main` (Closes #1)? The cleanup commit removing `specs/handoffs/plan-config-checks-quill.md` and this handoff lands last, before merge. Options: Open the PR / Not yet.
+None. The PR question was answered 2026-10-14: "Open the PR".
 
 ## Decisions so far
 
