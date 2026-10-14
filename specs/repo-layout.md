@@ -35,7 +35,8 @@ reach it. For each such repo `x`:
 - Something already exists at `want`: nothing is overwritten. The run reports a
   `conflict` naming both paths, leaves both copies, and syncs `want` as usual.
   `MoveRepo` replaces an existing destination, so the reconcile never calls it
-  onto one.
+  onto one. Under `--delete` the conflict deletes neither copy, and the
+  archived one isn't synced, so the detail says `deleting neither`.
 - The repo is archived and `--delete` is set: `other` is deleted, and then
   `other.wiki` the same way. An archived repo isn't synced under `--delete`.
 - Otherwise `other` is moved to `want`'s parent (`moved (archived)` or

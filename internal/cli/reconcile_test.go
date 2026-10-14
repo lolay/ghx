@@ -152,27 +152,40 @@ func TestRun_AnOriginNamesTheRepoWhateverItsHostOwnerOrCase(t *testing.T) {
 }
 
 func TestRun_AClonePresentInBothPlacesIsAConflict(t *testing.T) {
-	w := newWorld(t)
-	w.addRepo("alpha")
-	w.addRepo("beta")
-	w.mustRun()
-	// Work in the active clone that a move onto ARCHIVED/beta would keep, and
-	// a copy already in ARCHIVED/ that a replace would lose.
-	local := filepath.Join(w.out, "beta", "notes.txt")
-	require.NoError(t, os.WriteFile(local, []byte("mine\n"), 0o644))
-	archived := filepath.Join(w.out, "ARCHIVED", "beta")
-	gittest.Git(t, "", "clone", "--quiet", w.bare("beta"), archived)
-	kept := filepath.Join(archived, "kept.txt")
-	require.NoError(t, os.WriteFile(kept, []byte("also mine\n"), 0o644))
-	w.archiveRepo("beta")
+	tests := []struct {
+		name  string
+		flags []string
+		then  func(out string) string
+	}{
+		{"synced as usual", nil, func(out string) string { return "; syncing " + filepath.Join(out, "ARCHIVED", "beta") }},
+		{"under --delete", []string{"--delete"}, func(string) string { return "; deleting neither" }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := newWorld(t)
+			w.addRepo("alpha")
+			w.addRepo("beta")
+			w.mustRun()
+			// Work in the active clone that a move onto ARCHIVED/beta would
+			// keep, and a copy already in ARCHIVED/ that a replace would lose.
+			local := filepath.Join(w.out, "beta", "notes.txt")
+			require.NoError(t, os.WriteFile(local, []byte("mine\n"), 0o644))
+			archived := filepath.Join(w.out, "ARCHIVED", "beta")
+			gittest.Git(t, "", "clone", "--quiet", w.bare("beta"), archived)
+			kept := filepath.Join(archived, "kept.txt")
+			require.NoError(t, os.WriteFile(kept, []byte("also mine\n"), 0o644))
+			w.archiveRepo("beta")
 
-	out := w.mustRun()
+			out := w.mustRun(tt.flags...)
 
-	assert.Equal(t, []string{"ARCHIVED/beta", "alpha", "beta"}, repoDirs(t, w.out))
-	assert.FileExists(t, local)
-	assert.FileExists(t, kept)
-	assert.Contains(t, out, "beta: conflict")
-	assert.Contains(t, out, "Conflicts (both copies left in place):")
+			assert.Equal(t, []string{"ARCHIVED/beta", "alpha", "beta"}, repoDirs(t, w.out))
+			assert.FileExists(t, local)
+			assert.FileExists(t, kept)
+			assert.Contains(t, out, "beta: conflict")
+			assert.Contains(t, out, tt.then(w.out))
+			assert.Contains(t, out, "Conflicts (both copies left in place):")
+		})
+	}
 }
 
 func TestRun_AMoveThatFailedIsRetriedByTheNextRun(t *testing.T) {

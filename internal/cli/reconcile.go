@@ -126,7 +126,12 @@ func (r *reconciler) place(name, other, want string, action cloner.Action, delet
 		return false
 	}
 	if exists(want) {
-		r.add(name, cloner.ActionConflict, fmt.Sprintf("%s and %s both exist; syncing %s", other, want, want))
+		// Under --delete an archived repo isn't synced, so want only stays.
+		then := "syncing " + want
+		if deleteIt {
+			then = "deleting neither"
+		}
+		r.add(name, cloner.ActionConflict, fmt.Sprintf("%s and %s both exist; %s", other, want, then))
 		return false
 	}
 	if deleteIt {
