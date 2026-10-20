@@ -1,5 +1,10 @@
 package cli
 
+import (
+	"testing"
+	"time"
+)
+
 // NewRootCmd gives the black-box tests in package cli_test the cobra command
 // that Execute builds, so they can drive it in-process with their own args
 // and context.
@@ -17,3 +22,11 @@ var ErrorStyles = errorStyles
 
 // NewBranchesCmd gives the tests the ghb command ExecuteBranches builds.
 var NewBranchesCmd = newBranchesCmd
+
+// SetNow pins the time ghb measures branch ages from, for one test.
+func SetNow(t *testing.T, at time.Time) {
+	t.Helper()
+	orig := now
+	now = func() time.Time { return at }
+	t.Cleanup(func() { now = orig })
+}

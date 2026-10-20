@@ -37,11 +37,21 @@ func runRoot(t *testing.T, args ...string) (code int, stdout, stderr string) {
 // The README promises that every option but --ssh can be a config key; this
 // fails when a flag is added without one.
 func TestRootCmd_EveryFlagButSSHIsAConfigKey(t *testing.T) {
-	flagOnly := map[string]bool{"ssh": true, "help": true, "version": true}
+	assertFlagsAreConfigKeys(t, cli.NewRootCmd(), "ssh")
+}
+
+// assertFlagsAreConfigKeys fails for a flag of cmd that has no config key,
+// but for help, version and the flags named in flagOnly.
+func assertFlagsAreConfigKeys(t *testing.T, cmd *cobra.Command, flagOnly ...string) {
+	t.Helper()
+	skip := map[string]bool{"help": true, "version": true}
+	for _, name := range flagOnly {
+		skip[name] = true
+	}
 	seen := 0
 
-	cli.NewRootCmd().Flags().VisitAll(func(f *pflag.Flag) {
-		if flagOnly[f.Name] {
+	cmd.Flags().VisitAll(func(f *pflag.Flag) {
+		if skip[f.Name] {
 			return
 		}
 		seen++

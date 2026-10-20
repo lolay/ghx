@@ -122,7 +122,7 @@ type BranchesProgress interface {
 // report prints PrintBranchesRepoTable when it is done.
 func NewBranchesProgress(expected string) (p BranchesProgress, live bool) {
 	if !animate {
-		return noBranchesProgress{}, false
+		return NoBranchesProgress{}, false
 	}
 	return &branchesTable{newTableProgress(newBranchesSpec(expected), Out)}, true
 }
@@ -148,17 +148,18 @@ func (b *branchesTable) RepoFailed(name string) {
 	b.rowDone(name, text.FgRed.Sprint(failedMark)+" failed", failedMark)
 }
 
-// noBranchesProgress draws nothing.
-type noBranchesProgress struct{}
+// NoBranchesProgress is a BranchesProgress that draws nothing, for a report
+// that shows no progress (JSON).
+type NoBranchesProgress struct{}
 
-func (noBranchesProgress) SetRepos([]ghapi.RepoInfo) {}
-func (noBranchesProgress) Start()                    {}
-func (noBranchesProgress) RepoStarted(string)        {}
-func (noBranchesProgress) RepoPage(string, int)      {}
-func (noBranchesProgress) RepoDone(branches.Repo)    {}
-func (noBranchesProgress) RepoFailed(string)         {}
-func (noBranchesProgress) Stop()                     {}
-func (noBranchesProgress) FinishTable()              {}
+func (NoBranchesProgress) SetRepos([]ghapi.RepoInfo) {}
+func (NoBranchesProgress) Start()                    {}
+func (NoBranchesProgress) RepoStarted(string)        {}
+func (NoBranchesProgress) RepoPage(string, int)      {}
+func (NoBranchesProgress) RepoDone(branches.Repo)    {}
+func (NoBranchesProgress) RepoFailed(string)         {}
+func (NoBranchesProgress) Stop()                     {}
+func (NoBranchesProgress) FinishTable()              {}
 
 // PrintBranchesRepoTable prints the branches report's repo table once, with
 // each repo's counts: the form for a pipe, a file or a console without ANSI,
