@@ -109,6 +109,66 @@ func TestListBranches_WaitsOutARateLimitAndRetries(t *testing.T) {
 	}
 }
 
+func TestListOrgRepos_WaitsOutARateLimitAndRetries(t *testing.T) {
+	start := ghapitest.RateLimitReset.Add(-10 * time.Minute)
+	tests := []struct {
+		name      string
+		failure   ghapitest.Failure
+		wantSleep time.Duration
+		wantLimit string
+	}{
+		{"secondary, for its Retry-After", ghapitest.SecondaryLimit, time.Minute, "GitHub secondary rate limit"},
+		{"primary, to a second past the reset", ghapitest.PrimaryLimit, 10*time.Minute + time.Second, "GitHub rate limit"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := newAPI(t)
+			srv.SetPageSize(2)
+			srv.SetRepos("acme", []ghapitest.Repo{
+				{Name: "alpha"}, {Name: "bravo"}, {Name: "charlie"}, {Name: "delta"}, {Name: "echo"},
+			})
+			clock := &fakeClock{now: start}
+			pacer, pauses := newPacer(clock)
+			// The pacer reads the clock before each request, so the second
+			// read is the moment before page 2: the limit lands there and the
+			// retry repeats that page, not the listing.
+			var reads int
+			now := pacer.Now
+			pacer.Now = func() time.Time {
+				if reads++; reads == 2 {
+					srv.FailRepos("acme", tt.failure, 1)
+				}
+				return now()
+			}
+
+			repos, err := ghapi.ListOrgRepos(t.Context(), testToken, "acme", pacer)
+			require.NoError(t, err)
+
+			assert.Equal(t, []string{"alpha", "bravo", "charlie", "delta", "echo"}, names(repos), "every repo once")
+			assert.Equal(t, 4, countPath(srv, "/orgs/acme/repos"), "three pages and one retry")
+			require.Equal(t, []time.Duration{tt.wantSleep}, clock.Sleeps())
+			require.Len(t, pauses(), 1)
+			assert.Equal(t, tt.wantLimit, pauses()[0].limit)
+			assert.True(t, pauses()[0].until.Equal(start.Add(tt.wantSleep)))
+		})
+	}
+}
+
+func TestListOrgRepos_WithoutAPacerALimitFails(t *testing.T) {
+	for _, f := range []ghapitest.Failure{ghapitest.SecondaryLimit, ghapitest.PrimaryLimit} {
+		srv := newAPI(t)
+		srv.SetRepos("acme", []ghapitest.Repo{{Name: "alpha"}})
+		srv.FailRepos("acme", f, 0)
+
+		_, err := ghapi.ListOrgRepos(t.Context(), testToken, "acme", nil)
+
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ghapi.ErrRateLimited)
+		assert.Contains(t, err.Error(), `Failed to access organization "acme"`)
+		assert.Equal(t, 1, countPath(srv, "/orgs/acme/repos"))
+	}
+}
+
 func TestPacer(t *testing.T) {
 	start := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
 

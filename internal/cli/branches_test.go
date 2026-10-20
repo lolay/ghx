@@ -394,6 +394,52 @@ func TestBranches_OnATerminalARateLimitCountsDownInTheFooter(t *testing.T) {
 	assert.Contains(t, got, "Totals")
 }
 
+func TestBranches_WaitsOutARateLimitWhileListingRepos(t *testing.T) {
+	const want = "GitHub secondary rate limit hit; waiting 1m0s, until "
+
+	t.Run("text", func(t *testing.T) {
+		w := newBranchesWorld(t, testOrg)
+		w.addRepo("api", "main", classified())
+		w.api.FailRepos(testOrg, ghapitest.SecondaryLimit, 1)
+
+		out, _, err := w.run()
+		require.NoError(t, err, out)
+		got := plain(out)
+		assert.Contains(t, got, want)
+		assert.Contains(t, got, "Ctrl-C to stop.")
+		assert.Contains(t, got, "Totals", "the report finishes")
+	})
+
+	t.Run("json", func(t *testing.T) {
+		w := newBranchesWorld(t, testOrg)
+		w.addRepo("api", "main", classified())
+		w.api.FailRepos(testOrg, ghapitest.SecondaryLimit, 1)
+
+		out, errOut, err := w.run("--format", "json")
+		require.NoError(t, err, errOut)
+		assert.Contains(t, errOut, want, "the wait is said on stderr")
+		var report struct {
+			Repos []struct{ Name string } `json:"repos"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(out), &report), "stdout is the JSON alone:\n%s", out)
+		assert.Len(t, report.Repos, 1)
+	})
+
+	t.Run("terminal", func(t *testing.T) {
+		terminal(t)
+		w := newBranchesWorld(t, testOrg)
+		w.addRepo("api", "main", classified())
+		w.api.FailRepos(testOrg, ghapitest.SecondaryLimit, 1)
+
+		out, _, err := w.run()
+		require.NoError(t, err, out)
+		got := plain(out)
+		assert.Contains(t, got, want, "the table isn't drawn yet, so the note says it")
+		assert.NotContains(t, got, "resuming in")
+		assert.Contains(t, got, "Totals", "the report finishes")
+	})
+}
+
 func TestBranches_AFailureFailsTheWholeReport(t *testing.T) {
 	for _, format := range []string{"text", "json"} {
 		t.Run(format, func(t *testing.T) {

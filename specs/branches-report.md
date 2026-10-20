@@ -184,12 +184,17 @@ it never exits for one. Ctrl-C stops it, as at any time.
   Piped output gets one line per pause, `GitHub secondary rate limit hit;
   waiting 1m0s, until 14:06:12 UTC. Ctrl-C to stop.`; with `--format json` that
   line goes to stderr, so stdout stays the JSON alone.
+- **The repo listing waits too.** The listing and the scan share one pacer, so
+  a limit hit while listing the org's repos is waited out and the same page is
+  asked for again. The table isn't drawn yet then, so it shows as the note
+  line, on a terminal as well as piped; a limit during the scan on a terminal
+  goes to the footer as above.
 
 Without a pacer (`ghapi.BranchOptions{}`), `ListBranches` fails on a limit
 with a `*ghapi.RateLimitError`, which matches `ghapi.ErrRateLimited` and says
-which limit and when to retry. The repo listing `ghx` and `ghb` share maps the
-same errors but doesn't wait: a limit there, before the table starts, fails
-the run with that message.
+which limit and when to retry. The repo listing `ghx` and `ghb` share takes an
+optional pacer the same way: `ghb` passes one, and `ghx`'s sync passes none, so
+a limit while it lists the org's repos still fails the run with that message.
 
 Any other failure (a repo GraphQL can't resolve, a revoked token) cancels the
 repos still being read, closes the table with them `interrupted`, and fails the
@@ -206,7 +211,5 @@ report: no partial report is printed.
 - **Waits can be long.** A spent primary limit can mean most of an hour's
   wait; a large org at a high `concurrency` is more likely to hit the
   secondary limit, so lower it to spend less time paused.
-- **The repo listing doesn't wait.** A limit while listing the org's repos,
-  before the table, fails the run.
 - **Fork PRs** don't count (see above).
 - **No timing yet against a large real org.**

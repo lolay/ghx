@@ -2,8 +2,9 @@
 // by httptest so tests never reach api.github.com: GET /user,
 // GET /orgs/{org}/repos, GET /repos/{owner}/{repo}/branches and the GraphQL
 // branches query on POST /graphql. REST lists paginate with a Link header and
-// GraphQL with a cursor, the way GitHub does, and every request is recorded
-// for assertions.
+// GraphQL with a cursor, the way GitHub does, every request is recorded for
+// assertions, and a repo's GraphQL requests or an org's repo listing can be
+// made to fail with a rate limit.
 package ghapitest
 
 import (
@@ -51,8 +52,10 @@ type Server struct {
 	repos    map[string][]Repo
 	branches map[string]repoBranches
 	failures map[string]failure
-	pageSize int
-	requests []Request
+	// repoFailures are the listing failures, by org.
+	repoFailures map[string]failure
+	pageSize     int
+	requests     []Request
 }
 
 // NewServer starts a fake API that accepts only the given token (anything else
@@ -65,6 +68,8 @@ func NewServer(t *testing.T, token, login string) *Server {
 		repos:    map[string][]Repo{},
 		branches: map[string]repoBranches{},
 		failures: map[string]failure{},
+
+		repoFailures: map[string]failure{},
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /user", s.handleUser)
@@ -154,9 +159,14 @@ func (s *Server) handleUser(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleOrgRepos(w http.ResponseWriter, r *http.Request) {
+	org := r.PathValue("org")
 	s.mu.Lock()
-	repos, ok := s.repos[r.PathValue("org")]
+	repos, ok := s.repos[org]
+	failure := takeFailureLocked(s.repoFailures, org)
 	s.mu.Unlock()
+	if writeFailure(w, failure) {
+		return
+	}
 	if !ok {
 		writeJSON(w, http.StatusNotFound, map[string]string{"message": "Not Found"})
 		return

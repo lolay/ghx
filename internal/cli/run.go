@@ -122,7 +122,7 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 	ui.Printf("Authenticated as %s\n", text.Bold.Sprint(username))
 
 	ui.Printf("Fetching repos for %s...\n", text.Bold.Sprint(org))
-	allRepos, err := ghapi.ListOrgRepos(ctx, token, org)
+	allRepos, err := ghapi.ListOrgRepos(ctx, token, org, nil)
 	if err != nil {
 		return err
 	}

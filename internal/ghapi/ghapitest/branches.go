@@ -32,7 +32,8 @@ type MergedPR struct {
 	HeadRefOID string
 }
 
-// Failure is how the fake refuses a repo's GraphQL requests (see Fail).
+// Failure is how the fake refuses a repo's GraphQL requests or an org's repo
+// listing (see Fail and FailRepos).
 type Failure int
 
 const (
@@ -76,27 +77,63 @@ func (s *Server) Fail(owner, repo string, f Failure, times int) {
 	s.failures[owner+"/"+repo] = failure{kind: f, left: times, forever: times <= 0}
 }
 
+// FailRepos makes the next times requests to GET /orgs/{org}/repos fail with
+// f, or every one when times is 0 or less. Only SecondaryLimit and
+// PrimaryLimit make sense there: RateLimited is a GraphQL answer.
+func (s *Server) FailRepos(org string, f Failure, times int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.repoFailures[org] = failure{kind: f, left: times, forever: times <= 0}
+}
+
 type failure struct {
 	kind    Failure
 	left    int
 	forever bool
 }
 
-// takeFailureLocked is the failure to answer a request for full with, counting it
-// down, or 0 for none. The caller holds s.mu.
-func (s *Server) takeFailureLocked(full string) Failure {
-	f, ok := s.failures[full]
+// takeFailureLocked is the failure to answer a request for key with, counting
+// it down in failures, or 0 for none. The caller holds s.mu.
+func takeFailureLocked(failures map[string]failure, key string) Failure {
+	f, ok := failures[key]
 	if !ok {
 		return 0
 	}
 	if !f.forever {
 		if f.left--; f.left <= 0 {
-			delete(s.failures, full)
+			delete(failures, key)
 		} else {
-			s.failures[full] = f
+			failures[key] = f
 		}
 	}
 	return f.kind
+}
+
+// writeFailure answers with f and reports true, or reports false for 0 and
+// writes nothing.
+func writeFailure(w http.ResponseWriter, f Failure) bool {
+	switch f {
+	case SecondaryLimit:
+		w.Header().Set("Retry-After", "60")
+		writeJSON(w, http.StatusForbidden, map[string]string{
+			"message":           "You have exceeded a secondary rate limit. Please wait a few minutes before you try again.",
+			"documentation_url": "https://docs.github.com/rest/overview/rate-limits-for-the-rest-api#about-secondary-rate-limits",
+		})
+	case PrimaryLimit:
+		w.Header().Set("X-RateLimit-Limit", "5000")
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(RateLimitReset.Unix(), 10))
+		writeJSON(w, http.StatusForbidden, map[string]string{"message": "API rate limit exceeded for user ID 1."})
+	case RateLimited:
+		w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(RateLimitReset.Unix(), 10))
+		writeJSON(w, http.StatusOK, map[string]any{
+			"data":   nil,
+			"errors": []map[string]string{{"type": "RATE_LIMITED", "message": "API rate limit exceeded for user ID 1."}},
+		})
+	default:
+		return false
+	}
+	return true
 }
 
 func (s *Server) handleBranches(w http.ResponseWriter, r *http.Request) {
@@ -140,29 +177,10 @@ func (s *Server) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.Lock()
 	rb, ok := s.branches[full]
-	failure := s.takeFailureLocked(full)
+	failure := takeFailureLocked(s.failures, full)
 	s.mu.Unlock()
 
-	switch failure {
-	case SecondaryLimit:
-		w.Header().Set("Retry-After", "60")
-		writeJSON(w, http.StatusForbidden, map[string]string{
-			"message":           "You have exceeded a secondary rate limit. Please wait a few minutes before you try again.",
-			"documentation_url": "https://docs.github.com/rest/overview/rate-limits-for-the-rest-api#about-secondary-rate-limits",
-		})
-		return
-	case PrimaryLimit:
-		w.Header().Set("X-RateLimit-Limit", "5000")
-		w.Header().Set("X-RateLimit-Remaining", "0")
-		w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(RateLimitReset.Unix(), 10))
-		writeJSON(w, http.StatusForbidden, map[string]string{"message": "API rate limit exceeded for user ID 1."})
-		return
-	case RateLimited:
-		w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(RateLimitReset.Unix(), 10))
-		writeJSON(w, http.StatusOK, map[string]any{
-			"data":   nil,
-			"errors": []map[string]string{{"type": "RATE_LIMITED", "message": "API rate limit exceeded for user ID 1."}},
-		})
+	if writeFailure(w, failure) {
 		return
 	}
 
