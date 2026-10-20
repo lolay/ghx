@@ -127,19 +127,9 @@ func TestListOrgRepos_WaitsOutARateLimitAndRetries(t *testing.T) {
 			srv.SetRepos("acme", []ghapitest.Repo{
 				{Name: "alpha"}, {Name: "bravo"}, {Name: "charlie"}, {Name: "delta"}, {Name: "echo"},
 			})
+			srv.FailRepos("acme", tt.failure, 1)
 			clock := &fakeClock{now: start}
 			pacer, pauses := newPacer(clock)
-			// The pacer reads the clock before each request, so the second
-			// read is the moment before page 2: the limit lands there and the
-			// retry repeats that page, not the listing.
-			var reads int
-			now := pacer.Now
-			pacer.Now = func() time.Time {
-				if reads++; reads == 2 {
-					srv.FailRepos("acme", tt.failure, 1)
-				}
-				return now()
-			}
 
 			repos, err := ghapi.ListOrgRepos(t.Context(), testToken, "acme", pacer)
 			require.NoError(t, err)
