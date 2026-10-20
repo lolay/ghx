@@ -97,6 +97,8 @@ type tableProgress struct {
 	closed     bool      // FinishTable has closed the table since SetRepos
 	began      time.Time // the first Start since SetRepos
 	stopped    time.Time // the last Stop
+	pauseUntil time.Time // while it is ahead, the footer counts down to it
+	pauseWhy   string    // what the pause is waiting out
 	area       *pterm.AreaPrinter
 	quit       chan struct{} // closed by Stop to end the repaint goroutine
 	repainted  chan struct{} // closed when that goroutine has returned
@@ -258,6 +260,29 @@ func (p *tableProgress) rowVerb(name, verb string) {
 	if row := p.rowLocked(name); row.state == rowRunning {
 		row.verb = verb
 	}
+}
+
+// setPause shows a line above the progress footer, why followed by a
+// countdown to until, for as long as until is ahead.
+func (p *tableProgress) setPause(until time.Time, why string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.pauseUntil, p.pauseWhy = until, why
+	if p.area != nil {
+		p.area.Update(p.frameLocked(time.Now()))
+	}
+}
+
+// pauseLineLocked is the pause line at now, "" when there is no pause on.
+// The caller holds p.mu.
+func (p *tableProgress) pauseLineLocked(now time.Time) string {
+	left := p.pauseUntil.Sub(now)
+	if left <= 0 {
+		return ""
+	}
+	// Rounded up, as a countdown is: the last second reads 1s, not 0s.
+	left = (left + time.Second - 1).Truncate(time.Second)
+	return text.FgYellow.Sprint("⚠") + fmt.Sprintf(" %s · resuming in %s · Ctrl-C to stop", p.pauseWhy, left)
 }
 
 // rowDone records the repo's finished Status cell and its class, and prints,
@@ -506,10 +531,14 @@ func (p *tableProgress) frameLocked(now time.Time) string {
 		}
 	}
 
-	// Besides the rows: the rule, the footer and the closing border. With no
-	// room even for those (a terminal only a few lines tall) the footer stands
-	// alone.
+	// Besides the rows: the rule, the footer and the closing border, and the
+	// pause line during a pause. With no room even for those (a terminal only
+	// a few lines tall) the footer stands alone.
+	pause := p.pauseLineLocked(now)
 	room := height - 2 - 3
+	if pause != "" {
+		room--
+	}
 	var lines []string
 	if room >= 0 {
 		shown, held := live, 0
@@ -525,6 +554,9 @@ func (p *tableProgress) frameLocked(now time.Time) string {
 		// separator in a row.
 		if p.printed > 0 || len(shown) > 0 {
 			lines = append(lines, l.rule)
+		}
+		if pause != "" {
+			lines = append(lines, l.footer(pause))
 		}
 		lines = append(lines, l.footer(p.progressLocked(now, more, held)), l.bottom)
 	} else {

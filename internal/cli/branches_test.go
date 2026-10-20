@@ -1,6 +1,7 @@
 package cli_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -13,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/lolay/ghx/internal/cli"
-	"github.com/lolay/ghx/internal/ghapi"
 	"github.com/lolay/ghx/internal/ghapi/ghapitest"
 	"github.com/lolay/ghx/internal/ui"
 )
@@ -44,6 +44,8 @@ func newBranchesWorld(t *testing.T, org string) *branchesWorld {
 	}
 	t.Setenv("GITHUB_TOKEN", testToken)
 	cli.SetNow(t, reportNow)
+	// A rate-limit wait takes no time unless a test says otherwise.
+	cli.SetPacerSleep(t, func(ctx context.Context, _ time.Duration) error { return ctx.Err() })
 
 	api := ghapitest.NewServer(t, testToken, "octocat")
 	api.RedirectGitHub(t)
@@ -328,33 +330,87 @@ func TestBranches_JSON(t *testing.T) {
 	assert.NotContains(t, out, "Settings:")
 }
 
-func TestBranches_RateLimitFailsTheWholeReport(t *testing.T) {
+func TestBranches_WaitsOutARateLimitAndFinishes(t *testing.T) {
 	tests := []struct {
 		name    string
 		failure ghapitest.Failure
 		want    string
 	}{
-		{"secondary", ghapitest.SecondaryLimit, "Failed to list branches of acme/web: GitHub secondary rate limit hit; retry after 1m0s"},
-		{"GraphQL", ghapitest.RateLimited, "Failed to list branches of acme/web: GitHub rate limit hit; it resets at 14:05 UTC"},
+		{"secondary", ghapitest.SecondaryLimit, "GitHub secondary rate limit hit; waiting 1m0s, until "},
+		{"GraphQL", ghapitest.RateLimited, "GitHub rate limit hit; waiting "},
 	}
 	for _, tt := range tests {
-		for _, format := range []string{"text", "json"} {
-			t.Run(tt.name+" "+format, func(t *testing.T) {
-				w := newBranchesWorld(t, testOrg)
-				w.addRepo("api", "main", classified())
-				w.addRepo("web", "main", classified())
-				w.api.Fail(testOrg, "web", tt.failure)
+		t.Run(tt.name+" text", func(t *testing.T) {
+			w := newBranchesWorld(t, testOrg)
+			w.addRepo("api", "main", classified())
+			w.addRepo("web", "main", classified())
+			w.api.Fail(testOrg, "web", tt.failure, 2)
 
-				out, _, err := w.run("--format", format)
-				require.Error(t, err)
-				assert.Equal(t, tt.want, err.Error())
-				assert.NotContains(t, plain(out), "Totals", "no partial report")
-				assert.NotContains(t, plain(out), "Branches\n")
-				if format == "json" {
-					assert.Empty(t, out)
-				}
-			})
-		}
+			out, _, err := w.run()
+			require.NoError(t, err, out)
+			got := plain(out)
+			assert.Contains(t, got, tt.want)
+			assert.Contains(t, got, "Ctrl-C to stop.")
+			assert.Contains(t, got, "Totals", "the report finishes")
+			branchLine(t, out, "web", "stale-work")
+		})
+
+		t.Run(tt.name+" json", func(t *testing.T) {
+			w := newBranchesWorld(t, testOrg)
+			w.addRepo("api", "main", classified())
+			w.addRepo("web", "main", classified())
+			w.api.Fail(testOrg, "web", tt.failure, 1)
+
+			out, errOut, err := w.run("--format", "json")
+			require.NoError(t, err, errOut)
+			assert.Contains(t, errOut, tt.want, "the wait is said on stderr")
+			var report struct {
+				Repos []struct{ Name string } `json:"repos"`
+			}
+			require.NoError(t, json.Unmarshal([]byte(out), &report), "stdout is the JSON alone:\n%s", out)
+			assert.Len(t, report.Repos, 2)
+		})
+	}
+}
+
+func TestBranches_OnATerminalARateLimitCountsDownInTheFooter(t *testing.T) {
+	terminal(t)
+	w := newBranchesWorld(t, testOrg)
+	w.addRepo("api", "main", classified())
+	w.api.Fail(testOrg, "api", ghapitest.SecondaryLimit, 1)
+	// Long enough for the live area to repaint during the wait.
+	cli.SetPacerSleep(t, func(ctx context.Context, _ time.Duration) error {
+		time.Sleep(300 * time.Millisecond)
+		return ctx.Err()
+	})
+
+	out, _, err := w.run()
+	require.NoError(t, err, out)
+	got := plain(out)
+
+	assert.Regexp(t, `⚠ GitHub secondary rate limit · resuming in [0-9m]+s · Ctrl-C to stop`, got)
+	assert.NotContains(t, got, "hit; waiting", "the terminal gets the footer, not a note")
+	assert.Contains(t, got, "1 repo · ✓ 1 scanned")
+	assert.Contains(t, got, "Totals")
+}
+
+func TestBranches_AFailureFailsTheWholeReport(t *testing.T) {
+	for _, format := range []string{"text", "json"} {
+		t.Run(format, func(t *testing.T) {
+			w := newBranchesWorld(t, testOrg)
+			w.addRepo("api", "main", classified())
+			// Listed by REST, unknown to GraphQL: the query fails.
+			w.repos = append(w.repos, ghapitest.Repo{Name: "gone", DefaultBranch: "main"})
+			w.api.SetRepos(testOrg, w.repos)
+
+			out, _, err := w.run("--format", format)
+			require.Error(t, err)
+			assert.Equal(t, "Failed to list branches of acme/gone: Could not resolve to a Repository with the name 'acme/gone'.", err.Error())
+			assert.NotContains(t, plain(out), "Totals", "no partial report")
+			if format == "json" {
+				assert.Empty(t, out)
+			}
+		})
 	}
 }
 
@@ -467,15 +523,15 @@ func TestBranchesCmd_EveryFlagButFormatIsAConfigKey(t *testing.T) {
 	assertFlagsAreConfigKeys(t, cli.NewBranchesCmd(), "format")
 }
 
-func TestBranches_OnATerminalAFailureLeavesTheOthersInterrupted(t *testing.T) {
+func TestBranches_OnATerminalAFailureClosesTheTable(t *testing.T) {
 	terminal(t)
 	w := newBranchesWorld(t, testOrg)
 	w.addRepo("api", "main", classified())
-	w.addRepo("web", "main", classified())
-	w.api.Fail(testOrg, "web", ghapitest.SecondaryLimit)
+	w.repos = append(w.repos, ghapitest.Repo{Name: "gone", DefaultBranch: "main"})
+	w.api.SetRepos(testOrg, w.repos)
 
 	out, _, err := w.run("--concurrency", "1")
-	require.ErrorIs(t, err, ghapi.ErrRateLimited)
+	require.Error(t, err)
 	got := plain(out)
 
 	assert.Contains(t, got, "✗ failed")

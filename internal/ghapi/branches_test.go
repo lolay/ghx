@@ -24,7 +24,7 @@ func TestListBranches(t *testing.T) {
 			},
 		})
 
-		got, err := ghapi.ListBranches(t.Context(), testToken, "acme", "api", nil)
+		got, err := ghapi.ListBranches(t.Context(), testToken, "acme", "api", ghapi.BranchOptions{})
 		require.NoError(t, err)
 
 		assert.Equal(t, ghapi.RepoBranches{
@@ -61,7 +61,7 @@ func TestListBranches(t *testing.T) {
 			srv.SetBranches("acme", "api", tt.defaultBranch, numbered(tt.count))
 			var pages []int
 
-			got, err := ghapi.ListBranches(t.Context(), testToken, "acme", "api", func(p int) { pages = append(pages, p) })
+			got, err := ghapi.ListBranches(t.Context(), testToken, "acme", "api", ghapi.BranchOptions{OnPage: func(p int) { pages = append(pages, p) }})
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.defaultBranch, got.DefaultBranch)
@@ -83,7 +83,7 @@ func TestListBranches_MarksOnlyTheProtectedBranches(t *testing.T) {
 		{Name: "main", Protected: true}, {Name: "release", Protected: true}, {Name: "topic"}, {Name: "v1", Protected: true},
 	})
 
-	got, err := ghapi.ListBranches(t.Context(), testToken, "acme", "api", nil)
+	got, err := ghapi.ListBranches(t.Context(), testToken, "acme", "api", ghapi.BranchOptions{})
 	require.NoError(t, err)
 
 	protected := map[string]bool{}
@@ -121,9 +121,9 @@ func TestListBranches_RateLimits(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := newAPI(t)
 			srv.SetBranches("acme", "api", "main", numbered(3))
-			srv.Fail("acme", "api", tt.failure)
+			srv.Fail("acme", "api", tt.failure, 0)
 
-			got, err := ghapi.ListBranches(t.Context(), testToken, "acme", "api", nil)
+			got, err := ghapi.ListBranches(t.Context(), testToken, "acme", "api", ghapi.BranchOptions{})
 			require.Error(t, err)
 			assert.Empty(t, got.Branches, "no partial result")
 			assert.ErrorIs(t, err, ghapi.ErrRateLimited)
@@ -145,7 +145,7 @@ func TestListBranches_Errors(t *testing.T) {
 	t.Run("an unknown repository names it", func(t *testing.T) {
 		newAPI(t)
 
-		_, err := ghapi.ListBranches(t.Context(), testToken, "acme", "gone", nil)
+		_, err := ghapi.ListBranches(t.Context(), testToken, "acme", "gone", ghapi.BranchOptions{})
 		require.Error(t, err)
 		assert.Equal(t, "Failed to list branches of acme/gone: Could not resolve to a Repository with the name 'acme/gone'.", err.Error())
 		assert.NotErrorIs(t, err, ghapi.ErrRateLimited)
@@ -155,7 +155,7 @@ func TestListBranches_Errors(t *testing.T) {
 		newAPI(t)
 		const secret = "ghp_secret_never_shown"
 
-		_, err := ghapi.ListBranches(t.Context(), secret, "acme", "api", nil)
+		_, err := ghapi.ListBranches(t.Context(), secret, "acme", "api", ghapi.BranchOptions{})
 		require.Error(t, err)
 		assert.Equal(t, "Failed to list branches of acme/api (401): Bad credentials", err.Error())
 		assert.NotContains(t, err.Error(), secret)
@@ -167,7 +167,7 @@ func TestListBranches_Errors(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 
-		_, err := ghapi.ListBranches(ctx, testToken, "acme", "api", nil)
+		_, err := ghapi.ListBranches(ctx, testToken, "acme", "api", ghapi.BranchOptions{})
 		require.Error(t, err)
 		assert.ErrorIs(t, err, context.Canceled)
 	})

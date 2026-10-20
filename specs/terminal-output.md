@@ -115,6 +115,7 @@ sync's table is unchanged by the split.
 | Finished | `✓ cloned 3.2s` and the other actions | `✓ 14 · 3 merged · 2 stale · 1 open`, `✗ failed` |
 | Live footer | `Syncing 34/60 [...]` | `Scanning 34/60 [...]` |
 | Closing footer | `60 repos · ✓ 3 cloned · ...` | `60 repos · ✓ 59 scanned · ⚠ 3 not on main · ✗ 1 failed · 41s` |
+| Rate limit | Not shown (the sync doesn't wait) | A yellow line above the progress footer, `⚠ GitHub secondary rate limit · resuming in 42s · Ctrl-C to stop`, counting down (rounded up) and gone when the wait ends; it takes a line of the live area while it shows |
 
 The Default Branch cell of a repo whose default isn't `--expected-default` is
 yellow, `⚠ trunk`. After the repo table, the report prints two static go-pretty

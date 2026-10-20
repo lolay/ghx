@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -29,4 +30,12 @@ func SetNow(t *testing.T, at time.Time) {
 	orig := now
 	now = func() time.Time { return at }
 	t.Cleanup(func() { now = orig })
+}
+
+// SetPacerSleep makes every rate-limit wait call sleep instead, for one test.
+func SetPacerSleep(t *testing.T, sleep func(ctx context.Context, d time.Duration) error) {
+	t.Helper()
+	orig := pacerSleep
+	pacerSleep = sleep
+	t.Cleanup(func() { pacerSleep = orig })
 }

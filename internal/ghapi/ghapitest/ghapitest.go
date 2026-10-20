@@ -50,7 +50,7 @@ type Server struct {
 	mu       sync.Mutex
 	repos    map[string][]Repo
 	branches map[string]repoBranches
-	failures map[string]Failure
+	failures map[string]failure
 	pageSize int
 	requests []Request
 }
@@ -64,7 +64,7 @@ func NewServer(t *testing.T, token, login string) *Server {
 		token: token, login: login,
 		repos:    map[string][]Repo{},
 		branches: map[string]repoBranches{},
-		failures: map[string]Failure{},
+		failures: map[string]failure{},
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /user", s.handleUser)

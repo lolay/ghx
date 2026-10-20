@@ -145,3 +145,27 @@ func TestPrintBranchTotals(t *testing.T) {
 		assert.Contains(t, got, want)
 	}
 }
+
+func TestBranchesTableProgress_APauseCountsDownThenClears(t *testing.T) {
+	needsANSICursor(t)
+	infos, repos := branchRepos()
+	var buf lockedBuffer
+	p := ui.NewBranchesTableProgress(&buf, "main", 140, 40)
+	p.SetRepos(infos)
+
+	p.Start()
+	p.RepoStarted("api")
+	p.Paused(time.Now().Add(400*time.Millisecond), "GitHub secondary rate limit")
+	scr := stripANSI(waitForScreen(t, &buf, "resuming in"))
+	assert.Contains(t, scr, "⚠ GitHub secondary rate limit · resuming in 1s · Ctrl-C to stop")
+	assertOneWidth(t, scr)
+
+	assert.Eventually(t, func() bool { return !strings.Contains(screen(&buf), "resuming in") },
+		2*time.Second, 50*time.Millisecond, "the line goes once the pause is over")
+	p.RepoDone(repos[0])
+	p.RepoStarted("legacy")
+	p.RepoDone(repos[1])
+	p.Stop()
+	p.FinishTable()
+	assert.NotContains(t, stripANSI(screen(&buf)), "resuming in")
+}

@@ -28,18 +28,23 @@ type RateLimitError struct {
 }
 
 func (e *RateLimitError) Error() string {
-	kind := "rate limit"
-	if e.Secondary {
-		kind = "secondary rate limit"
-	}
 	switch {
 	case e.RetryAfter > 0:
-		return fmt.Sprintf("GitHub %s hit; retry after %s", kind, e.RetryAfter)
+		return fmt.Sprintf("%s hit; retry after %s", e.Limit(), e.RetryAfter)
 	case !e.Reset.IsZero():
-		return fmt.Sprintf("GitHub %s hit; it resets at %s", kind, e.Reset.UTC().Format("15:04 UTC"))
+		return fmt.Sprintf("%s hit; it resets at %s", e.Limit(), e.Reset.UTC().Format("15:04 UTC"))
 	default:
-		return fmt.Sprintf("GitHub %s hit; try again later", kind)
+		return fmt.Sprintf("%s hit; try again later", e.Limit())
 	}
+}
+
+// Limit names the limit: "GitHub rate limit" or "GitHub secondary rate
+// limit".
+func (e *RateLimitError) Limit() string {
+	if e.Secondary {
+		return "GitHub secondary rate limit"
+	}
+	return "GitHub rate limit"
 }
 
 // Unwrap lets errors.Is match ErrRateLimited.
@@ -161,23 +166,37 @@ type refNode struct {
 	} `json:"merged"`
 }
 
+// BranchOptions are ListBranches' optional hooks.
+type BranchOptions struct {
+	// OnPage, when set, is called with the page number before each GraphQL
+	// request, for progress.
+	OnPage func(page int)
+	// Pacer, when set, waits out a rate limit and retries the request that hit
+	// it. Without one, a rate limit fails the call.
+	Pacer *Pacer
+}
+
 // ListBranches reads every branch of owner/repo: one GraphQL request per 100
-// branches, then one REST listing of the protected ones. onPage, when not nil,
-// is called with the page number before each GraphQL request, for progress.
+// branches, then one REST listing of the protected ones.
 //
-// A rate limit fails the call with a *RateLimitError; nothing is retried, so a
+// Without opts.Pacer a rate limit fails the call with a *RateLimitError. A
 // caller never gets a partial list.
-func ListBranches(ctx context.Context, token, owner, repo string, onPage func(page int)) (RepoBranches, error) {
-	client := newClient(token)
+func ListBranches(ctx context.Context, token, owner, repo string, opts BranchOptions) (RepoBranches, error) {
+	c := &pacedClient{token: token, client: newClient(token), pacer: opts.Pacer}
 	prefix := fmt.Sprintf("Failed to list branches of %s/%s", owner, repo)
 
 	var out RepoBranches
 	var cursor *string
 	for page := 1; ; page++ {
-		if onPage != nil {
-			onPage(page)
+		if opts.OnPage != nil {
+			opts.OnPage(page)
 		}
-		resp, err := queryBranches(ctx, client, owner, repo, cursor)
+		var resp *branchesResponse
+		err := c.do(ctx, func(client *github.Client) error {
+			var err error
+			resp, err = queryBranches(ctx, client, owner, repo, cursor)
+			return err
+		})
 		if err != nil {
 			return RepoBranches{}, wrapAPIError(prefix, err, token)
 		}
@@ -195,7 +214,7 @@ func ListBranches(ctx context.Context, token, owner, repo string, onPage func(pa
 		cursor = &next
 	}
 
-	protected, err := listProtected(ctx, client, owner, repo)
+	protected, err := listProtected(ctx, c, owner, repo)
 	if err != nil {
 		return RepoBranches{}, wrapAPIError(prefix, err, token)
 	}
@@ -256,12 +275,18 @@ func rateReset(resp *github.Response) time.Time {
 	return time.Unix(secs, 0)
 }
 
-func listProtected(ctx context.Context, client *github.Client, owner, repo string) (map[string]bool, error) {
+func listProtected(ctx context.Context, c *pacedClient, owner, repo string) (map[string]bool, error) {
 	protected := map[string]bool{}
 	isProtected := true
 	opts := &github.BranchListOptions{Protected: &isProtected, ListOptions: github.ListOptions{PerPage: 100}}
 	for {
-		branches, resp, err := client.Repositories.ListBranches(ctx, owner, repo, opts)
+		var branches []*github.Branch
+		var resp *github.Response
+		err := c.do(ctx, func(client *github.Client) error {
+			var err error
+			branches, resp, err = client.Repositories.ListBranches(ctx, owner, repo, opts)
+			return err
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -299,21 +324,29 @@ func toBranch(n refNode) Branch {
 // a *RateLimitError first, so the message says what to do rather than echoing
 // the request.
 func wrapAPIError(prefix string, err error, token string) error {
+	if rl := asRateLimit(err); rl != nil {
+		return fmt.Errorf("%s: %w", prefix, rl)
+	}
+	return formatAPIError(prefix, err, token)
+}
+
+// asRateLimit is err as a *RateLimitError when it is one of go-github's
+// rate-limit errors or already ours, and nil otherwise.
+func asRateLimit(err error) *RateLimitError {
+	var rl *RateLimitError
 	var primary *github.RateLimitError
 	var secondary *github.AbuseRateLimitError
 	switch {
+	case errors.As(err, &rl):
+		return rl
 	case errors.As(err, &primary):
-		err = &RateLimitError{Reset: primary.Rate.Reset.Time}
+		return &RateLimitError{Reset: primary.Rate.Reset.Time}
 	case errors.As(err, &secondary):
 		rl := &RateLimitError{Secondary: true}
 		if secondary.RetryAfter != nil {
 			rl.RetryAfter = *secondary.RetryAfter
 		}
-		err = rl
+		return rl
 	}
-	var rl *RateLimitError
-	if errors.As(err, &rl) {
-		return fmt.Errorf("%s: %w", prefix, err)
-	}
-	return formatAPIError(prefix, err, token)
+	return nil
 }

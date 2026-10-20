@@ -20,6 +20,10 @@ import (
 // now is the time branch ages are measured from; tests pin it.
 var now = time.Now
 
+// pacerSleep is how a rate-limit wait sleeps; nil is a real timer. Tests swap
+// it so a wait takes no time.
+var pacerSleep func(ctx context.Context, d time.Duration) error
+
 // Report formats --format accepts.
 const (
 	formatText = "text"
@@ -131,7 +135,7 @@ func runBranches(cmd *cobra.Command, org string, f *branchesFlags) error {
 		ExpectedDefault: s.expectedDefault,
 	}
 	if isJSON {
-		report, err := scan(ctx, s, repos, opts, ui.NoBranchesProgress{})
+		report, err := scan(ctx, s, repos, opts, ui.NoBranchesProgress{}, say)
 		if err != nil {
 			return err
 		}
@@ -143,7 +147,11 @@ func runBranches(cmd *cobra.Command, org string, f *branchesFlags) error {
 	if !live {
 		ui.Printf("Reading the branches of %s repos...\n", text.Bold.Sprint(len(repos)))
 	}
-	report, err := scan(ctx, s, repos, opts, progress)
+	var note io.Writer
+	if !live {
+		note = say
+	}
+	report, err := scan(ctx, s, repos, opts, progress, note)
 	if err != nil {
 		return err
 	}
@@ -238,14 +246,27 @@ func branchRepos(ctx context.Context, s branchesSettings) ([]ghapi.RepoInfo, err
 }
 
 // scan reads and classifies the branches of every repo, s.concurrency at a
-// time, and returns them in the order of repos. The first failure cancels the
-// rest and is the error: a report is whole or not at all.
-func scan(ctx context.Context, s branchesSettings, repos []ghapi.RepoInfo, opts branches.Options, progress ui.BranchesProgress) ([]branches.Repo, error) {
+// time, and returns them in the order of repos. A rate limit pauses every
+// worker until it lifts, shown on progress or, when note is set, as a line
+// there; the scan then goes on. Any other failure cancels the rest and is the
+// error: a report is whole or not at all.
+func scan(ctx context.Context, s branchesSettings, repos []ghapi.RepoInfo, opts branches.Options, progress ui.BranchesProgress, note io.Writer) ([]branches.Repo, error) {
 	progress.SetRepos(repos)
 	progress.Start()
 	// The table is closed after Stop, here also when an error ends the scan.
 	defer progress.FinishTable()
 	defer progress.Stop()
+
+	pacer := &ghapi.Pacer{
+		Sleep: pacerSleep,
+		OnPause: func(until time.Time, limit *ghapi.RateLimitError) {
+			progress.Paused(until, limit.Limit())
+			if note != nil {
+				_, _ = fmt.Fprintf(note, "%s hit; waiting %s, until %s. Ctrl-C to stop.\n",
+					limit.Limit(), time.Until(until).Round(time.Second), until.UTC().Format("15:04:05 UTC"))
+			}
+		},
+	}
 
 	out := make([]branches.Repo, len(repos))
 	g, gctx := errgroup.WithContext(ctx)
@@ -256,7 +277,10 @@ func scan(ctx context.Context, s branchesSettings, repos []ghapi.RepoInfo, opts 
 				return gctx.Err()
 			}
 			progress.RepoStarted(r.Name)
-			rb, err := ghapi.ListBranches(gctx, s.token, s.org, r.Name, func(page int) { progress.RepoPage(r.Name, page) })
+			rb, err := ghapi.ListBranches(gctx, s.token, s.org, r.Name, ghapi.BranchOptions{
+				OnPage: func(page int) { progress.RepoPage(r.Name, page) },
+				Pacer:  pacer,
+			})
 			if err != nil {
 				// A repo stopped because another failed stays in flight, and
 				// Stop shows it as interrupted.

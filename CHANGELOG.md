@@ -12,7 +12,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   default branch (flagged when it isn't `main`) and every other branch,
   classified as merged, stale, open-pr or active from the GitHub API, with org
   totals. New config keys `stale-days`, `expected-default` and
-  `include-archived`; `--format json` for piping. See
+  `include-archived`; `--format json` for piping. A rate limit pauses it, with
+  a countdown under the table, until the limit lifts. See
   `specs/branches-report.md`.
 - Man pages for `ghx` and `ghb`, installed by the Homebrew formula and shipped
   in every release archive under `manpages/`.

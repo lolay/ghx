@@ -68,11 +68,35 @@ func (s *Server) SetBranches(owner, repo, defaultBranch string, branches []Branc
 	s.branches[owner+"/"+repo] = repoBranches{defaultBranch: defaultBranch, branches: append([]Branch(nil), branches...)}
 }
 
-// Fail makes every GraphQL request for owner/repo fail with f.
-func (s *Server) Fail(owner, repo string, f Failure) {
+// Fail makes the next times GraphQL requests for owner/repo fail with f, or
+// every one when times is 0 or less.
+func (s *Server) Fail(owner, repo string, f Failure, times int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.failures[owner+"/"+repo] = f
+	s.failures[owner+"/"+repo] = failure{kind: f, left: times, forever: times <= 0}
+}
+
+type failure struct {
+	kind    Failure
+	left    int
+	forever bool
+}
+
+// takeFailureLocked is the failure to answer a request for full with, counting it
+// down, or 0 for none. The caller holds s.mu.
+func (s *Server) takeFailureLocked(full string) Failure {
+	f, ok := s.failures[full]
+	if !ok {
+		return 0
+	}
+	if !f.forever {
+		if f.left--; f.left <= 0 {
+			delete(s.failures, full)
+		} else {
+			s.failures[full] = f
+		}
+	}
+	return f.kind
 }
 
 func (s *Server) handleBranches(w http.ResponseWriter, r *http.Request) {
@@ -116,7 +140,7 @@ func (s *Server) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.Lock()
 	rb, ok := s.branches[full]
-	failure := s.failures[full]
+	failure := s.takeFailureLocked(full)
 	s.mu.Unlock()
 
 	switch failure {

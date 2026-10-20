@@ -110,6 +110,9 @@ type BranchesProgress interface {
 	RepoDone(r branches.Repo)
 	// RepoFailed records a repo whose branches could not be read.
 	RepoFailed(name string)
+	// Paused shows that requests wait until until for why (a rate limit),
+	// with a countdown.
+	Paused(until time.Time, why string)
 	// Stop erases the live area.
 	Stop()
 	// FinishTable closes the table, with its totals; see RepoLister.
@@ -144,6 +147,8 @@ func (b *branchesTable) RepoDone(r branches.Repo) {
 	b.rowDone(r.Name, scannedCell(r.Counts), scannedMark)
 }
 
+func (b *branchesTable) Paused(until time.Time, why string) { b.setPause(until, why) }
+
 func (b *branchesTable) RepoFailed(name string) {
 	b.rowDone(name, text.FgRed.Sprint(failedMark)+" failed", failedMark)
 }
@@ -158,6 +163,7 @@ func (NoBranchesProgress) RepoStarted(string)        {}
 func (NoBranchesProgress) RepoPage(string, int)      {}
 func (NoBranchesProgress) RepoDone(branches.Repo)    {}
 func (NoBranchesProgress) RepoFailed(string)         {}
+func (NoBranchesProgress) Paused(time.Time, string)  {}
 func (NoBranchesProgress) Stop()                     {}
 func (NoBranchesProgress) FinishTable()              {}
 

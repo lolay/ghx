@@ -52,7 +52,7 @@ ghb <ORG> [--type T] [--include RE] [--exclude RE] [--concurrency N]
 `--format` is flag-only. A `concurrency` below 1 counts as 1.
 
 - **Exit code** 0 when the report is printed, whatever it finds; 1 on any error,
-  with no report.
+  with no report. A rate limit is not an error: the report waits it out.
 
 ## Flow
 
@@ -68,7 +68,7 @@ ghb <ORG> [--type T] [--include RE] [--exclude RE] [--concurrency N]
    print the branch table and the org totals.
 
 `--format json` runs the same three steps and prints nothing but the JSON
-document on stdout. A config warning goes to stderr.
+document on stdout. A config warning and a rate-limit wait go to stderr.
 
 ## Classification
 
@@ -110,8 +110,10 @@ commit) is never stale.
   Status. In flight a row reads `⠋ fetching 1.2s`, then `fetching page 2` from
   the second page. A finished row reads `✓ 14 · 3 merged · 2 stale · 1 open`:
   14 branches besides the default, and each non-zero count. A failed one reads
-  `✗ failed`, and repos stopped by that failure close as `interrupted`. The
-  closing footer: `60 repos · ✓ 59 scanned · ⚠ 3 not on main · 41s`.
+  `✗ failed`, and repos stopped by that failure close as `interrupted`. During
+  a rate-limit pause a countdown line sits above the progress footer (see Rate
+  limits). The closing footer: `60 repos · ✓ 59 scanned · ⚠ 3 not on main ·
+  41s`.
 - **Branch table**, titled Branches: Repo, Branch, Status (`✓ merged #123`,
   `⚠ stale`, `↑ open-pr`, `– active`), Last Commit (UTC date), Age (whole
   days), Author (the GitHub login, else the git author name) and Protected
@@ -160,19 +162,38 @@ and a second client to wire into the test seam, for one query.
 
 ## Rate limits
 
-A rate limit fails the whole report, with an error that says which limit and
-when to retry; nothing is retried and no partial report is printed:
+A rate limit pauses the report and it goes on by itself once the limit lifts;
+it never exits for one. Ctrl-C stops it, as at any time.
 
-- **Secondary limit** (403 with `Retry-After`): `Failed to list branches of
-  acme/web: GitHub secondary rate limit hit; retry after 1m0s`.
-- **Primary limit** over REST (403 or 429 with `X-RateLimit-Remaining: 0`) or
-  GraphQL (HTTP 200 with a `RATE_LIMITED` error): `... GitHub rate limit hit; it
-  resets at 14:05 UTC`, from `X-RateLimit-Reset`.
+- **How long.** A secondary limit (403 with `Retry-After`) waits its
+  `Retry-After`. A primary limit, over REST (403 or 429 with
+  `X-RateLimit-Remaining: 0`) or GraphQL (HTTP 200 with a `RATE_LIMITED`
+  error), waits until a second past `X-RateLimit-Reset`. A limit that gives
+  neither waits a minute, GitHub's advice for a secondary limit without
+  `Retry-After`.
+- **Every worker waits.** The workers share one `ghapi.Pacer`: when one hits
+  a limit, the others hold their next request until the same time rather than
+  spend more of it. A later limit pushes the resume time later, never earlier.
+- **The request is retried, not the repo.** The page that hit the limit is
+  asked for again; the pages already read are kept. go-github remembers a limit
+  and refuses requests on its own until its clock says it lifted, so the retry
+  uses a fresh client and the pacer's wait is the one that counts.
+- **Where it shows.** On a terminal, a yellow line above the live table's
+  progress footer counts down: `⚠ GitHub secondary rate limit · resuming in
+  42s · Ctrl-C to stop`, rounded up to the second. It goes when the wait ends.
+  Piped output gets one line per pause, `GitHub secondary rate limit hit;
+  waiting 1m0s, until 14:06:12 UTC. Ctrl-C to stop.`; with `--format json` that
+  line goes to stderr, so stdout stays the JSON alone.
 
-Both are `*ghapi.RateLimitError` and match `ghapi.ErrRateLimited` with
-`errors.Is`. The first failure cancels the repos still being read. The repo
-listing that `ghx` shares maps the same errors, so a sync hitting a limit says
-so the same way.
+Without a pacer (`ghapi.BranchOptions{}`), `ListBranches` fails on a limit
+with a `*ghapi.RateLimitError`, which matches `ghapi.ErrRateLimited` and says
+which limit and when to retry. The repo listing `ghx` and `ghb` share maps the
+same errors but doesn't wait: a limit there, before the table starts, fails
+the run with that message.
+
+Any other failure (a repo GraphQL can't resolve, a revoked token) cancels the
+repos still being read, closes the table with them `interrupted`, and fails the
+report: no partial report is printed.
 
 ## Limitations
 
@@ -182,7 +203,10 @@ so the same way.
 - **Dates are the committer's.** `committedDate` comes from the commit, so a
   rebased or clock-skewed commit can make a branch look newer or older than its
   push. The merged rule prefers the head-sha match for that reason.
-- **No retries.** A large org can hit the secondary limit at a high
-  `concurrency`; lower it and run again.
+- **Waits can be long.** A spent primary limit can mean most of an hour's
+  wait; a large org at a high `concurrency` is more likely to hit the
+  secondary limit, so lower it to spend less time paused.
+- **The repo listing doesn't wait.** A limit while listing the org's repos,
+  before the table, fails the run.
 - **Fork PRs** don't count (see above).
 - **No timing yet against a large real org.**

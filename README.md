@@ -277,9 +277,9 @@ one, first match wins:
 It prints the live repo table (each repo's default branch, flagged when it isn't
 `main`, and its counts), then every branch with its status, last commit date,
 age, author and protection, then the org totals. Archived repos are skipped
-unless you pass `--include-archived`. It never writes to GitHub, exits 0
-whatever it finds, and fails the whole report with a clear error on a rate
-limit rather than printing part of one.
+unless you pass `--include-archived`. It never writes to GitHub and exits 0
+whatever it finds. On a rate limit it waits, with a countdown under the table,
+and carries on when the limit lifts; Ctrl-C stops it.
 
 ```sh
 # Every branch of every active repo in acme
