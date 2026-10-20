@@ -82,7 +82,7 @@ func ListOrgRepos(ctx context.Context, token, org string) ([]RepoInfo, error) {
 	for {
 		repos, resp, err := client.Repositories.ListByOrg(ctx, org, opts)
 		if err != nil {
-			return nil, formatAPIError(
+			return nil, wrapAPIError(
 				fmt.Sprintf("Failed to access organization %q", org), err, token,
 			)
 		}

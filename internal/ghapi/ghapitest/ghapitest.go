@@ -1,7 +1,9 @@
-// Package ghapitest is a fake of the two GitHub REST endpoints ghx calls,
-// GET /user and GET /orgs/{org}/repos, served by httptest so tests never reach
-// api.github.com. It paginates with a Link header the way GitHub does and
-// records every request for assertions.
+// Package ghapitest is a fake of the GitHub endpoints ghx and ghb call, served
+// by httptest so tests never reach api.github.com: GET /user,
+// GET /orgs/{org}/repos, GET /repos/{owner}/{repo}/branches and the GraphQL
+// branches query on POST /graphql. REST lists paginate with a Link header and
+// GraphQL with a cursor, the way GitHub does, and every request is recorded
+// for assertions.
 package ghapitest
 
 import (
@@ -47,6 +49,8 @@ type Server struct {
 
 	mu       sync.Mutex
 	repos    map[string][]Repo
+	branches map[string]repoBranches
+	failures map[string]Failure
 	pageSize int
 	requests []Request
 }
@@ -56,10 +60,17 @@ type Server struct {
 // with the test.
 func NewServer(t *testing.T, token, login string) *Server {
 	t.Helper()
-	s := &Server{token: token, login: login, repos: map[string][]Repo{}}
+	s := &Server{
+		token: token, login: login,
+		repos:    map[string][]Repo{},
+		branches: map[string]repoBranches{},
+		failures: map[string]Failure{},
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /user", s.handleUser)
 	mux.HandleFunc("GET /orgs/{org}/repos", s.handleOrgRepos)
+	mux.HandleFunc("GET /repos/{owner}/{repo}/branches", s.handleBranches)
+	mux.HandleFunc("POST /graphql", s.handleGraphQL)
 	s.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s.record(r)
 		if r.Header.Get("Authorization") != "Bearer "+s.token {
@@ -145,12 +156,20 @@ func (s *Server) handleUser(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) handleOrgRepos(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	repos, ok := s.repos[r.PathValue("org")]
-	pageSize := s.pageSize
 	s.mu.Unlock()
 	if !ok {
 		writeJSON(w, http.StatusNotFound, map[string]string{"message": "Not Found"})
 		return
 	}
+	servePage(s, w, r, repos)
+}
+
+// servePage writes one page of items, with a Link header to the next page
+// when there is one.
+func servePage[T any](s *Server, w http.ResponseWriter, r *http.Request, items []T) {
+	s.mu.Lock()
+	pageSize := s.pageSize
+	s.mu.Unlock()
 
 	q := r.URL.Query()
 	if pageSize <= 0 {
@@ -158,9 +177,9 @@ func (s *Server) handleOrgRepos(w http.ResponseWriter, r *http.Request) {
 	}
 	page := max(atoiOr(q.Get("page"), 1), 1)
 
-	start := min((page-1)*pageSize, len(repos))
-	end := min(start+pageSize, len(repos))
-	if end < len(repos) {
+	start := min((page-1)*pageSize, len(items))
+	end := min(start+pageSize, len(items))
+	if end < len(items) {
 		next := url.Values{}
 		for k, v := range q {
 			next[k] = v
@@ -168,7 +187,7 @@ func (s *Server) handleOrgRepos(w http.ResponseWriter, r *http.Request) {
 		next.Set("page", strconv.Itoa(page+1))
 		w.Header().Set("Link", fmt.Sprintf(`<%s%s?%s>; rel="next"`, s.srv.URL, r.URL.Path, next.Encode()))
 	}
-	writeJSON(w, http.StatusOK, repos[start:end])
+	writeJSON(w, http.StatusOK, items[start:end])
 }
 
 func atoiOr(s string, fallback int) int {
