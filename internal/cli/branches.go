@@ -208,7 +208,7 @@ func resolveBranches(cmd *cobra.Command, org string, f *branchesFlags, say io.Wr
 	s.rows = append(s.rows,
 		ui.SettingRow{Label: "Archived:", Value: map[bool]string{true: "included", false: "skipped"}[s.includeArchived], Source: string(archivedSrc)},
 		ui.SettingRow{Label: "Stale after:", Value: fmt.Sprintf("%d days", s.staleDays), Source: string(staleSrc)},
-		ui.SettingRow{Label: "Default branch:", Value: s.expectedDefault, Source: string(expectedSrc)},
+		ui.SettingRow{Label: "Default name:", Value: s.expectedDefault, Source: string(expectedSrc)},
 		ui.SettingRow{Label: "Concurrency:", Value: fmt.Sprint(s.concurrency), Source: string(concurrencySrc)},
 	)
 	return s, nil

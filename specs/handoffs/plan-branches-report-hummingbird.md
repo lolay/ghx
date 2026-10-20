@@ -1,5 +1,7 @@
 # Plan: `ghb`, a read-only branches report shipped beside `ghx`, plus man pages
 
+Status: m1 to m6 done (2026-10-20). Remove this file, or promote what's durable to `specs/`, as the branch's last commit before it merges.
+
 Branch: `claude/eloquent-gauss-twqhyb` (assigned by the harness). Run `make ci` before every commit, then push each step.
 
 ## Context
@@ -13,7 +15,7 @@ Decisions from this session:
 - **Man pages for both binaries in the formula.** fang v1.0.0 already adds a hidden `man` subcommand (mango-cobra is in the module graph), so `ghx man` and `ghb man` print roff with no new dependency.
 - **This is additive, not breaking.** The next release is a minor bump.
 
-## m1 - `ghb` binary skeleton, build and packaging [exec]
+## m1 - `ghb` binary skeleton, build and packaging (done) [exec]
 
 - `cmd/ghb/main.go` calls `cli.ExecuteBranches()`. In `internal/cli/root.go`, `Execute` and the new `ExecuteBranches` share `execute(ctx, cmd)`. `newBranchesCmd()` (`Use: "ghb <ORG>"`, `cobra.ExactArgs(1)`, `Version: buildinfo.String()`, same version template) starts as a stub in this milestone.
 - Makefile: `build` compiles `bin/ghx` and `bin/ghb`. A new `man` target writes `manpages/ghx.1` and `manpages/ghb.1` from `bin/<name> man`. `manpages/` is gitignored and removed by `clean`. Update `Makefile.md`.
@@ -22,7 +24,7 @@ Decisions from this session:
 - Tests: `ghb --version` prints `ghb <release>+<sha>`, and `ghx man` / `ghb man` print a `.TH` header.
 - Name clash: fang and cobra add `man`, `completion` and `help` as subcommands, so an org with one of those names would run the subcommand instead of the report. This already affects `ghx` today. Check that `ghb -- man` and `ghx -- completion <dir>` reach the root command as positional args; if they do, document `--` as the escape and test it. If they don't, have the root handle those three names before cobra dispatches them. Update `specs/releasing.md` and the AGENTS.md layout table (`cmd/ghb/`, `internal/branches/`).
 
-## m2 - GraphQL branch listing in `ghapi` [deep]
+## m2 - GraphQL branch listing in `ghapi` (done) [deep]
 
 - **No new dependency.** `ghapi.ListBranches(ctx, token, owner, repo)` sends a raw POST through go-github's `client.NewRequest("POST", "graphql", body)` and `client.Do`. That reuses auth, the test `baseURL` and go-github's `*RateLimitError` and `*AbuseRateLimitError` (with `RetryAfter`). Errors go through `formatAPIError`, so the token stays redacted.
 - **One query per repo**, paginated with a `refs(after:)` cursor:
@@ -33,7 +35,7 @@ Decisions from this session:
 - **Fake API.** `ghapitest` serves `POST /graphql` (decodes `variables`, cursor pagination at 100, `SetBranches`), `GET /repos/{o}/{r}/branches` (honours `protected`) and `FailNext` for both rate-limit shapes.
 - **Tests.** 250 branches over 3 pages, default branch `trunk`, an empty repo (`defaultBranchRef` null), both rate-limit shapes, and no token in any error text.
 
-## m3 - Classification [deep]
+## m3 - Classification (done) [deep]
 
 New pure package `internal/branches`. `Classify(b, now, staleAfter)` checks the rules in order and the first match wins. The default branch is never classified.
 1. **merged:** no open PR, and a merged PR whose `headRefOid` equals the tip oid, or whose `mergedAt` is at or after the tip's `committedDate`. New commits after the merge mean the branch was reused, so it falls through to the next rule.
@@ -43,7 +45,7 @@ New pure package `internal/branches`. `Classify(b, now, staleAfter)` checks the 
 
 PRs from forks have their head ref in the fork, so they never mark a branch here. A `Report` model holds per-repo rows and the org totals: repos, branches, merged-not-deleted, stale, and repos whose default isn't the expected name. Table tests cover each rule, reuse after a merge, an oid match with an older date, exactly-at-threshold, and the default branch.
 
-## m4 - Make the live repo table reusable [deep]
+## m4 - Make the live repo table reusable (done) [deep]
 
 `ghb` should look and feel like `ghx`: the same settings table, the same "Authenticating / Fetching repos / Found N repos" lines, and the same live repo grid (fixed widths, finished rows scrolling up in list order, an in-place footer with a progress bar, a totals footer when it closes). Today `tableProgress` and `tableLayout` in `internal/ui` are hard-wired to the sync, through its columns, `cloner.RepoResult`/`Action` and its totals.
 
@@ -51,7 +53,7 @@ PRs from forks have their head ref in the fork, so they never mark a branch here
 - `ghx` output must not change by a byte. The existing `progress_table_test.go`, `table_test.go` and `ui_test.go` must pass unchanged, and they are the proof.
 - Add `ui.NewBranchesProgress()` and `ui.PrintBranchesRepoTable` (the static table for pipes) with the `ghb` spec below.
 
-## m5 - `ghb` command and output [exec]
+## m5 - `ghb` command and output (done) [exec]
 
 - **Flags:** `--token`, `--type`, `--include`, `--exclude`, `--concurrency`, `--include-archived`, `--stale-days`, `--expected-default`, `--format text|json`.
 - **New `keyKinds`:** `stale-days` (int, default 90), `expected-default` (string, default `main`), `include-archived` (bool).
@@ -66,7 +68,7 @@ PRs from forks have their head ref in the fork, so they never mark a branch here
 - **Exit codes:** 0 whatever the report finds, 1 on an error.
 - **CLI tests:** each classification end to end, archived repos skipped and shown with `--include-archived`, the non-`main` flag, the totals, the JSON shape, a rate-limit error that exits 1 and prints no report, and an org named `branches`.
 
-## m6 - Specs and docs [exec]
+## m6 - Specs and docs (done) [exec]
 
 - **`specs/branches-report.md`:** the command and its config keys, why it's a separate binary (no clash), the classification rules with the reuse and fork cases, API cost (one GraphQL request per 100 branches plus one REST call per repo), rate-limit behaviour, token scopes (read access to contents, metadata and pull requests), and limitations: rulesets only appear as protected if REST `protected` reflects them, `committedDate` is supplied by the committer, and there are no retries.
 - **Other docs:** a report-layout section in `specs/terminal-output.md`; `ghb`, the CLI reference and man pages in `README.md`; an Unreleased entry in `CHANGELOG.md`.
