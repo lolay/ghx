@@ -23,6 +23,11 @@ the output directory records each run so the next one can tell what changed.
 - **Configurable once.** Keep your token and defaults in `~/.ghx.toml`, and
   override them per organization.
 
+Its companion, `ghb`, reports every branch of every repository in the
+organization, read-only, from the API alone: which ones merged and were never
+deleted, which are stale, and which repos don't default to `main`. See
+[Branches report](#branches-report-ghb).
+
 This is the Go port of the original Python tool; the Python version lives on the
 `old/python` branch.
 
@@ -116,8 +121,9 @@ You need a **GitHub personal access token (PAT)**. Generate one at
   - No other scopes are needed. If your org uses SAML SSO, authorize the token
     for the org after creation.
 - **Fine-grained token:** scope it to the target organization with
-  **"Metadata" read** and **"Contents" read** permissions on repositories. The
-  organization may need to allow fine-grained tokens in its settings.
+  **"Metadata" read** and **"Contents" read** permissions on repositories, and
+  **"Pull requests" read** for `ghb`. The organization may need to allow
+  fine-grained tokens in its settings.
 
 The token is resolved in this order, highest precedence first:
 
@@ -195,6 +201,11 @@ Command-line flags always win. The full order, highest precedence first:
 4. `~/.ghx.toml` (`%USERPROFILE%\.ghx.toml` on Windows)
 5. The built-in default
 
+`ghb` reads only the global file (it has no `PATH`) and adds three keys:
+`stale-days` (default `90`), `expected-default` (default `main`) and
+`include-archived` (default off). `ghx` ignores them, and `ghb` ignores the
+sync-only keys.
+
 A config value of the wrong type (for example `concurrency = "8"`), or a float
 given for an integer key (`concurrency = 8.0` included), stops the run with an
 error that names the file and the key. A key `ghx` does not know (a typo such as
@@ -245,6 +256,45 @@ ghx acme ./acme --deleted-dir removed --archived-dir inactive
 
 The organization `acme` in these examples is a placeholder; each command needs a
 token and network access.
+
+## Branches report (ghb)
+
+```sh
+ghb <ORG> [OPTIONS]
+```
+
+`ghb` lists the org's repos, reads every branch of each over the GraphQL API
+(no clones, no output directory), and classifies each branch but the default
+one, first match wins:
+
+| Status | Meaning |
+|---|---|
+| `merged` | Its PR merged, it has no open PR, and nothing was committed after the merge: left behind. Catches squash and rebase merges |
+| `stale` | No open PR and no commit for `--stale-days` (default 90) |
+| `open-pr` | It has an open PR |
+| `active` | Anything else |
+
+It prints the live repo table (each repo's default branch, flagged when it isn't
+`main`, and its counts), then every branch with its status, last commit date,
+age, author and protection, then the org totals. Archived repos are skipped
+unless you pass `--include-archived`. It never writes to GitHub and exits 0
+whatever it finds. On a rate limit it waits, with a countdown under the table,
+and carries on when the limit lifts; Ctrl-C stops it.
+
+```sh
+# Every branch of every active repo in acme
+ghb acme
+
+# Stale after 30 days; repos should default to trunk
+ghb acme --stale-days 30 --expected-default trunk
+
+# Only private repos, as JSON
+ghb acme --type private --format json | jq '.totals'
+```
+
+The rules, edge cases (a branch reused after its PR merged, PRs from forks),
+API cost and limits are in
+[`specs/branches-report.md`](./specs/branches-report.md).
 
 ## How it works
 
@@ -392,12 +442,59 @@ styled):
     -v --version          Version for ghx
 ```
 
+This is `ghb --help`:
+
+```text
+  Report every branch of every repo in a GitHub organization, read-only, from
+  the GitHub API: no clones, no output directory. Each branch but the default one
+  is merged (its PR merged and it was never deleted), stale (no commit for
+  --stale-days and no open PR), open-pr, or active.
+
+  Settings resolve flag, then environment (GITHUB_TOKEN), then ~/.ghx.toml.
+
+  USAGE
+
+    ghb <ORG> [command] [--flags]
+
+  EXAMPLES
+
+    # Every branch of every active repo in acme
+    ghb acme
+
+    # Stale after 30 days, and repos should default to trunk
+    ghb --stale-days 30 --expected-default trunk acme
+
+    # The report as JSON, for jq
+    ghb --format json acme | jq '.totals'
+
+  COMMANDS
+
+    completion [command]  Generate the autocompletion script for the specified shell
+    help [command]        Help about any command
+
+  FLAGS
+
+    -c --concurrency      Repos read in parallel.
+    --exclude             Regex to exclude matching repo names.
+    --expected-default    Default branch name repos should use (default main).
+    --format              Output format: text|json. (text)
+    -h --help             Help for ghb
+    --include             Regex to include only matching repo names.
+    --include-archived    Also report archived repos.
+    --stale-days          Days without a commit before a branch is stale (default 90).
+    -t --token            Github Personal Access Token.
+    --type                Repo type: all|public|private|forks|sources.
+    -v --version          Version for ghb
+```
+
 Besides syncing, `ghx completion <shell>` prints a shell completion script, and
-`ghx man` prints a man page. A repository owner named `help`, `completion` or
+`ghx man` prints a man page (`ghb` has both too). The Homebrew formula installs
+both man pages, so `man ghx` and `man ghb` work; release archives carry them
+under `manpages/`. A repository owner named `help`, `completion` or
 `man` is read as that command; put `--` before it (`ghx -- help <PATH>`) to sync
 it.
 
-`ghx` exits 0 on success and 1 on any error.
+`ghx` and `ghb` exit 0 on success and 1 on any error.
 
 `ghx --version` prints `ghx <release>+<sha> (<build code>)`, for example
 `ghx 0.1.0+abc1234 (42)`: the last release in [`version.txt`](./version.txt),

@@ -37,11 +37,21 @@ func runRoot(t *testing.T, args ...string) (code int, stdout, stderr string) {
 // The README promises that every option but --ssh can be a config key; this
 // fails when a flag is added without one.
 func TestRootCmd_EveryFlagButSSHIsAConfigKey(t *testing.T) {
-	flagOnly := map[string]bool{"ssh": true, "help": true, "version": true}
+	assertFlagsAreConfigKeys(t, cli.NewRootCmd(), "ssh")
+}
+
+// assertFlagsAreConfigKeys fails for a flag of cmd that has no config key,
+// but for help, version and the flags named in flagOnly.
+func assertFlagsAreConfigKeys(t *testing.T, cmd *cobra.Command, flagOnly ...string) {
+	t.Helper()
+	skip := map[string]bool{"help": true, "version": true}
+	for _, name := range flagOnly {
+		skip[name] = true
+	}
 	seen := 0
 
-	cli.NewRootCmd().Flags().VisitAll(func(f *pflag.Flag) {
-		if flagOnly[f.Name] {
+	cmd.Flags().VisitAll(func(f *pflag.Flag) {
+		if skip[f.Name] {
 			return
 		}
 		seen++
@@ -130,6 +140,25 @@ func TestRun_CompletionWorksNextToTheTwoArguments(t *testing.T) {
 	code, out, _ := runRoot(t, "completion", "bash")
 	assert.Equal(t, 0, code)
 	assert.Contains(t, out, "bash completion V2 for ghx")
+}
+
+// An org named like one of the subcommands cobra and fang add (completion,
+// help, man) is reached by putting -- before it: everything after -- is a
+// positional argument, so the sync runs and fails on the missing token.
+func TestRun_DoubleDashSyncsAnOrgNamedLikeASubcommand(t *testing.T) {
+	for _, org := range []string{"completion", "help", "man"} {
+		t.Run(org, func(t *testing.T) {
+			home := t.TempDir()
+			for _, key := range homeEnvKeys {
+				t.Setenv(key, home)
+			}
+			t.Setenv("GITHUB_TOKEN", "")
+
+			code, _, errOut := runRoot(t, "--", org, t.TempDir())
+			assert.Equal(t, 1, code)
+			assert.Contains(t, errOut, "No GitHub token provided")
+		})
+	}
 }
 
 // fang title-cases the first word of an error on a terminal; a config value

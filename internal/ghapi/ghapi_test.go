@@ -85,7 +85,7 @@ func TestListOrgRepos(t *testing.T) {
 			{Name: "alpha"}, {Name: "bravo"}, {Name: "charlie"},
 		})
 
-		repos, err := ghapi.ListOrgRepos(t.Context(), testToken, "acme")
+		repos, err := ghapi.ListOrgRepos(t.Context(), testToken, "acme", nil)
 		require.NoError(t, err)
 
 		var names []string
@@ -110,7 +110,7 @@ func TestListOrgRepos(t *testing.T) {
 			{Name: "zulu"}, {Name: "Mike"}, {Name: "alpha"}, {Name: "Bravo"}, {Name: "kilo"},
 		})
 
-		repos, err := ghapi.ListOrgRepos(t.Context(), testToken, "acme")
+		repos, err := ghapi.ListOrgRepos(t.Context(), testToken, "acme", nil)
 		require.NoError(t, err)
 
 		var names []string
@@ -124,7 +124,7 @@ func TestListOrgRepos(t *testing.T) {
 		srv := newAPI(t)
 		srv.SetRepos("acme", []ghapitest.Repo{{Name: "one"}})
 
-		_, err := ghapi.ListOrgRepos(t.Context(), testToken, "acme")
+		_, err := ghapi.ListOrgRepos(t.Context(), testToken, "acme", nil)
 		require.NoError(t, err)
 
 		reqs := srv.Requests()
@@ -150,7 +150,7 @@ func TestListOrgRepos(t *testing.T) {
 			PushedAt:      "2026-03-04T05:06:07Z",
 		}})
 
-		repos, err := ghapi.ListOrgRepos(t.Context(), testToken, "acme")
+		repos, err := ghapi.ListOrgRepos(t.Context(), testToken, "acme", nil)
 		require.NoError(t, err)
 		require.Len(t, repos, 1)
 		assert.Equal(t, ghapi.RepoInfo{
@@ -172,7 +172,7 @@ func TestListOrgRepos(t *testing.T) {
 		srv := newAPI(t)
 		srv.SetRepos("acme", nil)
 
-		repos, err := ghapi.ListOrgRepos(t.Context(), testToken, "acme")
+		repos, err := ghapi.ListOrgRepos(t.Context(), testToken, "acme", nil)
 		require.NoError(t, err)
 		assert.Empty(t, repos)
 	})
@@ -180,7 +180,7 @@ func TestListOrgRepos(t *testing.T) {
 	t.Run("names the org when it cannot be read", func(t *testing.T) {
 		newAPI(t)
 
-		_, err := ghapi.ListOrgRepos(t.Context(), testToken, "ghost")
+		_, err := ghapi.ListOrgRepos(t.Context(), testToken, "ghost", nil)
 		require.Error(t, err)
 		assert.Equal(t, `Failed to access organization "ghost" (404): Not Found`, err.Error())
 	})
@@ -188,7 +188,7 @@ func TestListOrgRepos(t *testing.T) {
 	t.Run("reports a rejected token", func(t *testing.T) {
 		newAPI(t)
 
-		_, err := ghapi.ListOrgRepos(t.Context(), "wrong", "acme")
+		_, err := ghapi.ListOrgRepos(t.Context(), "wrong", "acme", nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "(401)")
 	})
@@ -208,7 +208,7 @@ func TestListOrgRepos(t *testing.T) {
 		t.Cleanup(stub.Close)
 		ghapi.SetBaseURL(t, stub.URL)
 
-		repos, err := ghapi.ListOrgRepos(t.Context(), testToken, "acme")
+		repos, err := ghapi.ListOrgRepos(t.Context(), testToken, "acme", nil)
 		require.Error(t, err)
 		assert.Nil(t, repos, "a partial list is never returned")
 		assert.Contains(t, err.Error(), "(500): boom")

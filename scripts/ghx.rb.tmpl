@@ -30,10 +30,12 @@ class Ghx < Formula
   end
 
   def install
-    bin.install "ghx"
+    bin.install "ghx", "ghb"
+    man1.install "manpages/ghx.1", "manpages/ghb.1"
   end
 
   test do
     assert_match version.to_s, shell_output("#{bin}/ghx --version")
+    assert_match version.to_s, shell_output("#{bin}/ghb --version")
   end
 end

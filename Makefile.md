@@ -40,14 +40,15 @@ targets stand alone.
 | `help` | List targets (the default goal) |
 | `init` | `go mod download`; `INSTALL_PACKAGES=1` also installs golangci-lint |
 | `doctor` | Check the dev environment with `triage` against `triage.yaml`; `MODE=default\|release` |
-| `build` | `go build -ldflags "-X ..." -o bin/ghx ./cmd/ghx`, stamped with the build version (below) |
+| `build` | `go build -ldflags "-X ..." -o bin/<name> ./cmd/<name>` for `ghx` and `ghb`, stamped with the build version (below) |
+| `man` | `build`, then `bin/<name> man > manpages/<name>.1` for both binaries (fang's hidden `man` command); goreleaser runs it before building the archives |
 | `lint` | gofmt drift, `go mod tidy -diff`, `go vet`, `golangci-lint run`; fails when golangci-lint is missing |
 | `format` | `gofmt -w .`, `golangci-lint fmt` (when installed), `go mod tidy` |
 | `test` | `go test -race -cover ./...` |
 | `vuln` | `go tool govulncheck ./...` (govulncheck is a `tool` dependency in `go.mod`) |
 | `ci` | `build`, `lint`, `test`: the full pre-push gate |
 | `pre-commit` | Alias of `ci` |
-| `clean` | Remove `bin/` and `dist/` |
+| `clean` | Remove `bin/`, `dist/` and `manpages/` |
 
 ### GitHub
 

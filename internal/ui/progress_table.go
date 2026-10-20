@@ -21,10 +21,6 @@ import (
 // spinners and the running times while no repo finishes.
 const repaintEvery = 100 * time.Millisecond
 
-// columnDrops is the order the table gives up columns, by index into
-// repoColumns, while it is wider than the terminal.
-var columnDrops = []int{columnPushed, columnBranch, columnLanguage}
-
 // spinFrames is the spinner on an in-flight repo's Status cell.
 var spinFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
@@ -42,13 +38,14 @@ const (
 type tableRow struct {
 	info    ghapi.RepoInfo
 	state   rowState
-	verb    string        // "cloning" or "pulling", while running
-	started time.Time     // when RepoStarted arrived, while running
-	action  cloner.Action // the result, once done
-	elapsed time.Duration // how long it took, once done
+	verb    string    // "cloning" or "pulling", while running
+	started time.Time // when it started, while running
+	cell    string    // the finished Status cell, once done
+	class   string    // the closing footer's class, once done (see totalClass)
 }
 
-// tableProgress draws the "Repos to export" table the way Claude's CLI keeps
+// tableProgress draws a repo table (the sync's "Repos to export" or the
+// branches report's, as its spec says) the way Claude's CLI keeps
 // its output: the table grows downward into the terminal's scrollback, and
 // only its bottom is live. It is a RepoLister: the run flow hands it the repos
 // instead of printing the static table.
@@ -86,6 +83,7 @@ type tableRow struct {
 // needed) points at out only between Start and Stop. Every method is safe for
 // concurrent use.
 type tableProgress struct {
+	spec *tableSpec
 	out  fdWriter
 	size func() (width, height int) // read on every repaint, so a resize shows
 
@@ -99,6 +97,8 @@ type tableProgress struct {
 	closed     bool      // FinishTable has closed the table since SetRepos
 	began      time.Time // the first Start since SetRepos
 	stopped    time.Time // the last Stop
+	pauseUntil time.Time // while it is ahead, the footer counts down to it
+	pauseWhy   string    // what the pause is waiting out
 	area       *pterm.AreaPrinter
 	quit       chan struct{} // closed by Stop to end the repaint goroutine
 	repainted  chan struct{} // closed when that goroutine has returned
@@ -117,8 +117,8 @@ func (w fdWriter) Fd() uintptr {
 	return 0
 }
 
-func newTableProgress(out io.Writer) *tableProgress {
-	return &tableProgress{out: fdWriter{out}, size: terminalSize(out)}
+func newTableProgress(spec *tableSpec, out io.Writer) *tableProgress {
+	return &tableProgress{spec: spec, out: fdWriter{out}, size: terminalSize(out)}
 }
 
 // terminalSize reads the size of out when it is a terminal, and falls back to
@@ -149,7 +149,7 @@ func (p *tableProgress) SetRepos(repos []ghapi.RepoInfo) {
 	p.listed, p.topPrinted, p.closed = true, false, false
 	p.began, p.stopped = time.Time{}, time.Time{}
 	width, _ := p.size()
-	p.layout = newTableLayout(repos, width, 0)
+	p.layout = newTableLayout(p.spec, repos, width, 0)
 }
 
 // layoutLocked is the table's layout. A renderer used without SetRepos
@@ -162,7 +162,7 @@ func (p *tableProgress) layoutLocked() *tableLayout {
 		for i, row := range p.rows {
 			infos[i] = row.info
 		}
-		p.layout = newTableLayout(infos, width, unlistedNameWidth)
+		p.layout = newTableLayout(p.spec, infos, width, unlistedNameWidth)
 	}
 	return p.layout
 }
@@ -230,27 +230,73 @@ func (p *tableProgress) repaint(quit <-chan struct{}, repainted chan<- struct{})
 
 // RepoStarted marks the repo as in flight.
 func (p *tableProgress) RepoStarted(name, action string) {
+	p.rowStarted(name, progressVerb(action))
+}
+
+// RepoDone records the repo's result; see rowDone.
+func (p *tableProgress) RepoDone(r cloner.RepoResult, elapsed time.Duration) {
+	cell, class := syncResult(r.Action, elapsed)
+	p.rowDone(r.Name, cell, class)
+}
+
+// rowStarted marks the repo as in flight, doing verb.
+func (p *tableProgress) rowStarted(name, verb string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.area == nil {
 		return
 	}
 	row := p.rowLocked(name)
-	row.state, row.verb, row.started = rowRunning, progressVerb(action), time.Now()
+	row.state, row.verb, row.started = rowRunning, verb, time.Now()
 }
 
-// RepoDone records the repo's result and prints, above the live area, every
-// row it no longer holds back: the run of finished rows from the first one not
-// yet printed. A repo that finishes ahead of one listed before it stays in the
-// live area until that one is done.
-func (p *tableProgress) RepoDone(r cloner.RepoResult, elapsed time.Duration) {
+// rowVerb changes what an in-flight repo is doing, keeping its running time.
+func (p *tableProgress) rowVerb(name, verb string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.area == nil {
 		return
 	}
-	row := p.rowLocked(r.Name)
-	row.state, row.action, row.elapsed = rowDone, r.Action, elapsed
+	if row := p.rowLocked(name); row.state == rowRunning {
+		row.verb = verb
+	}
+}
+
+// setPause shows a line above the progress footer, why followed by a
+// countdown to until, for as long as until is ahead.
+func (p *tableProgress) setPause(until time.Time, why string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.pauseUntil, p.pauseWhy = until, why
+	if p.area != nil {
+		p.area.Update(p.frameLocked(time.Now()))
+	}
+}
+
+// pauseLineLocked is the pause line at now, "" when there is no pause on.
+// The caller holds p.mu.
+func (p *tableProgress) pauseLineLocked(now time.Time) string {
+	left := p.pauseUntil.Sub(now)
+	if left <= 0 {
+		return ""
+	}
+	// Rounded up, as a countdown is: the last second reads 1s, not 0s.
+	left = (left + time.Second - 1).Truncate(time.Second)
+	return text.FgYellow.Sprint("⚠") + fmt.Sprintf(" %s · resuming in %s · Ctrl-C to stop", p.pauseWhy, left)
+}
+
+// rowDone records the repo's finished Status cell and its class, and prints,
+// above the live area, every row it no longer holds back: the run of finished
+// rows from the first one not yet printed. A repo that finishes ahead of one
+// listed before it stays in the live area until that one is done.
+func (p *tableProgress) rowDone(name, cell, class string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.area == nil {
+		return
+	}
+	row := p.rowLocked(name)
+	row.state, row.cell, row.class = rowDone, cell, class
 
 	from := p.printed
 	for p.printed < len(p.rows) && p.rows[p.printed].state == rowDone {
@@ -364,8 +410,7 @@ func (r *tableRow) status(now time.Time) string {
 		frame := spinFrames[int(now.UnixMilli()/100)%len(spinFrames)]
 		return fmt.Sprintf("%s %s %s", frame, r.verb, formatSeconds(now.Sub(r.started)))
 	case rowDone:
-		symbol, color := statusMark(r.action)
-		return color.Sprint(symbol) + " " + actionText(r.action, r.elapsed)
+		return r.cell
 	case rowInterrupted:
 		return text.Faint.Sprint("interrupted")
 	default:
@@ -415,23 +460,23 @@ func (p *tableProgress) progressLocked(now time.Time, more, held int) string {
 			bar = 0
 		}
 	}
-	return progressText(done, len(p.rows), running, queued, bar, elapsed) + suffix
+	return progressText(p.spec.verb, done, len(p.rows), running, queued, bar, elapsed) + suffix
 }
 
-// totalsLocked is the text of the footer that closes the table, one class per
-// Status mark: "60 repos · ✓ 3 cloned · ↓ 12 pulled · – 40 up to date · ⇣ 2
-// fetched only · ⚠ 1 skipped · ∅ 1 empty · ✗ 1 failed · 1m12s". Only the
-// cloned count is always shown; the others appear when they are not zero, then
-// come the repos that never finished. The parts are returned apart, for a
-// footer too long for one line to wrap between them. The caller holds p.mu.
+// totalsLocked is the text of the footer that closes the table, one part per
+// class of the spec, as for the sync: "60 repos · ✓ 3 cloned · ↓ 12 pulled ·
+// – 40 up to date · ⇣ 2 fetched only · ⚠ 1 skipped · ∅ 1 empty · ✗ 1 failed ·
+// 1m12s". A class that isn't always shown appears when its count is not zero;
+// then come the spec's extra parts and the repos that never finished. The
+// parts are returned apart, for a footer too long for one line to wrap
+// between them. The caller holds p.mu.
 func (p *tableProgress) totalsLocked() []string {
-	bySymbol := map[string]int{}
+	byClass := map[string]int{}
 	var interrupted, queued int
 	for _, row := range p.rows {
 		switch row.state {
 		case rowDone:
-			symbol, _ := statusMark(row.action)
-			bySymbol[symbol]++
+			byClass[row.class]++
 		case rowInterrupted:
 			interrupted++
 		case rowQueued, rowRunning:
@@ -443,24 +488,13 @@ func (p *tableProgress) totalsLocked() []string {
 		noun = "repo"
 	}
 	parts := []string{fmt.Sprintf("%d %s", len(p.rows), noun)}
-	// One class per symbol, with an action that stands for it.
-	for _, c := range []struct {
-		action cloner.Action
-		label  string
-		always bool
-	}{
-		{cloner.ActionCloned, "%d cloned", true},
-		{cloner.ActionPulled, "%d pulled", false},
-		{cloner.ActionUpToDate, "%d up to date", false},
-		{cloner.ActionFetchedOnly, "%d fetched only", false},
-		{cloner.ActionSkippedName, "%d skipped", false},
-		{cloner.ActionSkippedEmpty, "%d empty", false},
-		{cloner.ActionFailed, "%d failed", false},
-	} {
-		symbol, color := statusMark(c.action)
-		if n := bySymbol[symbol]; n > 0 || c.always {
-			parts = append(parts, color.Sprint(symbol)+" "+fmt.Sprintf(c.label, n))
+	for _, c := range p.spec.classes {
+		if n := byClass[c.symbol]; n > 0 || c.always {
+			parts = append(parts, c.color.Sprint(c.symbol)+" "+fmt.Sprintf(c.label, n))
 		}
+	}
+	if p.spec.extra != nil {
+		parts = append(parts, p.spec.extra(p.rows)...)
 	}
 	if interrupted > 0 {
 		parts = append(parts, fmt.Sprintf("%d interrupted", interrupted))
@@ -497,10 +531,14 @@ func (p *tableProgress) frameLocked(now time.Time) string {
 		}
 	}
 
-	// Besides the rows: the rule, the footer and the closing border. With no
-	// room even for those (a terminal only a few lines tall) the footer stands
-	// alone.
+	// Besides the rows: the rule, the footer and the closing border, and the
+	// pause line during a pause. With no room even for those (a terminal only
+	// a few lines tall) the footer stands alone.
+	pause := p.pauseLineLocked(now)
 	room := height - 2 - 3
+	if pause != "" {
+		room--
+	}
 	var lines []string
 	if room >= 0 {
 		shown, held := live, 0
@@ -516,6 +554,9 @@ func (p *tableProgress) frameLocked(now time.Time) string {
 		// separator in a row.
 		if p.printed > 0 || len(shown) > 0 {
 			lines = append(lines, l.rule)
+		}
+		if pause != "" {
+			lines = append(lines, l.footer(pause))
 		}
 		lines = append(lines, l.footer(p.progressLocked(now, more, held)), l.bottom)
 	} else {

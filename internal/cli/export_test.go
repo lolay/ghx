@@ -1,5 +1,11 @@
 package cli
 
+import (
+	"context"
+	"testing"
+	"time"
+)
+
 // NewRootCmd gives the black-box tests in package cli_test the cobra command
 // that Execute builds, so they can drive it in-process with their own args
 // and context.
@@ -14,3 +20,22 @@ var PlainWriter = plainWriter
 
 // ErrorStyles picks the styles fang's error handler renders err with.
 var ErrorStyles = errorStyles
+
+// NewBranchesCmd gives the tests the ghb command ExecuteBranches builds.
+var NewBranchesCmd = newBranchesCmd
+
+// SetNow pins the time ghb measures branch ages from, for one test.
+func SetNow(t *testing.T, at time.Time) {
+	t.Helper()
+	orig := now
+	now = func() time.Time { return at }
+	t.Cleanup(func() { now = orig })
+}
+
+// SetPacerSleep makes every rate-limit wait call sleep instead, for one test.
+func SetPacerSleep(t *testing.T, sleep func(ctx context.Context, d time.Duration) error) {
+	t.Helper()
+	orig := pacerSleep
+	pacerSleep = sleep
+	t.Cleanup(func() { pacerSleep = orig })
+}

@@ -53,6 +53,10 @@ var keyKinds = map[string]kind{
 	"archived-dir": kindString,
 	"deleted-dir":  kindString,
 	"max-size":     kindInt,
+	// ghb's keys; ghb reads only the home config.
+	"include-archived": kindBool,
+	"stale-days":       kindInt,
+	"expected-default": kindString,
 }
 
 // IsKey reports whether name is a key a config file may set.

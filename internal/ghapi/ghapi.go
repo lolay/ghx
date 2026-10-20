@@ -70,8 +70,11 @@ func ValidateToken(ctx context.Context, token string) (string, error) {
 // The API lists repos by creation date. Sorting here, at the source, makes
 // the sync hand repos to its workers alphabetically and keeps the repo
 // tables and the manifest in the same order from run to run.
-func ListOrgRepos(ctx context.Context, token, org string) ([]RepoInfo, error) {
-	client := newClient(token)
+//
+// With a pacer, a rate limit is waited out and the same page asked for again;
+// with nil it fails the call, with an error that says which limit.
+func ListOrgRepos(ctx context.Context, token, org string, pacer *Pacer) ([]RepoInfo, error) {
+	c := &pacedClient{token: token, client: newClient(token), pacer: pacer}
 
 	opts := &github.RepositoryListByOrgOptions{
 		Type:        "all",
@@ -80,9 +83,15 @@ func ListOrgRepos(ctx context.Context, token, org string) ([]RepoInfo, error) {
 
 	var all []RepoInfo
 	for {
-		repos, resp, err := client.Repositories.ListByOrg(ctx, org, opts)
+		var repos []*github.Repository
+		var resp *github.Response
+		err := c.do(ctx, func(client *github.Client) error {
+			var err error
+			repos, resp, err = client.Repositories.ListByOrg(ctx, org, opts)
+			return err
+		})
 		if err != nil {
-			return nil, formatAPIError(
+			return nil, wrapAPIError(
 				fmt.Sprintf("Failed to access organization %q", org), err, token,
 			)
 		}
