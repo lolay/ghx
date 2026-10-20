@@ -5,13 +5,16 @@ Orientation for coding agents working in ghx. Humans should read
 too.
 
 ghx is a Go CLI that clones and syncs every repository of a GitHub organization.
+Its companion binary, ghb, reports every branch of every repository from the
+GitHub API, read-only.
 
 ## Layout
 
 | Path | Contents |
 |------|----------|
 | `cmd/ghx/` | `main`: calls `cli.Execute` and exits with its code |
-| `internal/cli/` | The cobra command, flags, and the sync flow (`run.go`) |
+| `cmd/ghb/` | `main`: calls `cli.ExecuteBranches` and exits with its code |
+| `internal/cli/` | The cobra commands and flags, the sync flow (`run.go`) and the branches report flow (`branches.go`) |
 | `internal/config/` | `.ghx.toml` loading, legacy migration, and flag > env > local > home resolution |
 | `internal/ghapi/` | GitHub API: token validation, listing, repo filtering |
 | `internal/cloner/` | Cloning, pulling, moving and deleting repos with `git` |

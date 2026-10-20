@@ -132,6 +132,25 @@ func TestRun_CompletionWorksNextToTheTwoArguments(t *testing.T) {
 	assert.Contains(t, out, "bash completion V2 for ghx")
 }
 
+// An org named like one of the subcommands cobra and fang add (completion,
+// help, man) is reached by putting -- before it: everything after -- is a
+// positional argument, so the sync runs and fails on the missing token.
+func TestRun_DoubleDashSyncsAnOrgNamedLikeASubcommand(t *testing.T) {
+	for _, org := range []string{"completion", "help", "man"} {
+		t.Run(org, func(t *testing.T) {
+			home := t.TempDir()
+			for _, key := range homeEnvKeys {
+				t.Setenv(key, home)
+			}
+			t.Setenv("GITHUB_TOKEN", "")
+
+			code, _, errOut := runRoot(t, "--", org, t.TempDir())
+			assert.Equal(t, 1, code)
+			assert.Contains(t, errOut, "No GitHub token provided")
+		})
+	}
+}
+
 // fang title-cases the first word of an error on a terminal; a config value
 // error starts with a file path, which must come out as it went in, including
 // a local path with no directory separator.

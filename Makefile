@@ -16,14 +16,14 @@ SHELL := bash
 
 .DEFAULT_GOAL := help
 
-.PHONY: help init doctor build lint format test vuln ci pre-commit clean \
+.PHONY: help init doctor build man lint format test vuln ci pre-commit clean \
         gh-runs-list gh-runs-watch gh-runs-status bump snapshot release-check \
         publish-formula publish-scoop release
 
 # Binary coordinates.
-BINARY  := ghx
-CMD_DIR := ./cmd/ghx
+BINARIES := ghx ghb
 BIN_DIR := bin
+MAN_DIR := manpages
 DIST_DIR := dist
 
 # Build version, per the versioning standard: `ghx --version` prints
@@ -104,8 +104,18 @@ doctor: ## Check the dev environment with triage (MODE=default|release)
 	fi
 	@if [ "$(MODE)" = "default" ]; then triage; else triage --profile "$(MODE)"; fi
 
-build: ## Compile bin/ghx, stamped with version.txt, the HEAD sha and the build code
-	go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY) $(CMD_DIR)
+build: ## Compile bin/ghx and bin/ghb, stamped with version.txt, the HEAD sha and the build code
+	@for b in $(BINARIES); do \
+	  echo go build -ldflags \"$(LDFLAGS)\" -o $(BIN_DIR)/$$b ./cmd/$$b; \
+	  go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$$b ./cmd/$$b || exit 1; \
+	done
+
+man: build ## Write the ghx.1 and ghb.1 man pages into manpages/
+	@mkdir -p $(MAN_DIR)
+	@for b in $(BINARIES); do \
+	  $(BIN_DIR)/$$b man > $(MAN_DIR)/$$b.1 || exit 1; \
+	  echo "wrote $(MAN_DIR)/$$b.1"; \
+	done
 
 lint: ## Static checks: gofmt and go.mod drift, go vet, golangci-lint (required; run make init)
 	@set -o pipefail; \
@@ -135,8 +145,8 @@ ci: build lint test ## Full pre-push gate: build, lint, test (what CI runs)
 
 pre-commit: ci ## Local gate before committing or pushing (alias of ci)
 
-clean: ## Remove build artifacts (bin/, dist/)
-	rm -rf $(BIN_DIR) $(DIST_DIR)
+clean: ## Remove build artifacts (bin/, dist/, manpages/)
+	rm -rf $(BIN_DIR) $(DIST_DIR) $(MAN_DIR)
 
 ##@ GitHub
 

@@ -14,3 +14,6 @@ var PlainWriter = plainWriter
 
 // ErrorStyles picks the styles fang's error handler renders err with.
 var ErrorStyles = errorStyles
+
+// NewBranchesCmd gives the tests the ghb command ExecuteBranches builds.
+var NewBranchesCmd = newBranchesCmd

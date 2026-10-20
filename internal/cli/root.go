@@ -23,12 +23,22 @@ import (
 // Execute runs the ghx command with the process's arguments and returns an
 // exit code suitable for os.Exit: 0 on success, 1 on any error.
 func Execute() int {
+	return executeMain(newRootCmd())
+}
+
+// ExecuteBranches runs the ghb command, the branches report, the same way
+// Execute runs ghx.
+func ExecuteBranches() int {
+	return executeMain(newBranchesCmd())
+}
+
+func executeMain(cmd *cobra.Command) int {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	ui.SetupTerminal(os.Stdout)
 
-	return execute(ctx, newRootCmd())
+	return execute(ctx, cmd)
 }
 
 // execute runs cmd through fang, which styles the help and prints the error
@@ -92,6 +102,15 @@ type flags struct {
 	maxSize      int
 }
 
+// setVersion gives cmd --version (and -v); cobra handles it before checking
+// the required arguments. fang sets the version again from the same string.
+// The template is the versioning standard's form, "ghx <release>+<sha>
+// (<buildCode>)", in place of cobra's "ghx version ...".
+func setVersion(cmd *cobra.Command) {
+	cmd.Version = buildinfo.String()
+	cmd.SetVersionTemplate("{{.Name}} {{.Version}}\n")
+}
+
 func newRootCmd() *cobra.Command {
 	f := &flags{}
 	cmd := &cobra.Command{
@@ -106,17 +125,11 @@ func newRootCmd() *cobra.Command {
   # Only repos whose names match a pattern
   ghx --include '^(api|web)-' acme ~/src/acme`,
 		Args: cobra.ExactArgs(2),
-		// Setting Version gives the command --version (and -v); cobra handles
-		// it before checking the two required arguments. fang sets it again
-		// from the same string.
-		Version: buildinfo.String(),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return run(cmd, args, f)
 		},
 	}
-	// The versioning standard's form, "ghx <release>+<sha> (<buildCode>)",
-	// in place of cobra's "ghx version ...".
-	cmd.SetVersionTemplate("{{.Name}} {{.Version}}\n")
+	setVersion(cmd)
 
 	pf := cmd.Flags()
 	pf.StringVarP(&f.token, "token", "t", "", "GitHub Personal Access Token.")

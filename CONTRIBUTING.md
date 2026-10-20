@@ -20,7 +20,7 @@ them. [`Makefile.md`](./Makefile.md) is the reference.
 git clone https://github.com/lolay/ghx.git
 cd ghx
 make init       # download Go modules (INSTALL_PACKAGES=1 also installs golangci-lint)
-make build      # compile bin/ghx
+make build      # compile bin/ghx and bin/ghb
 make test       # go test -race -cover ./...
 make ci         # build, lint and test: the full pre-push gate
 make doctor     # check your environment with triage (needs triage installed)

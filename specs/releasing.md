@@ -1,6 +1,9 @@
 # Releasing ghx
 
-Maintainer guide for cutting a release of the `ghx` CLI on `lolay/ghx`. Users:
+Maintainer guide for cutting a release of the `ghx` CLI on `lolay/ghx`. One
+release ships two binaries, `ghx` and `ghb`, with a man page for each: every
+archive holds both, the Homebrew formula installs both binaries and both man
+pages, and the Scoop manifest puts both on the path (Scoop has no man pages). Users:
 [`README.md`](../README.md). Contributors: [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 The target reference is [`Makefile.md`](../Makefile.md).
 
@@ -230,4 +233,4 @@ Do these once, before the first Release dispatch:
 | Homebrew tap `lolay/tap/ghx` | Primary (macOS and Linux) |
 | Scoop bucket `lolay/scoop-bucket` | Primary (native Windows) |
 | GitHub Releases | Primary (all six targets) |
-| `go install github.com/lolay/ghx/cmd/ghx@latest` | Works, but prints `ghx dev` |
+| `go install github.com/lolay/ghx/cmd/ghx@latest` (and `cmd/ghb`) | Works, but prints `ghx dev`, and installs no man page |

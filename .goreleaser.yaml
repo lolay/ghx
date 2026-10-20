@@ -1,6 +1,7 @@
 # goreleaser configuration (v2 schema).
 #
-# Build matrix (darwin/linux/windows x amd64/arm64), archives, checksums and
+# Build matrix (darwin/linux/windows x amd64/arm64) for ghx and ghb, the man
+# pages, archives holding both binaries, checksums and
 # the GitHub release assets. goreleaser runs only through the Makefile's
 # `snapshot` and `release` targets, which pass RELEASE, SHA and BUILD_CODE in
 # its environment, the same three values `make build` stamps, so a release
@@ -18,10 +19,38 @@ version: 2
 
 project_name: ghx
 
+# The man pages come from the binaries themselves (fang's hidden `man`
+# command), so `make man` builds for the host and writes manpages/ first.
+before:
+  hooks:
+    - make man
+
 builds:
   - id: ghx
     main: ./cmd/ghx
     binary: ghx
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/lolay/ghx/internal/buildinfo.Version={{ .Env.RELEASE }}
+      - -X github.com/lolay/ghx/internal/buildinfo.Sha={{ .Env.SHA }}
+      - -X github.com/lolay/ghx/internal/buildinfo.BuildCode={{ .Env.BUILD_CODE }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+  # ghb, the branches report, ships in the same archives as ghx.
+  - id: ghb
+    main: ./cmd/ghb
+    binary: ghb
     env:
       - CGO_ENABLED=0
     flags:
@@ -53,6 +82,7 @@ archives:
       - README.md
       - LICENSE
       - CHANGELOG.md
+      - manpages/*.1
 
 checksum:
   name_template: checksums.txt

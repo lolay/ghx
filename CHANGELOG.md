@@ -7,6 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Man pages: `ghx.1`, installed by the Homebrew formula and shipped in every
+  release archive under `manpages/`.
+- An org named like a subcommand (`completion`, `help`, `man`) syncs with `--`
+  before it: `ghx -- completion ~/src/completion`.
+
 ## [v0.3.0] - 2026-10-14
 
 ### Changed
