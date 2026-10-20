@@ -8,10 +8,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
-- Man pages: `ghx.1`, installed by the Homebrew formula and shipped in every
-  release archive under `manpages/`.
-- An org named like a subcommand (`completion`, `help`, `man`) syncs with `--`
-  before it: `ghx -- completion ~/src/completion`.
+- `ghb <ORG>`, a read-only branches report shipped beside `ghx`: every repo's
+  default branch (flagged when it isn't `main`) and every other branch,
+  classified as merged, stale, open-pr or active from the GitHub API, with org
+  totals. New config keys `stale-days`, `expected-default` and
+  `include-archived`; `--format json` for piping. See
+  `specs/branches-report.md`.
+- Man pages for `ghx` and `ghb`, installed by the Homebrew formula and shipped
+  in every release archive under `manpages/`.
+
+### Changed
+- A GitHub rate limit while listing an org's repos now says which limit and
+  when to retry, rather than echoing the request.
 
 ## [v0.3.0] - 2026-10-14
 

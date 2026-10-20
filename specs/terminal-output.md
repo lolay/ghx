@@ -1,6 +1,7 @@
 # Terminal output
 
-How ghx shows a sync, and why it looks the way it does. Users: the Output bullet
+How ghx shows a sync, and why it looks the way it does. `ghb`, the branches
+report, draws the same live repo table (see "The branches report" below). Users: the Output bullet
 under Platforms in [`README.md`](../README.md). Test seams: [`testing.md`](./testing.md).
 
 ## What a run shows
@@ -97,10 +98,38 @@ renderer also implements `ui.RepoLister` (`SetRepos`, `FinishTable`), which is h
 the run flow hands it the table instead of printing it; anything that isn't a
 `RepoLister` gets the static table.
 
+## The branches report
+
+`ghb` uses the same renderer and layout as the sync. What differs between the
+two tables lives in a `tableSpec` (`internal/ui/table_spec.go`): the title, the
+columns and the order they drop on a narrow terminal, the footer's verb, the
+Status cells that set the column's width, and the closing footer's counts. The
+sync's table is unchanged by the split.
+
+| | Sync (`ghx`) | Branches report (`ghb`) |
+|---|---|---|
+| Title | Repos to export | Repos to scan |
+| Columns | Name, Visibility, Language, Size (MB), Default Branch, Last Pushed, Status | Name, Visibility, Default Branch, Last Pushed, Status |
+| Dropped first | Last Pushed, Default Branch, Language | Last Pushed, Visibility |
+| In flight | `⠋ cloning 1.2s`, `⠋ pulling 1.2s` | `⠋ fetching 1.2s`, `⠋ fetching page 2 3.4s` |
+| Finished | `✓ cloned 3.2s` and the other actions | `✓ 14 · 3 merged · 2 stale · 1 open`, `✗ failed` |
+| Live footer | `Syncing 34/60 [...]` | `Scanning 34/60 [...]` |
+| Closing footer | `60 repos · ✓ 3 cloned · ...` | `60 repos · ✓ 59 scanned · ⚠ 3 not on main · ✗ 1 failed · 41s` |
+
+The Default Branch cell of a repo whose default isn't `--expected-default` is
+yellow, `⚠ trunk`. After the repo table, the report prints two static go-pretty
+tables in the same `StyleLight`: Branches (Repo, Branch, Status, Last Commit,
+Age, Author, Protected; branch marks `✓` merged green, `⚠` stale yellow, `↑`
+open-pr cyan, `–` active grey, each one column wide) and Totals. A pipe or a
+file gets the repo table printed once at the end instead of the live one, then
+the same two tables. `--format json` prints no table at all. The classification
+rules are in [`branches-report.md`](./branches-report.md).
+
 ## Help and errors
 
-The root command runs through [fang](https://github.com/charmbracelet/fang): styled
-usage, examples and errors, and `ghx completion <shell>` and `ghx man`. The exit
+Both roots run through [fang](https://github.com/charmbracelet/fang): styled
+usage, examples and errors, and `completion <shell>` and `man` (`make man` writes
+`manpages/ghx.1` and `manpages/ghb.1` from them for the release). The exit
 code is 0 or 1 as before. Under `NO_COLOR` fang still emits bold and reset codes,
 so `execute` strips ANSI itself. On a terminal fang title-cases the first word of
 an error, which would mangle the file path that starts a config error
