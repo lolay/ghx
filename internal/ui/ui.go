@@ -109,22 +109,22 @@ func ObfuscateToken(tok string) string {
 	return tok[:4] + "****" + tok[len(tok)-4:]
 }
 
-// repoColumn is one column of the "Repos to export" table.
+// repoColumn is one column of a repo table.
 type repoColumn struct {
 	title string
 	cell  func(ghapi.RepoInfo) any
 	right bool
 }
 
-// Indexes into repoColumns, for the columns the live table drops to fit.
+// Indexes into syncColumns, for the columns the live table drops to fit.
 const (
 	columnLanguage = 2
 	columnBranch   = 4
 	columnPushed   = 5
 )
 
-// repoColumns lists the table's columns in the order they are shown.
-var repoColumns = []repoColumn{
+// syncColumns lists the sync table's columns in the order they are shown.
+var syncColumns = []repoColumn{
 	{title: "Name", cell: func(r ghapi.RepoInfo) any { return text.FgCyan.Sprint(r.Name) }},
 	{title: "Visibility", cell: func(r ghapi.RepoInfo) any {
 		// An archived repo is read-only whatever its visibility, and that is
@@ -152,14 +152,14 @@ func orDash(s string) string {
 	return s
 }
 
-// repoTable builds the "Repos to export" table from the columns of
-// repoColumns that cols names, in that order. A non-nil status adds a Status
+// repoTable builds spec's table from the columns of spec.columns that cols
+// names, in that order. A non-nil status adds a Status
 // column after them, one cell per repo. A non-nil widths fixes the width of
 // each column (cols in order, then Status) and cuts a cell that is wider with
 // "…", so what is drawn never changes the table's width.
-func repoTable(cols []int, repos []ghapi.RepoInfo, status []string, widths []int) table.Writer {
+func repoTable(spec *tableSpec, cols []int, repos []ghapi.RepoInfo, status []string, widths []int) table.Writer {
 	tw := table.NewWriter()
-	tw.SetTitle("Repos to export")
+	tw.SetTitle(spec.title)
 	header := make(table.Row, 0, len(cols)+1)
 	var configs []table.ColumnConfig
 	fix := func(cfg table.ColumnConfig, n int) table.ColumnConfig {
@@ -175,9 +175,9 @@ func repoTable(cols []int, repos []ghapi.RepoInfo, status []string, widths []int
 		return cfg
 	}
 	for n, c := range cols {
-		header = append(header, repoColumns[c].title)
+		header = append(header, spec.columns[c].title)
 		cfg := table.ColumnConfig{Number: n + 1}
-		if repoColumns[c].right {
+		if spec.columns[c].right {
 			cfg.Align = text.AlignRight
 		}
 		configs = append(configs, fix(cfg, n))
@@ -196,7 +196,7 @@ func repoTable(cols []int, repos []ghapi.RepoInfo, status []string, widths []int
 	for i, r := range repos {
 		row := make(table.Row, 0, len(cols)+1)
 		for n, c := range cols {
-			row = append(row, cell(repoColumns[c].cell(r), n))
+			row = append(row, cell(spec.columns[c].cell(r), n))
 		}
 		if status != nil {
 			row = append(row, cell(status[i], len(cols)))
@@ -208,9 +208,9 @@ func repoTable(cols []int, repos []ghapi.RepoInfo, status []string, widths []int
 	return tw
 }
 
-// allColumns is every column of the table, in order.
-func allColumns() []int {
-	cols := make([]int, len(repoColumns))
+// allColumns is every column of spec's table, in order.
+func allColumns(spec *tableSpec) []int {
+	cols := make([]int, len(spec.columns))
 	for i := range cols {
 		cols[i] = i
 	}
@@ -220,7 +220,7 @@ func allColumns() []int {
 // PrintRepoTable renders the "Repos to export" table shown before
 // cloning begins.
 func PrintRepoTable(repos []ghapi.RepoInfo) {
-	tw := repoTable(allColumns(), repos, nil, nil)
+	tw := repoTable(syncSpec, allColumns(syncSpec), repos, nil, nil)
 	tw.SetOutputMirror(Out)
 
 	Println()

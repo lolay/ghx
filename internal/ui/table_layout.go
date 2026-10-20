@@ -9,7 +9,6 @@ import (
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/jedib0t/go-pretty/v6/text"
 
-	"github.com/lolay/ghx/internal/cloner"
 	"github.com/lolay/ghx/internal/ghapi"
 )
 
@@ -31,7 +30,7 @@ const (
 	footerBarMin = 8
 )
 
-// columnName is the index of the Name column in repoColumns.
+// columnName is the index of the Name column, first in every spec's columns.
 const columnName = 0
 
 // tableLayout is the geometry of the live table, measured once so that no
@@ -41,7 +40,8 @@ const columnName = 0
 // when the layout is made and never again, so a terminal resized mid-run does
 // not move anything.
 type tableLayout struct {
-	cols   []int // indexes into repoColumns of the columns shown
+	spec   *tableSpec
+	cols   []int // indexes into spec.columns of the columns shown
 	widths []int // content width of each column in cols, then of Status
 	width  int   // width of every line of the table
 	head   []string
@@ -49,21 +49,21 @@ type tableLayout struct {
 	bottom string // the closing border
 }
 
-// newTableLayout measures repos for a terminal termWidth columns wide.
-// nameFloor is the least width of the Name column: 0 for a list of repos
-// known up front.
-func newTableLayout(repos []ghapi.RepoInfo, termWidth, nameFloor int) *tableLayout {
-	natural := make([]int, len(repoColumns))
-	for c, col := range repoColumns {
+// newTableLayout measures repos in spec's table for a terminal termWidth
+// columns wide. nameFloor is the least width of the Name column: 0 for a list
+// of repos known up front.
+func newTableLayout(spec *tableSpec, repos []ghapi.RepoInfo, termWidth, nameFloor int) *tableLayout {
+	natural := make([]int, len(spec.columns))
+	for c, col := range spec.columns {
 		natural[c] = text.StringWidthWithoutEscSequences(col.title)
 		for _, r := range repos {
 			natural[c] = max(natural[c], text.StringWidthWithoutEscSequences(fmt.Sprint(col.cell(r))))
 		}
 	}
 	natural[columnName] = max(natural[columnName], nameFloor)
-	statusNatural := statusColumnWidth()
+	statusNatural := statusColumnWidth(spec)
 
-	shown := allColumns()
+	shown := allColumns(spec)
 	span := func() int {
 		n := 1 + statusNatural + 3
 		for _, c := range shown {
@@ -71,7 +71,7 @@ func newTableLayout(repos []ghapi.RepoInfo, termWidth, nameFloor int) *tableLayo
 		}
 		return n
 	}
-	for _, drop := range columnDrops {
+	for _, drop := range spec.drops {
 		if span() <= termWidth {
 			break
 		}
@@ -82,7 +82,7 @@ func newTableLayout(repos []ghapi.RepoInfo, termWidth, nameFloor int) *tableLayo
 		natural[columnName] = min(natural[columnName], max(natural[columnName]-excess, minNameWidth))
 	}
 
-	l := &tableLayout{cols: shown}
+	l := &tableLayout{spec: spec, cols: shown}
 	for _, c := range shown {
 		l.widths = append(l.widths, natural[c])
 	}
@@ -99,22 +99,17 @@ func newTableLayout(repos []ghapi.RepoInfo, termWidth, nameFloor int) *tableLayo
 	return l
 }
 
-// statusColumnWidth is the width of the longest Status cell: the in-flight
-// forms with the longest time, "interrupted", "queued", and every action's
-// finished form, as in "✓ cloned 12m59s".
-func statusColumnWidth() int {
+// statusColumnWidth is the width of spec's longest Status cell: the in-flight
+// forms with the longest time, "interrupted", "queued", and every finished
+// form, as in "✓ cloned 12m59s".
+func statusColumnWidth(spec *tableSpec) int {
 	width := text.StringWidthWithoutEscSequences("Status")
 	longest := formatSeconds(longestElapsed)
-	cells := []string{
-		spinFrames[0] + " cloning " + longest,
-		spinFrames[0] + " pulling " + longest,
-		"interrupted",
-		"queued",
+	cells := []string{"interrupted", "queued"}
+	for _, verb := range spec.verbs {
+		cells = append(cells, spinFrames[0]+" "+verb+" "+longest)
 	}
-	for _, a := range cloner.AllActions {
-		symbol, _ := statusMark(a)
-		cells = append(cells, symbol+" "+actionText(a, longestElapsed))
-	}
+	cells = append(cells, spec.statusCells...)
 	for _, cell := range cells {
 		width = max(width, text.StringWidthWithoutEscSequences(cell))
 	}
@@ -124,7 +119,7 @@ func statusColumnWidth() int {
 // render is the table as go-pretty draws it with every column at its fixed
 // width: the title, the header, the rows and a closing border.
 func (l *tableLayout) render(repos []ghapi.RepoInfo, status []string) string {
-	return repoTable(l.cols, repos, status, l.widths).Render()
+	return repoTable(l.spec, l.cols, repos, status, l.widths).Render()
 }
 
 // rows is the line for each repo, with its Status cell. A table's frame is
@@ -183,8 +178,8 @@ func (l *tableLayout) footerLines(parts []string) []string {
 // repos: what is left of the line after the other words at their longest,
 // capped, or 0 when too little is left to draw a bar.
 func (l *tableLayout) barWidth(total int) int {
-	longest := fmt.Sprintf("Syncing %d/%d [] 100%% %s · %d running · %d queued",
-		total, total, formatElapsed(longestElapsed), total, total)
+	longest := fmt.Sprintf("%s %d/%d [] 100%% %s · %d running · %d queued",
+		l.spec.verb, total, total, formatElapsed(longestElapsed), total, total)
 	inner := l.width - 4
 	w := min(inner-text.StringWidthWithoutEscSequences(longest), footerBarMax)
 	if w < footerBarMin {
@@ -204,15 +199,16 @@ func truncate(s string, width int) string {
 	return text.Trim(s, width-1) + "…"
 }
 
-// progressText is the footer's progress: "Syncing 34/60 [=========>------]
-// 57% 12s · 4 running · 22 queued". barWidth 0 leaves the bar out.
-func progressText(done, total, running, queued, barWidth int, elapsed time.Duration) string {
+// progressText is the footer's progress after verb: "Syncing 34/60
+// [=========>------] 57% 12s · 4 running · 22 queued". barWidth 0 leaves the
+// bar out.
+func progressText(verb string, done, total, running, queued, barWidth int, elapsed time.Duration) string {
 	pct := 0
 	if total > 0 {
 		pct = done * 100 / total
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Syncing %d/%d ", done, total)
+	fmt.Fprintf(&b, "%s %d/%d ", verb, done, total)
 	if barWidth > 0 {
 		b.WriteString("[" + progressBar(done, total, barWidth) + "] ")
 	}

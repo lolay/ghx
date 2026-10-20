@@ -27,7 +27,15 @@ func NewTableProgress(out io.Writer, width, height int) cloner.Progress {
 // whose size, width then height, size reads on every repaint: a test resizes
 // the terminal by changing what it returns.
 func NewTableProgressSized(out io.Writer, size func() (width, height int)) cloner.Progress {
-	p := newTableProgress(out)
+	p := newTableProgress(syncSpec, out)
 	p.size = size
 	return p
+}
+
+// NewBranchesTableProgress is the branches report's live table drawing to out
+// on a terminal width columns wide and height lines tall, whatever out is.
+func NewBranchesTableProgress(out io.Writer, expected string, width, height int) BranchesProgress {
+	p := newTableProgress(newBranchesSpec(expected), out)
+	p.size = func() (int, int) { return width, height }
+	return &branchesTable{p}
 }

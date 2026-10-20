@@ -16,7 +16,7 @@ func NewProgress() cloner.Progress {
 	if !animate {
 		return cloner.NoProgress{}
 	}
-	return newTableProgress(Out)
+	return newTableProgress(syncSpec, Out)
 }
 
 // formatSeconds shows d as tenths of a second ("1.2s"), or as minutes and
