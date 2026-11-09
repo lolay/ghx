@@ -56,10 +56,19 @@ while the run goes on.
 - **A slow repo holds the rows after it.** Workers start repos in list order, so
   the live area is usually the concurrency plus a few lines. One slow repo (a
   large monorepo) holds back every row after it until it finishes. When the
-  rows don't fit the terminal, the held ones give way first and the footer
-  counts them, `+5 done, waiting on bigrepo`; then the last in-flight rows give
-  way, counted as `+N more running`. When the slow repo finishes, it and the
-  run of finished rows behind it print together.
+  slow repo finishes, it and every row held behind it print together.
+- **Held rows fold when the area is full.** While the rows fit, every one
+  shows. Once they would overflow the terminal, held rows fold into a faint
+  `… 24 more done` line spanning every column but Status, one row at a time and
+  only as many as it takes to fit: the run behind the first in-flight row
+  first, oldest row first, then the run behind the next. So the area grows to
+  the room the terminal leaves and stays there, and the footer never moves up
+  the screen; it shrinks only when rows print above it. A run of one held row
+  shows the row, since a fold line would take the same line. Only when every
+  run is folded and the in-flight rows alone still overflow (a terminal a few
+  lines tall) does the area show the first in-flight rows and nothing else,
+  the footer counting the rest, `+1 more running · +6 done, waiting on
+  bigrepo`.
 - **Progress in the footer.** `Syncing 34/60 [====>---] 57% 12s · 4 running ·
   22 queued`, counted over every repo, across both passes.
 - **Two passes, one table.** Active repos sync first, archived ones second, with
@@ -163,6 +172,14 @@ before it.
   and the progress are one thing to read.
 - **pterm's `AreaPrinter` for the live area.** It erases and then draws, one
   escape code per write, which flickers (see "No flicker").
+- **Dropping every held row at once when the area overflows.** The first
+  live table did: the area filled the terminal behind a slow repo, then
+  shrank to the in-flight rows in one frame, and since it redraws from its
+  top, the footer jumped up the screen and left it blank below. Folding a row
+  at a time keeps the area's height.
+- **A fixed cap on held rows** (always fold past 5). The area would never
+  fill the screen, but it hides finished rows even when there is room for
+  them.
 - **Redrawing the whole table.** The first live table did, and it can't work
   past one screen: rows that scroll off can't be redrawn, and every frame then
   leaves a copy behind. It also changed width as statuses changed.

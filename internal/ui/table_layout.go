@@ -132,6 +132,24 @@ func (l *tableLayout) rows(repos []ghapi.RepoInfo, status []string) []string {
 	return lines[len(l.head) : len(lines)-1]
 }
 
+// marker is a line of the table holding s, faint, in one cell across every
+// column but Status, whose cell is empty: the "… 24 more done" that stands
+// in for rows the live area has no room for. A single cell keeps it whole
+// when the names are shorter than it.
+func (l *tableLayout) marker(s string) string {
+	box := table.StyleLight.Box
+	sep := box.PaddingRight + box.MiddleVertical + box.PaddingLeft
+	span := 0
+	for _, w := range l.widths[:len(l.widths)-1] {
+		span += w + text.StringWidthWithoutEscSequences(sep)
+	}
+	span -= text.StringWidthWithoutEscSequences(sep)
+	s = truncate(s, span)
+	pad := strings.Repeat(" ", max(span-text.StringWidthWithoutEscSequences(s), 0))
+	status := strings.Repeat(" ", l.widths[len(l.widths)-1])
+	return box.Left + box.PaddingLeft + text.Faint.Sprint(s) + pad + sep + status + box.PaddingRight + box.Right
+}
+
 // innerWidth is how many columns of text a footer line holds between the
 // table's side borders.
 func (l *tableLayout) innerWidth() int {

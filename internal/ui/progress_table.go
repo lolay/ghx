@@ -488,23 +488,20 @@ func (p *tableProgress) totalsLocked() []string {
 // frameLocked is the live area: the rows not printed yet that are in flight or
 // finished, in list order, then a rule, the progress footer and the closing
 // border, each line ending in a newline. It is never taller than the terminal
-// less two lines, nor wider than the terminal. When the rows don't fit, the
-// finished ones are left out first, then the last in-flight ones, and the
-// footer counts both. The caller holds p.mu.
+// less two lines, nor wider than the terminal.
+//
+// When the rows don't fit, the finished rows held behind an in-flight one fold
+// into a "… N more done" line, from the top of the area down and the oldest of
+// each run first, only as many as it takes to fit. So the area grows to the
+// room the terminal leaves and stays there: it never shrinks without rows
+// printing above it, which would leave the footer stranded up the screen. Only
+// when every run is already folded and the in-flight rows still don't fit
+// (a terminal a few lines tall) does the area show the first in-flight rows
+// alone, and the footer counts the rest and the held ones. The caller holds
+// p.mu.
 func (p *tableProgress) frameLocked(now time.Time) string {
 	_, height := p.size()
 	l := p.layoutLocked()
-
-	var live, running []*tableRow
-	for _, row := range p.rows[p.printed:] {
-		switch row.state {
-		case rowRunning:
-			running = append(running, row)
-			live = append(live, row)
-		case rowDone:
-			live = append(live, row)
-		}
-	}
 
 	// Besides the rows: the rule, the footer and the closing border, and the
 	// pause line during a pause. With no room even for those (a terminal only
@@ -514,31 +511,86 @@ func (p *tableProgress) frameLocked(now time.Time) string {
 	if pause != "" {
 		room--
 	}
-	var lines []string
-	if room >= 0 {
-		shown, held := live, 0
-		if len(live) > room {
-			// Every in-flight row is moving, and a held row only waits, so
-			// the held ones give way first.
-			shown, held = running[:min(len(running), room)], len(live)-len(running)
-		}
-		more := len(live) - len(shown) - held
-		lines = p.rowLinesLocked(shown, now)
-		// The rule closes the columns of the rows above it. With no row above
-		// (the header's separator is the line before), a rule would be a second
-		// separator in a row.
-		if p.printed > 0 || len(shown) > 0 {
-			lines = append(lines, l.rule)
-		}
-		if pause != "" {
-			lines = append(lines, l.footer(pause))
-		}
-		lines = append(lines, l.footer(p.progressLocked(now, more, held)), l.bottom)
-	} else {
-		lines = []string{l.footer(p.progressLocked(now, 0, 0))}
+	if room < 0 {
+		return p.linesLocked(l.footer(p.progressLocked(now, 0, 0)))
 	}
 
+	lines, more, held := p.liveRowsLocked(now, room)
+	// The rule closes the columns of the rows above it. With no row above
+	// (the header's separator is the line before), a rule would be a second
+	// separator in a row.
+	if p.printed > 0 || len(lines) > 0 {
+		lines = append(lines, l.rule)
+	}
+	if pause != "" {
+		lines = append(lines, l.footer(pause))
+	}
+	lines = append(lines, l.footer(p.progressLocked(now, more, held)), l.bottom)
 	return p.linesLocked(lines...)
+}
+
+// liveSpan is a stretch of the rows not printed yet: one in-flight row, or a
+// run of finished rows held behind one, of which the first folded are shown
+// as a "… N more done" line.
+type liveSpan struct {
+	rows   []*tableRow
+	held   bool
+	folded int
+}
+
+// liveRowsLocked is the lines of the live area's rows for room lines, folding
+// held rows as frameLocked describes, and how many in-flight and held rows the
+// footer must count because they aren't shown. The caller holds p.mu.
+func (p *tableProgress) liveRowsLocked(now time.Time, room int) (lines []string, more, held int) {
+	var spans []liveSpan
+	var running []*tableRow
+	total := 0
+	for _, row := range p.rows[p.printed:] {
+		switch row.state {
+		case rowRunning:
+			running = append(running, row)
+			spans = append(spans, liveSpan{rows: []*tableRow{row}})
+			total++
+		case rowDone:
+			if n := len(spans); n > 0 && spans[n-1].held {
+				spans[n-1].rows = append(spans[n-1].rows, row)
+			} else {
+				spans = append(spans, liveSpan{rows: []*tableRow{row}, held: true})
+			}
+			held++
+			total++
+		default:
+			// A queued or interrupted row isn't shown, and ends a run.
+			spans = append(spans, liveSpan{})
+		}
+	}
+
+	// Folding j rows of a run into one line saves j-1 lines.
+	over := total - room
+	for i := range spans {
+		if over <= 0 {
+			break
+		}
+		if n := len(spans[i].rows); spans[i].held && n >= 2 {
+			spans[i].folded = min(n, over+1)
+			over -= spans[i].folded - 1
+		}
+	}
+	if over > 0 {
+		shown := running[:min(len(running), room)]
+		return p.rowLinesLocked(shown, now), len(running) - len(shown), held
+	}
+
+	l := p.layoutLocked()
+	for _, span := range spans {
+		rows := span.rows
+		if span.folded > 0 {
+			lines = append(lines, l.marker(fmt.Sprintf("… %d more done", span.folded)))
+			rows = rows[span.folded:]
+		}
+		lines = append(lines, p.rowLinesLocked(rows, now)...)
+	}
+	return lines, 0, 0
 }
 
 // trimLine cuts line to width columns, keeping its escape sequences.
