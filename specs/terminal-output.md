@@ -39,10 +39,20 @@ while the run goes on.
   ordinary output. Rows print above the live area, into the terminal's
   scrollback, in list order: a finished row prints once every row above it has
   finished, so the scrollback reads in list order however the workers finish.
-  The live area (pterm's `AreaPrinter`, redrawn every 100 ms) holds the rows not
+  The live area (redrawn every 100 ms) holds the rows not
   printed yet that are in flight or finished (held back behind a slower one),
   in list order, then the rule that closes their columns, the progress footer
   and the border.
+- **No flicker.** `liveArea` (`internal/ui/live_area.go`) draws each frame over
+  the last in one write: up to the area's top, each line erased and written
+  again, then `ESC[J` for whatever the old frame had below. Rows that finish
+  print in the same write as the frame under them. Each frame is wrapped in
+  synchronized output (`ESC[?2026h` … `ESC[?2026l`), so a terminal that
+  supports it (Ghostty, iTerm2, kitty, WezTerm, Alacritty, Windows Terminal)
+  shows only whole frames; others ignore the mode. pterm's `AreaPrinter`, which
+  this replaced, erased the whole area and then wrote the frame as dozens of
+  small writes, so the terminal painted the area half blank 10 times a second,
+  worse the taller the area got behind a slow repo.
 - **A slow repo holds the rows after it.** Workers start repos in list order, so
   the live area is usually the concurrency plus a few lines. One slow repo (a
   large monorepo) holds back every row after it until it finishes. When the
@@ -151,6 +161,8 @@ before it.
   single line on mpb, a BuildKit-style line per worker on mpb, pterm's bar and
   spinner). All were built and tried; the live table won because the repo list
   and the progress are one thing to read.
+- **pterm's `AreaPrinter` for the live area.** It erases and then draws, one
+  escape code per write, which flickers (see "No flicker").
 - **Redrawing the whole table.** The first live table did, and it can't work
   past one screen: rows that scroll off can't be redrawn, and every frame then
   leaves a copy behind. It also changed width as statuses changed.
@@ -168,5 +180,6 @@ before it.
 
 - No run has been timed against a large real org; the 100 ms repaint and the
   per-row print are cheap, but a slow terminal over SSH is untested.
-- On Windows the cursor package moves the console through its API, so the
-  renderer tests that read cursor movement from a buffer skip there.
+- A terminal without synchronized output (macOS Terminal, the legacy Windows
+  console host) can still paint mid-frame, but never a blank area: each line
+  is erased just before it is written again.

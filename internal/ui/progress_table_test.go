@@ -3,7 +3,6 @@ package ui_test
 import (
 	"fmt"
 	"regexp"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -47,22 +46,12 @@ func newTable(t *testing.T, width, height int, repos []ghapi.RepoInfo) (cloner.P
 	return p, lister, &buf
 }
 
-// needsANSICursor skips a test that reads what a terminal would show: the
-// cursor package moves a Windows console through its API, so a buffer there
-// holds no cursor movement to play back.
-func needsANSICursor(t *testing.T) {
-	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("the cursor moves through the console API on Windows, not escape codes")
-	}
-}
-
 // emulate plays out what a terminal does with out, with room for every line
 // that ever scrolls by, and returns the lines it ends up showing. It knows the
-// few codes the renderer and the pterm area printer use: lines up and down,
-// the start of a line, erasing a line, and colours and cursor visibility,
-// which it ignores. What the area printer cleared is gone, so the result is
-// the ordinary output with the live area as last drawn.
+// few codes the renderer uses: lines up and down, the start of a line,
+// erasing a line or everything below, and colours, cursor visibility and
+// synchronized output, which it ignores. What the live area erased is gone, so
+// the result is the ordinary output with the live area as last drawn.
 func emulate(out string) []string {
 	var lines [][]rune
 	row, col := 0, 0
@@ -101,6 +90,13 @@ func emulate(out string) []string {
 				row += n
 			case 'G':
 				col = max(n-1, 0)
+			case 'J':
+				// Erase below: the rest of this line and every line after it.
+				l := line()
+				if col < len(*l) {
+					*l = (*l)[:col]
+				}
+				lines = lines[:row+1]
 			case 'K':
 				l := line()
 				if params == "2" {
@@ -136,9 +132,8 @@ func emulate(out string) []string {
 func screen(buf *lockedBuffer) string { return strings.Join(emulate(buf.String()), "\n") }
 
 // waitForScreen blocks until the screen shows every one of wants, and returns
-// it. A frame is cleared and drawn again by separate writes, so a screen read
-// between them is short of the live area; a test waits for what it expects
-// rather than reading once.
+// it. The renderer draws from its own goroutine, so a test waits for what it
+// expects rather than reading once.
 func waitForScreen(t *testing.T, buf *lockedBuffer, wants ...string) string {
 	t.Helper()
 	var scr string
@@ -187,7 +182,6 @@ var results = []cloner.Action{
 }
 
 func TestTableProgress_FinishedRowsStreamIntoOneTableInListOrder(t *testing.T) {
-	needsANSICursor(t)
 	const repos = 12
 	p, lister, buf := newTable(t, 200, 40, tableRepos(repos))
 
@@ -250,8 +244,80 @@ func TestTableProgress_FinishedRowsStreamIntoOneTableInListOrder(t *testing.T) {
 	assert.Equal(t, before, len(buf.String()), "the table is closed once")
 }
 
+// chunkWriter keeps every Write apart, so a test can replay the output one
+// write at a time, as a terminal may paint it.
+type chunkWriter struct {
+	mu     sync.Mutex
+	chunks []string
+}
+
+func (w *chunkWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.chunks = append(w.chunks, string(p))
+	return len(p), nil
+}
+
+func (w *chunkWriter) all() []string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return append([]string(nil), w.chunks...)
+}
+
+func TestTableProgress_EveryWriteLeavesTheLiveAreaWhole(t *testing.T) {
+	// A terminal may paint between any two writes. An area erased by one
+	// write and drawn again by the next flashes blank on each repaint, so
+	// every write from the first frame to Stop must leave the footer on
+	// screen, and every frame must come inside synchronized output.
+	const repos = 8
+	var w chunkWriter
+	p := ui.NewTableProgress(&w, 200, 40)
+	lister, ok := p.(ui.RepoLister)
+	require.True(t, ok)
+	lister.SetRepos(tableRepos(repos))
+
+	within(t, func() {
+		p.Start(repos)
+		for i := range repos {
+			name := fmt.Sprintf("repo-%02d", i)
+			p.RepoStarted(name, cloner.ProgressClone)
+			// Long enough for a few repaints with rows in flight.
+			time.Sleep(120 * time.Millisecond)
+			p.RepoDone(cloner.RepoResult{Name: name, Action: cloner.ActionCloned}, time.Second)
+		}
+		p.Stop()
+		lister.FinishTable()
+	})
+
+	chunks := w.all()
+	first, last := -1, -1
+	for i, chunk := range chunks {
+		if !strings.Contains(chunk, "Syncing") {
+			continue
+		}
+		if first < 0 {
+			first = i
+		}
+		last = i
+		assert.True(t, strings.HasPrefix(chunk, "\x1b[?2026h") && strings.HasSuffix(chunk, "\x1b[?2026l"),
+			"a frame is one write inside synchronized output: %q", chunk)
+	}
+	require.GreaterOrEqual(t, first, 0, "the live area was drawn")
+	assert.Greater(t, last-first, repos, "the area repainted while repos were in flight")
+
+	// Replayed one write at a time, the screen shows the footer after every
+	// write from the first frame to the last: no write erases the area and
+	// leaves the next to draw it again.
+	var out strings.Builder
+	for i, chunk := range chunks[:last+1] {
+		out.WriteString(chunk)
+		if i >= first {
+			assert.Contains(t, strings.Join(emulate(out.String()), "\n"), "Syncing", "after write %d of %d", i, last)
+		}
+	}
+}
+
 func TestTableProgress_TheFooterCountsOneClassPerMarkInOrder(t *testing.T) {
-	needsANSICursor(t)
 	// Moves share the tick with clones, as failed wikis share the cross.
 	done := []cloner.Action{
 		cloner.ActionCloned, cloner.ActionCloned, cloner.ActionMovedDeleted,
@@ -288,7 +354,6 @@ func TestTableProgress_TheFooterCountsOneClassPerMarkInOrder(t *testing.T) {
 }
 
 func TestTableProgress_ALongFooterWrapsBetweenCountsInsteadOfCuttingOneOff(t *testing.T) {
-	needsANSICursor(t)
 	done := []cloner.Action{
 		cloner.ActionCloned, cloner.ActionPulled, cloner.ActionUpToDate, cloner.ActionFetchedOnly,
 		cloner.ActionSkippedName, cloner.ActionSkippedEmpty, cloner.ActionFailed,
@@ -319,7 +384,6 @@ func TestTableProgress_ALongFooterWrapsBetweenCountsInsteadOfCuttingOneOff(t *te
 }
 
 func TestTableProgress_TheFooterShowsOnlyTheClassesThatHaveRepos(t *testing.T) {
-	needsANSICursor(t)
 	p, lister, buf := newTable(t, 200, 40, tableRepos(2))
 
 	within(t, func() {
@@ -340,7 +404,6 @@ func TestTableProgress_TheFooterShowsOnlyTheClassesThatHaveRepos(t *testing.T) {
 }
 
 func TestTableProgress_NoFrameChangesTheTablesWidth(t *testing.T) {
-	needsANSICursor(t)
 	repos := tableRepos(10)
 	repos[7].Name = "a-repository-with-a-name-longer-than-the-rest"
 	repos[8].Language = "Objective-C++"
@@ -396,7 +459,6 @@ func longestStatus() (cloner.Action, time.Duration) {
 }
 
 func TestTableProgress_AResizedTerminalKeepsTheWidthsChosenAtTheStart(t *testing.T) {
-	needsANSICursor(t)
 	var buf lockedBuffer
 	var mu sync.Mutex
 	width := 200
@@ -438,7 +500,6 @@ func lastLines(buf *lockedBuffer, n int) string {
 }
 
 func TestTableProgress_TheLiveAreaHoldsOnlyWhatIsInFlight(t *testing.T) {
-	needsANSICursor(t)
 	const total, height = 60, 20
 	p, _, buf := newTable(t, 120, height, tableRepos(total))
 
@@ -487,7 +548,6 @@ func TestTableProgress_TheLiveAreaHoldsOnlyWhatIsInFlight(t *testing.T) {
 }
 
 func TestTableProgress_ARowThatFinishesEarlyWaitsForTheRowsAboveIt(t *testing.T) {
-	needsANSICursor(t)
 	p, lister, buf := newTable(t, 120, 20, tableRepos(4))
 
 	within(t, func() {
@@ -539,7 +599,6 @@ func TestTableProgress_ARowThatFinishesEarlyWaitsForTheRowsAboveIt(t *testing.T)
 }
 
 func TestTableProgress_HeldRowsGiveWayFirstWhenTheLiveAreaIsFull(t *testing.T) {
-	needsANSICursor(t)
 	// A 10-line terminal leaves room for 5 rows in the live area.
 	const total, height = 20, 10
 	repos := tableRepos(total)
@@ -595,7 +654,6 @@ func TestTableProgress_HeldRowsGiveWayFirstWhenTheLiveAreaIsFull(t *testing.T) {
 }
 
 func TestTableProgress_ACancelPrintsHeldRowsInListOrder(t *testing.T) {
-	needsANSICursor(t)
 	p, lister, buf := newTable(t, 200, 40, tableRepos(4))
 
 	within(t, func() {
@@ -619,7 +677,6 @@ func TestTableProgress_ACancelPrintsHeldRowsInListOrder(t *testing.T) {
 }
 
 func TestTableProgress_TheRuleSitsDirectlyAboveTheFooter(t *testing.T) {
-	needsANSICursor(t)
 	p, _, buf := newTable(t, 120, 20, tableRepos(10))
 
 	within(t, func() {
@@ -647,7 +704,6 @@ func TestTableProgress_TheRuleSitsDirectlyAboveTheFooter(t *testing.T) {
 }
 
 func TestTableProgress_TooManyInFlightShowTheFirstOnesAndCountTheRest(t *testing.T) {
-	needsANSICursor(t)
 	const total, height = 60, 10
 	p, _, buf := newTable(t, 120, height, tableRepos(total))
 
@@ -676,7 +732,6 @@ func TestTableProgress_TooManyInFlightShowTheFirstOnesAndCountTheRest(t *testing
 }
 
 func TestTableProgress_ATerminalTooShortForTheLiveAreaShowsTheFooterAlone(t *testing.T) {
-	needsANSICursor(t)
 	p, _, buf := newTable(t, 100, 4, tableRepos(10))
 
 	within(t, func() {
@@ -691,7 +746,6 @@ func TestTableProgress_ATerminalTooShortForTheLiveAreaShowsTheFooterAlone(t *tes
 }
 
 func TestTableProgress_ANarrowTerminalDropsColumnsInOrder(t *testing.T) {
-	needsANSICursor(t)
 	// go-pretty's light style shows headers in capitals.
 	columns := []string{"NAME", "VISIBILITY", "LANGUAGE", "SIZE (MB)", "DEFAULT BRANCH", "LAST PUSHED", "STATUS"}
 	tests := []struct {
@@ -763,7 +817,6 @@ func contains(list []string, s string) bool {
 }
 
 func TestTableProgress_AVeryNarrowTerminalNeverWrapsALine(t *testing.T) {
-	needsANSICursor(t)
 	const width = 30
 	p, lister, buf := newTable(t, width, 40, tableRepos(3))
 
@@ -777,7 +830,6 @@ func TestTableProgress_AVeryNarrowTerminalNeverWrapsALine(t *testing.T) {
 }
 
 func TestTableProgress_ALongNameIsCutToFitANarrowTerminal(t *testing.T) {
-	needsANSICursor(t)
 	const width = 72
 	repos := tableRepos(2)
 	repos[1].Name = "a-repository-with-a-name-far-too-long-for-this-terminal-to-hold-in-full"
@@ -798,7 +850,6 @@ func TestTableProgress_ALongNameIsCutToFitANarrowTerminal(t *testing.T) {
 }
 
 func TestTableProgress_TheFooterCountsEveryRepoAcrossBothPasses(t *testing.T) {
-	needsANSICursor(t)
 	p, _, buf := newTable(t, 120, 40, tableRepos(4))
 	// The footer reads "Syncing 2/4 [====>---] 50% 3s · 0 running · 2 queued".
 	footerLine := func(scr string) string {
@@ -848,7 +899,6 @@ func TestTableProgress_TheFooterCountsEveryRepoAcrossBothPasses(t *testing.T) {
 }
 
 func TestTableProgress_TwoPassesMakeOneTable(t *testing.T) {
-	needsANSICursor(t)
 	p, lister, buf := newTable(t, 200, 40, tableRepos(4))
 
 	within(t, func() {
@@ -873,7 +923,6 @@ func TestTableProgress_TwoPassesMakeOneTable(t *testing.T) {
 }
 
 func TestTableProgress_ACancelledRunLeavesRowsQueuedOrInterrupted(t *testing.T) {
-	needsANSICursor(t)
 	p, lister, buf := newTable(t, 200, 40, tableRepos(3))
 
 	within(t, func() {
@@ -903,7 +952,6 @@ func TestTableProgress_ACancelledRunLeavesRowsQueuedOrInterrupted(t *testing.T) 
 }
 
 func TestTableProgress_FinishTableBeforeAnyRunStillListsTheRepos(t *testing.T) {
-	needsANSICursor(t)
 	_, lister, buf := newTable(t, 200, 40, tableRepos(2))
 
 	lister.FinishTable()
