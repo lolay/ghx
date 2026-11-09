@@ -3,14 +3,11 @@ package ui
 import (
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
-	"atomicgo.dev/cursor"
 	"github.com/jedib0t/go-pretty/v6/text"
-	"github.com/pterm/pterm"
 	"golang.org/x/term"
 
 	"github.com/lolay/ghx/internal/cloner"
@@ -77,14 +74,13 @@ type tableRow struct {
 // Closing it from Stop would need to know whether another pass follows, and a
 // renderer can't.
 //
-// It prints a finished row by clearing the area, printing, and starting the
-// area again. A pterm AreaPrinter writes to out,
-// pterm's switches stay untouched, and the cursor target (the one pterm global
-// needed) points at out only between Start and Stop. Every method is safe for
+// The live area (liveArea) draws each frame over the last in one write, and
+// prints a finished row in the same write as the frame below it, so the
+// screen never shows the area half drawn. Every method is safe for
 // concurrent use.
 type tableProgress struct {
 	spec *tableSpec
-	out  fdWriter
+	out  io.Writer
 	size func() (width, height int) // read on every repaint, so a resize shows
 
 	mu         sync.Mutex
@@ -92,33 +88,20 @@ type tableProgress struct {
 	printed    int // rows[:printed] are in the scrollback; the rest wait
 	byName     map[string]*tableRow
 	layout     *tableLayout
-	listed     bool      // SetRepos was called
-	topPrinted bool      // the title and header are out since SetRepos
-	closed     bool      // FinishTable has closed the table since SetRepos
-	began      time.Time // the first Start since SetRepos
-	stopped    time.Time // the last Stop
-	pauseUntil time.Time // while it is ahead, the footer counts down to it
-	pauseWhy   string    // what the pause is waiting out
-	area       *pterm.AreaPrinter
+	listed     bool          // SetRepos was called
+	topPrinted bool          // the title and header are out since SetRepos
+	closed     bool          // FinishTable has closed the table since SetRepos
+	began      time.Time     // the first Start since SetRepos
+	stopped    time.Time     // the last Stop
+	pauseUntil time.Time     // while it is ahead, the footer counts down to it
+	pauseWhy   string        // what the pause is waiting out
+	area       *liveArea     // on screen between Start and Stop
 	quit       chan struct{} // closed by Stop to end the repaint goroutine
 	repainted  chan struct{} // closed when that goroutine has returned
 }
 
-// fdWriter gives any io.Writer the Fd method pterm's cursor code asks of its
-// writer. Only a Windows console reads the descriptor, and a console is the
-// os.File that Fd then reports.
-type fdWriter struct{ io.Writer }
-
-// Fd reports the descriptor of the wrapped file, or 0 when it isn't one.
-func (w fdWriter) Fd() uintptr {
-	if f, ok := w.Writer.(interface{ Fd() uintptr }); ok {
-		return f.Fd()
-	}
-	return 0
-}
-
 func newTableProgress(spec *tableSpec, out io.Writer) *tableProgress {
-	return &tableProgress{spec: spec, out: fdWriter{out}, size: terminalSize(out)}
+	return &tableProgress{spec: spec, out: out, size: terminalSize(out)}
 }
 
 // terminalSize reads the size of out when it is a terminal, and falls back to
@@ -186,23 +169,16 @@ func (p *tableProgress) rowLocked(name string) *tableRow {
 // Start prints the table's top, the first time after SetRepos, and draws the
 // live area for the repos of one pass.
 func (p *tableProgress) Start(total int) {
-	// Hiding the cursor goes through pterm's default cursor, which writes to
-	// os.Stdout unless told otherwise.
-	cursor.SetTarget(p.out)
-	cursor.Hide()
-	// Stop erases the area, the same call whether or not a table follows it.
-	area := pterm.AreaPrinter{}.WithRemoveWhenDone(true)
-	area.SetWriter(p.out)
-
 	quit, repainted := make(chan struct{}), make(chan struct{})
 	p.mu.Lock()
 	if p.began.IsZero() {
 		p.began = time.Now()
 	}
+	_, _ = io.WriteString(p.out, hideCursor)
 	p.printTopLocked()
-	p.area = area
+	p.area = &liveArea{out: p.out}
 	p.quit, p.repainted = quit, repainted
-	_, _ = area.Start(p.frameLocked(time.Now()))
+	p.area.draw("", p.frameLocked(time.Now()))
 	p.mu.Unlock()
 
 	go p.repaint(quit, repainted)
@@ -221,7 +197,7 @@ func (p *tableProgress) repaint(quit <-chan struct{}, repainted chan<- struct{})
 		case now := <-ticker.C:
 			p.mu.Lock()
 			if p.area != nil {
-				p.area.Update(p.frameLocked(now))
+				p.area.draw("", p.frameLocked(now))
 			}
 			p.mu.Unlock()
 		}
@@ -269,7 +245,7 @@ func (p *tableProgress) setPause(until time.Time, why string) {
 	defer p.mu.Unlock()
 	p.pauseUntil, p.pauseWhy = until, why
 	if p.area != nil {
-		p.area.Update(p.frameLocked(time.Now()))
+		p.area.draw("", p.frameLocked(time.Now()))
 	}
 }
 
@@ -303,15 +279,9 @@ func (p *tableProgress) rowDone(name, cell, class string) {
 		p.printed++
 	}
 	now := time.Now()
-	if p.printed == from {
-		p.area.Update(p.frameLocked(now))
-		return
-	}
-	// Clearing the area leaves the cursor where it began, so the rows take its
-	// place and the area starts again beneath them.
-	p.area.Clear()
-	p.printLocked(p.rowLinesLocked(p.rows[from:p.printed], now)...)
-	_, _ = p.area.Start(p.frameLocked(now))
+	// The rows take the area's place, and the area is drawn again beneath
+	// them, in one write.
+	p.area.draw(p.linesLocked(p.rowLinesLocked(p.rows[from:p.printed], now)...), p.frameLocked(now))
 }
 
 // Stop erases the live area and gives the terminal back, with the cursor at
@@ -331,9 +301,8 @@ func (p *tableProgress) Stop() {
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	_ = p.area.Stop()
-	cursor.Show()
-	cursor.SetTarget(os.Stdout)
+	p.area.erase()
+	_, _ = io.WriteString(p.out, showCursor)
 	p.stopped = time.Now()
 	for _, row := range p.rows {
 		if row.state == rowRunning {
@@ -384,13 +353,19 @@ func (p *tableProgress) printTopLocked() {
 // printLocked writes lines to out as ordinary output, each cut to the
 // terminal's width so none wraps. The caller holds p.mu.
 func (p *tableProgress) printLocked(lines ...string) {
+	_, _ = io.WriteString(p.out, p.linesLocked(lines...))
+}
+
+// linesLocked is lines as output, each cut to the terminal's width so none
+// wraps and ending in a newline. The caller holds p.mu.
+func (p *tableProgress) linesLocked(lines ...string) string {
 	width, _ := p.size()
 	var b strings.Builder
 	for _, line := range lines {
 		b.WriteString(trimLine(line, width))
 		b.WriteByte('\n')
 	}
-	_, _ = fmt.Fprint(p.out, b.String())
+	return b.String()
 }
 
 // rowLinesLocked is the table line of each row, as it stands at now. The
@@ -517,7 +492,7 @@ func (p *tableProgress) totalsLocked() []string {
 // finished ones are left out first, then the last in-flight ones, and the
 // footer counts both. The caller holds p.mu.
 func (p *tableProgress) frameLocked(now time.Time) string {
-	width, height := p.size()
+	_, height := p.size()
 	l := p.layoutLocked()
 
 	var live, running []*tableRow
@@ -563,12 +538,7 @@ func (p *tableProgress) frameLocked(now time.Time) string {
 		lines = []string{l.footer(p.progressLocked(now, 0, 0))}
 	}
 
-	var b strings.Builder
-	for _, line := range lines {
-		b.WriteString(trimLine(line, width))
-		b.WriteByte('\n')
-	}
-	return b.String()
+	return p.linesLocked(lines...)
 }
 
 // trimLine cuts line to width columns, keeping its escape sequences.

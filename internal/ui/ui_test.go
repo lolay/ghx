@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/jedib0t/go-pretty/v6/text"
-	"github.com/pterm/pterm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -19,14 +18,9 @@ import (
 )
 
 // TestMain turns go-pretty's ANSI colors off so output compares as plain
-// text whatever terminal or CI runner the tests run under. It also gives pterm
-// a terminal of 1000 by 1000 before any test starts a renderer: pterm's area
-// printer wraps its lines at the width of os.Stdout, which under `go test` is
-// a pipe or whatever terminal the developer has, and the table renderer's
-// tests set the width of their own terminal.
+// text whatever terminal or CI runner the tests run under.
 func TestMain(m *testing.M) {
 	text.DisableColors()
-	pterm.SetForcedTerminalSize(1000, 1000)
 	os.Exit(m.Run())
 }
 

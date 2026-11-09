@@ -26,7 +26,6 @@ func branchRepos() ([]ghapi.RepoInfo, []branches.Repo) {
 }
 
 func TestBranchesTableProgress_ShowsCountsAndTheUnexpectedDefault(t *testing.T) {
-	needsANSICursor(t)
 	infos, repos := branchRepos()
 	var buf lockedBuffer
 	p := ui.NewBranchesTableProgress(&buf, "main", 140, 40)
@@ -55,7 +54,6 @@ func TestBranchesTableProgress_ShowsCountsAndTheUnexpectedDefault(t *testing.T) 
 }
 
 func TestBranchesTableProgress_TheFooterCountsReposNotOnTheExpectedName(t *testing.T) {
-	needsANSICursor(t)
 	infos, repos := branchRepos()
 	var buf lockedBuffer
 	p := ui.NewBranchesTableProgress(&buf, "main", 140, 40)
@@ -147,7 +145,6 @@ func TestPrintBranchTotals(t *testing.T) {
 }
 
 func TestBranchesTableProgress_APauseCountsDownThenClears(t *testing.T) {
-	needsANSICursor(t)
 	infos, repos := branchRepos()
 	var buf lockedBuffer
 	p := ui.NewBranchesTableProgress(&buf, "main", 140, 40)
