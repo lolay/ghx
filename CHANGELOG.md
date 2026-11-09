@@ -7,6 +7,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [v0.4.0] - 2026-11-09
+
 ### Added
 - `ghb <ORG>`, a read-only branches report shipped beside `ghx`: every repo's
   default branch (flagged when it isn't `main`) and every other branch,
