@@ -7,6 +7,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [v0.4.1] - 2026-11-10
+
 ### Fixed
 - The live repo table no longer jumps its footer to the top of the screen
   when a slow repo holds back more finished rows than the terminal fits. The
