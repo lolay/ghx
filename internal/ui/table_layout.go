@@ -132,22 +132,35 @@ func (l *tableLayout) rows(repos []ghapi.RepoInfo, status []string) []string {
 	return lines[len(l.head) : len(lines)-1]
 }
 
-// marker is a line of the table holding s, faint, in one cell across every
-// column but Status, whose cell is empty: the "… 24 more done" that stands
-// in for rows the live area has no room for. A single cell keeps it whole
-// when the names are shorter than it.
+// marker is a line of the table holding s, faint, in the Name column, every
+// other cell empty: the "… 24 more done" that stands in for rows the live
+// area has no room for. When s is wider than Name (an org of short names), it
+// takes one cell across every column but Status instead, rather than be cut.
 func (l *tableLayout) marker(s string) string {
 	box := table.StyleLight.Box
 	sep := box.PaddingRight + box.MiddleVertical + box.PaddingLeft
-	span := 0
-	for _, w := range l.widths[:len(l.widths)-1] {
-		span += w + text.StringWidthWithoutEscSequences(sep)
+	cells := slices.Clone(l.widths)
+	if text.StringWidthWithoutEscSequences(s) > cells[0] {
+		span := cells[0]
+		for _, w := range cells[1 : len(cells)-1] {
+			span += text.StringWidthWithoutEscSequences(sep) + w
+		}
+		cells = []int{span, cells[len(cells)-1]}
 	}
-	span -= text.StringWidthWithoutEscSequences(sep)
-	s = truncate(s, span)
-	pad := strings.Repeat(" ", max(span-text.StringWidthWithoutEscSequences(s), 0))
-	status := strings.Repeat(" ", l.widths[len(l.widths)-1])
-	return box.Left + box.PaddingLeft + text.Faint.Sprint(s) + pad + sep + status + box.PaddingRight + box.Right
+	var b strings.Builder
+	b.WriteString(box.Left + box.PaddingLeft)
+	for i, w := range cells {
+		if i > 0 {
+			b.WriteString(sep)
+		}
+		cell := ""
+		if i == 0 {
+			cell = truncate(s, w)
+		}
+		b.WriteString(text.Faint.Sprint(cell) + strings.Repeat(" ", max(w-text.StringWidthWithoutEscSequences(cell), 0)))
+	}
+	b.WriteString(box.PaddingRight + box.Right)
+	return b.String()
 }
 
 // innerWidth is how many columns of text a footer line holds between the

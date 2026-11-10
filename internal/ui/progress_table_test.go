@@ -671,6 +671,32 @@ func TestTableProgress_HeldRowsFoldFromTheTopWhenTheLiveAreaIsFull(t *testing.T)
 	})
 }
 
+func TestTableProgress_AFoldKeepsTheColumnsWhenItFitsInName(t *testing.T) {
+	// Names wider than "… 2 more done" leave the fold in the Name column, with
+	// every border the rows have; short names (the test above) span instead.
+	const total, height, room = 10, 9, 4
+	repos := tableRepos(total)
+	for i := range repos {
+		repos[i].Name = fmt.Sprintf("a-longer-repo-name-%02d", i)
+	}
+	p, _, buf := newTable(t, 160, height, repos)
+
+	within(t, func() {
+		p.Start(total)
+		defer p.Stop()
+		p.RepoStarted(repos[0].Name, cloner.ProgressClone)
+		for i := 1; i <= 4; i++ {
+			p.RepoStarted(repos[i].Name, cloner.ProgressPull)
+			p.RepoDone(cloner.RepoResult{Name: repos[i].Name, Action: cloner.ActionPulled}, time.Second)
+		}
+		scr := waitForScreen(t, buf, "Syncing 4/10", "more done")
+		assertOneWidth(t, scr)
+		rows := liveRows(scr, room)
+		require.Equal(t, "… 2 more done", names(rows)[1])
+		assert.Equal(t, strings.Count(rows[0], "│"), strings.Count(rows[1], "│"), "the fold has every border a row has: %q", rows[1])
+	})
+}
+
 func TestTableProgress_TheLiveAreaNeverShrinksWithoutPrinting(t *testing.T) {
 	// The bug this guards: the area grew to fill the terminal, then dropped
 	// every held row at once, and the footer jumped up the screen.

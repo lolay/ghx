@@ -59,7 +59,9 @@ while the run goes on.
   slow repo finishes, it and every row held behind it print together.
 - **Held rows fold when the area is full.** While the rows fit, every one
   shows. Once they would overflow the terminal, held rows fold into a faint
-  `… 24 more done` line spanning every column but Status, one row at a time and
+  `… 24 more done` line, in the Name column with every border a row has (or
+  across every column but Status when the names are too short to hold it),
+  one row at a time and
   only as many as it takes to fit: the run behind the first in-flight row
   first, oldest row first, then the run behind the next. So the area grows to
   the room the terminal leaves and stays there, and the footer never moves up
