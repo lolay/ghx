@@ -598,59 +598,168 @@ func TestTableProgress_ARowThatFinishesEarlyWaitsForTheRowsAboveIt(t *testing.T)
 	assert.Equal(t, []string{"repo-00", "repo-01", "repo-02", "repo-03"}, rows, "each row printed once, in list order")
 }
 
-func TestTableProgress_HeldRowsGiveWayFirstWhenTheLiveAreaIsFull(t *testing.T) {
-	// A 10-line terminal leaves room for 5 rows in the live area.
-	const total, height = 20, 10
+// liveRows is the rows of the live area on scr, for a terminal whose area is
+// full: the lines above its rule, footer and border.
+func liveRows(scr string, room int) []string {
+	all := strings.Split(scr, "\n")
+	return all[len(all)-room-3 : len(all)-3]
+}
+
+func TestTableProgress_HeldRowsFoldFromTheTopWhenTheLiveAreaIsFull(t *testing.T) {
+	// A 12-line terminal leaves room for 7 rows in the live area.
+	const total, height, room = 20, 12, 7
 	repos := tableRepos(total)
-	repos[0].Name = "bigrepo"
+	repos[0].Name, repos[5].Name = "bigrepo", "big2"
 	p, _, buf := newTable(t, 140, height, repos)
+	start := func(i int) { p.RepoStarted(repos[i].Name, cloner.ProgressPull) }
+	done := func(i int) {
+		p.RepoDone(cloner.RepoResult{Name: repos[i].Name, Action: cloner.ActionPulled}, time.Second)
+	}
 
 	within(t, func() {
 		p.Start(total)
 		defer p.Stop()
 		p.RepoStarted("bigrepo", cloner.ProgressClone)
-		// Four repos behind bigrepo finish, filling the area with it.
 		for i := 1; i <= 4; i++ {
+			start(i)
+			done(i)
+		}
+		scr := waitForScreen(t, buf, "Syncing 4/20")
+		assert.NotContains(t, scr, "more done", "five rows fit, so nothing folds")
+		for i := 1; i <= 4; i++ {
+			assert.Contains(t, scr, repos[i].Name)
+		}
+
+		// Two more held behind big2 overflow by one: the oldest two behind
+		// bigrepo fold into one line, and the rest still show.
+		start(5)
+		for i := 6; i <= 7; i++ {
+			start(i)
+			done(i)
+		}
+		scr = waitForScreen(t, buf, "Syncing 6/20")
+		assertOneWidth(t, scr)
+		assert.Equal(t, []string{"bigrepo", "… 2 more done", "repo-03", "repo-04", "big2", "repo-06", "repo-07"},
+			names(liveRows(scr, room)))
+		assert.Regexp(t, `2 running · 12 queued +│`, scr, "the footer leaves the counting to the fold")
+
+		// More overflow folds bigrepo's run whole before touching big2's.
+		for i := 8; i <= 9; i++ {
+			start(i)
+			done(i)
+		}
+		start(10)
+		scr = waitForScreen(t, buf, "Syncing 8/20", "3 running")
+		assertOneWidth(t, scr)
+		assert.Equal(t, []string{"bigrepo", "… 4 more done", "big2", "… 2 more done", "repo-08", "repo-09", "repo-10"},
+			names(liveRows(scr, room)))
+
+		// bigrepo finishing prints it and every row held behind it, folded
+		// or not, and the area folds what is left behind big2.
+		for i := 11; i <= 13; i++ {
+			start(i)
+		}
+		p.RepoDone(cloner.RepoResult{Name: "bigrepo", Action: cloner.ActionCloned}, time.Minute)
+		scr = waitForScreen(t, buf, "Syncing 9/20")
+		assertOneWidth(t, scr)
+		assert.Equal(t, []string{"big2", "… 3 more done", "repo-09", "repo-10", "repo-11", "repo-12", "repo-13"},
+			names(liveRows(scr, room)))
+		printed := strings.Join(strings.Split(scr, "\n")[:len(strings.Split(scr, "\n"))-room-3], "\n")
+		for i := 0; i <= 4; i++ {
+			assert.Equal(t, 1, strings.Count(printed, repos[i].Name+" "), "%s printed once", repos[i].Name)
+		}
+	})
+}
+
+func TestTableProgress_AFoldKeepsTheColumnsWhenItFitsInName(t *testing.T) {
+	// Names wider than "… 2 more done" leave the fold in the Name column, with
+	// every border the rows have; short names (the test above) span instead.
+	const total, height, room = 10, 9, 4
+	repos := tableRepos(total)
+	for i := range repos {
+		repos[i].Name = fmt.Sprintf("a-longer-repo-name-%02d", i)
+	}
+	p, _, buf := newTable(t, 160, height, repos)
+
+	within(t, func() {
+		p.Start(total)
+		defer p.Stop()
+		p.RepoStarted(repos[0].Name, cloner.ProgressClone)
+		for i := 1; i <= 4; i++ {
+			p.RepoStarted(repos[i].Name, cloner.ProgressPull)
+			p.RepoDone(cloner.RepoResult{Name: repos[i].Name, Action: cloner.ActionPulled}, time.Second)
+		}
+		scr := waitForScreen(t, buf, "Syncing 4/10", "more done")
+		assertOneWidth(t, scr)
+		rows := liveRows(scr, room)
+		require.Equal(t, "… 2 more done", names(rows)[1])
+		assert.Equal(t, strings.Count(rows[0], "│"), strings.Count(rows[1], "│"), "the fold has every border a row has: %q", rows[1])
+	})
+}
+
+func TestTableProgress_TheLiveAreaNeverShrinksWithoutPrinting(t *testing.T) {
+	// The bug this guards: the area grew to fill the terminal, then dropped
+	// every held row at once, and the footer jumped up the screen.
+	const total, height, room = 40, 14, 9
+	p, _, buf := newTable(t, 140, height, tableRepos(total))
+
+	within(t, func() {
+		p.Start(total)
+		defer p.Stop()
+		p.RepoStarted("repo-00", cloner.ProgressClone)
+		tallest := 0
+		for i := 1; i < 30; i++ {
+			name := fmt.Sprintf("repo-%02d", i)
+			p.RepoStarted(name, cloner.ProgressPull)
+			p.RepoDone(cloner.RepoResult{Name: name, Action: cloner.ActionPulled}, time.Second)
+			scr := waitForScreen(t, buf, fmt.Sprintf("Syncing %d/%d", i, total))
+			// Nothing has printed, so the table is its five-line top, the
+			// live rows, and the rule, footer and border.
+			rows := len(tableLines(scr)) - 5 - 3
+			assert.GreaterOrEqual(t, rows, tallest, "after %s", name)
+			assert.LessOrEqual(t, rows, room)
+			tallest = max(tallest, rows)
+		}
+		assert.Equal(t, room, tallest, "the area grew to its room")
+	})
+}
+
+func TestTableProgress_InFlightRowsPastEveryFoldShowTheFirstOnes(t *testing.T) {
+	// A 9-line terminal leaves room for 4 rows: too few for four blockers
+	// and the folds behind them, so the area shows the in-flight rows and the
+	// footer counts the held ones.
+	const total, height = 20, 9
+	p, _, buf := newTable(t, 140, height, tableRepos(total))
+
+	within(t, func() {
+		p.Start(total)
+		defer p.Stop()
+		for _, i := range []int{0, 3, 6, 9} {
+			p.RepoStarted(fmt.Sprintf("repo-%02d", i), cloner.ProgressClone)
+		}
+		for _, i := range []int{1, 2, 4, 5, 7, 8} {
 			name := fmt.Sprintf("repo-%02d", i)
 			p.RepoStarted(name, cloner.ProgressPull)
 			p.RepoDone(cloner.RepoResult{Name: name, Action: cloner.ActionPulled}, time.Second)
 		}
-		scr := waitForScreen(t, buf, "Syncing 4/20")
-		assert.Contains(t, scr, "repo-04", "five rows still fit")
-		assert.NotContains(t, scr, "waiting on")
-
-		// A fifth finished row and three more in flight don't fit: the
-		// finished ones make way for the in-flight ones.
-		p.RepoStarted("repo-05", cloner.ProgressPull)
-		p.RepoDone(cloner.RepoResult{Name: "repo-05", Action: cloner.ActionPulled}, time.Second)
-		for i := 6; i <= 8; i++ {
-			p.RepoStarted(fmt.Sprintf("repo-%02d", i), cloner.ProgressPull)
-		}
-		scr = waitForScreen(t, buf, "4 running · 11 queued · +5 done, waiting on bigrepo")
-		assertOneWidth(t, scr)
-		all := strings.Split(scr, "\n")
-		live := all[len(all)-7:]
-		for i, name := range []string{"bigrepo", "repo-06", "repo-07", "repo-08"} {
-			assert.Contains(t, live[i], name)
-		}
-		for i := 1; i <= 5; i++ {
-			assert.NotContains(t, scr, fmt.Sprintf("repo-%02d", i), "a held row is counted, not shown")
-		}
-		assert.LessOrEqual(t, len(live), height-2)
-
-		// Past the room for in-flight rows too, the footer counts both.
-		p.RepoStarted("repo-09", cloner.ProgressPull)
-		p.RepoStarted("repo-10", cloner.ProgressPull)
-		waitForScreen(t, buf, "+1 more running · +5 done, waiting on bigrepo")
-
-		// bigrepo finishing prints it and the five held behind it.
-		p.RepoDone(cloner.RepoResult{Name: "bigrepo", Action: cloner.ActionCloned}, time.Minute)
-		scr = waitForScreen(t, buf, "Syncing 6/20")
-		assert.NotContains(t, scr, "waiting on")
-		for i := 1; i <= 5; i++ {
-			assert.Contains(t, scr, fmt.Sprintf("repo-%02d", i))
-		}
+		scr := waitForScreen(t, buf, "4 running · 10 queued · +6 done, waiting on repo-00")
+		assert.Equal(t, []string{"repo-00", "repo-03", "repo-06", "repo-09"}, names(liveRows(scr, 4)))
+		assert.NotContains(t, scr, "more done")
 	})
+}
+
+// names is the Name cell of each table line.
+func names(lines []string) []string {
+	var out []string
+	for _, line := range lines {
+		cells := strings.Split(line, "│")
+		if len(cells) < 2 {
+			out = append(out, line)
+			continue
+		}
+		out = append(out, strings.TrimSpace(cells[1]))
+	}
+	return out
 }
 
 func TestTableProgress_ACancelPrintsHeldRowsInListOrder(t *testing.T) {

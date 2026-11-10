@@ -7,6 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- The live repo table no longer jumps its footer to the top of the screen
+  when a slow repo holds back more finished rows than the terminal fits. The
+  held rows now fold into a `… N more done` line, a row at a time, and the
+  table keeps its height.
+
 ## [v0.4.0] - 2026-11-09
 
 ### Added
@@ -24,6 +30,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - A GitHub rate limit while listing an org's repos now says which limit and
   when to retry, rather than echoing the request.
+
+### Fixed
+- The live repo table no longer flickers while it redraws.
 
 ## [v0.3.0] - 2026-10-14
 
