@@ -61,6 +61,9 @@ type reconciler struct {
 	// run, so a repo and its wiki share it.
 	stamp   string
 	summary cloner.SyncSummary
+	// failed holds the names whose move or delete failed, so a removal that
+	// didn't finish can be kept for the next run to retry.
+	failed map[string]bool
 }
 
 // deletedStampLayout formats the UTC time that tells two clones of the same
@@ -70,6 +73,12 @@ const deletedStampLayout = "20060102T150405Z"
 
 func (r *reconciler) add(name string, action cloner.Action, detail string) {
 	r.summary.Append(cloner.RepoResult{Name: name, Action: action, Detail: detail})
+	if action == cloner.ActionFailed {
+		if r.failed == nil {
+			r.failed = map[string]bool{}
+		}
+		r.failed[name] = true
+	}
 }
 
 // reconcileArchived puts each repo's clone where its archived state says it

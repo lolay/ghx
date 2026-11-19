@@ -62,11 +62,21 @@ or, under `--delete`, is deleted; its wiki then goes the same way, through the
 same check. Both places a clone can be are looked at, `<out>/x` and
 `<out>/<archived-dir>/x` (a repo archived and then removed), and each clone found
 is retired; when both exist, the second takes a stamped name as below. A removed
-directory with no `.git` is reported `skipped (origin mismatch)`, not moved.
+directory with no `.git` is reported `skipped (origin mismatch)`, not moved. A
+wiki whose repo is no longer in that place (it went on an earlier run and the
+wiki failed to follow) is retired on its own, under its own name.
+
+The manifest is the only record of a removal, since a removed repo isn't in the
+listing. So when a removed repo's clone or wiki `failed` to move or delete, the
+new manifest keeps that repo's previous entry, unchanged, after the listing's
+repos, and the next run finds it removed again and retries until it succeeds.
+An origin mismatch isn't kept: that directory isn't a clone of the repo, so it is
+reported on the run that finds the repo gone and left alone after that. If the
+org creates a repo of that name again, the listing's entry replaces the kept one.
 
 `--delete` applies to the repos the run finds removed or archived, nothing
 earlier: the run that retires a removed repo writes a manifest without it, so no
-later run sees it again, and nothing in `<deleted-dir>` is ever deleted. A clone
+later run sees it again (a failed retire is kept and retried, as above), and nothing in `<deleted-dir>` is ever deleted. A clone
 already in `<archived-dir>` when `--delete` is first used stays there, unsynced.
 
 Nothing already in `<deleted-dir>` is replaced. When `<deleted-dir>/x` exists

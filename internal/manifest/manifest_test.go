@@ -45,7 +45,7 @@ func exportedAt(t *testing.T, data []byte) string {
 func TestWrite_MatchesPythonGolden(t *testing.T) {
 	dir := t.TempDir()
 
-	require.NoError(t, manifest.Write(dir, "lolay", goldenRepos))
+	require.NoError(t, manifest.Write(dir, "lolay", goldenRepos, nil))
 
 	golden := readManifestFile(t, goldenDir)
 	got := readManifestFile(t, dir)
@@ -60,7 +60,7 @@ func TestWrite_StampsExportedAtInUTC(t *testing.T) {
 	dir := t.TempDir()
 	before := time.Now().UTC().Truncate(time.Second)
 
-	require.NoError(t, manifest.Write(dir, "lolay", nil))
+	require.NoError(t, manifest.Write(dir, "lolay", nil, nil))
 
 	after := time.Now().UTC()
 	stamp := exportedAt(t, readManifestFile(t, dir))
@@ -74,13 +74,13 @@ func TestWrite_StampsExportedAtInUTC(t *testing.T) {
 func TestWrite_NoReposWritesEmptyArray(t *testing.T) {
 	dir := t.TempDir()
 
-	require.NoError(t, manifest.Write(dir, "lolay", nil))
+	require.NoError(t, manifest.Write(dir, "lolay", nil, nil))
 
 	assert.Contains(t, string(readManifestFile(t, dir)), `"repos": []`)
 }
 
 func TestWrite_ReturnsErrorWhenDirectoryIsMissing(t *testing.T) {
-	err := manifest.Write(filepath.Join(t.TempDir(), "missing"), "lolay", goldenRepos)
+	err := manifest.Write(filepath.Join(t.TempDir(), "missing"), "lolay", goldenRepos, nil)
 	require.Error(t, err)
 }
 
@@ -101,7 +101,7 @@ func TestRead_PythonGolden(t *testing.T) {
 
 func TestWriteRead_RoundTrip(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, manifest.Write(dir, "lolay", goldenRepos))
+	require.NoError(t, manifest.Write(dir, "lolay", goldenRepos, nil))
 
 	m, msg, err := manifest.Read(dir)
 	require.NoError(t, err)
@@ -186,4 +186,24 @@ func TestRead_Errors(t *testing.T) {
 			assert.Nil(t, m)
 		})
 	}
+}
+
+func TestWrite_PendingEntriesFollowTheListingUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	pending := []manifest.Repo{
+		{Name: "gone", DefaultBranch: "trunk", Archived: true, HasWiki: true},
+		{Name: "also-gone", DefaultBranch: "main"},
+	}
+
+	require.NoError(t, manifest.Write(dir, "lolay", goldenRepos, pending))
+
+	m, _, err := manifest.Read(dir)
+	require.NoError(t, err)
+	require.NotNil(t, m)
+	assert.Equal(t, []manifest.Repo{
+		{Name: "ghx", DefaultBranch: "main", HasWiki: true},
+		{Name: "old-tool", DefaultBranch: "master", Archived: true},
+		pending[0],
+		pending[1],
+	}, m.Repos)
 }

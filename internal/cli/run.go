@@ -204,8 +204,9 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 	// disk, not at what the last run recorded.
 	check := &originCheck{ctx: ctx, gitPath: gitPath}
 	var removalSummary cloner.SyncSummary
+	var pendingRemovals []manifest.Repo
 	if len(previousRepos) > 0 {
-		removalSummary = handleRemoved(check, outputDir, archivedDir, deletedDir, allRepos, previousRepos, shouldDelete, dryRun)
+		removalSummary, pendingRemovals = handleRemoved(check, outputDir, archivedDir, deletedDir, allRepos, previousRepos, shouldDelete, dryRun)
 	}
 	removalSummary.Extend(reconcileArchived(check, outputDir, archivedDir, repos, shouldDelete, dryRun))
 	if len(removalSummary.Results) > 0 {
@@ -304,7 +305,7 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 		}
 	}
 
-	if err := manifest.Write(outputDir, org, allRepos); err != nil {
+	if err := manifest.Write(outputDir, org, allRepos, pendingRemovals); err != nil {
 		return fmt.Errorf("writing manifest: %w", err)
 	}
 	// The table's closing footer already holds the counts, so on a terminal
@@ -325,13 +326,19 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 // archivedDir, and both places are retired: the disk decides, as in
 // reconcileArchived. What is already in deletedDir is never touched, so a
 // later --delete leaves earlier removals alone.
+//
+// It also returns the previous manifest's entries for the removed repos whose
+// clone or wiki failed to move or delete, for the next manifest to keep: the
+// manifest is the only record of a removal, so without them the next run
+// would never retry. An origin mismatch isn't kept: that directory isn't a
+// clone of the repo, so it isn't ghx's to retry.
 func handleRemoved(
 	check *originCheck,
 	outputDir, archivedDir, deletedDir string,
 	currentRepos []ghapi.RepoInfo,
 	previousRepos []manifest.Repo,
 	shouldDelete, dryRun bool,
-) cloner.SyncSummary {
+) (cloner.SyncSummary, []manifest.Repo) {
 	r := reconciler{check: check, dryRun: dryRun, stamp: time.Now().UTC().Format(deletedStampLayout)}
 	deletedRoot := filepath.Join(outputDir, deletedDir)
 	parents := []string{outputDir, filepath.Join(outputDir, archivedDir)}
@@ -341,13 +348,18 @@ func handleRemoved(
 		currentNames[repo.Name] = struct{}{}
 	}
 	var removed []string
+	entries := map[string]manifest.Repo{}
 	for _, repo := range previousRepos {
 		if _, ok := currentNames[repo.Name]; !ok {
 			removed = append(removed, repo.Name)
+			if _, seen := entries[repo.Name]; !seen {
+				entries[repo.Name] = repo
+			}
 		}
 	}
 	slices.Sort(removed)
 	removed = slices.Compact(removed)
+	var pending []manifest.Repo
 
 	for _, name := range removed {
 		// The names come from the previous manifest, which anyone who can
@@ -357,17 +369,26 @@ func handleRemoved(
 			r.add(name, cloner.ActionSkippedName, err.Error())
 			continue
 		}
+		wiki := name + ".wiki"
 		for _, parent := range parents {
-			dest, ok := r.retire(name, filepath.Join(parent, name), deletedRoot, name, shouldDelete)
-			if ok {
+			repoDir := filepath.Join(parent, name)
+			dest, ok := r.retire(name, repoDir, deletedRoot, name, shouldDelete)
+			switch {
+			case ok:
 				// The wiki goes where its repo went, under the same name, so the
 				// pair stays together even when the repo's name was taken.
-				wiki := name + ".wiki"
 				r.retire(wiki, filepath.Join(parent, wiki), deletedRoot, dest+".wiki", shouldDelete)
+			case !exists(repoDir):
+				// The repo went on an earlier run and its wiki failed to follow,
+				// or never had a clone here: the wiki is retired on its own.
+				r.retire(wiki, filepath.Join(parent, wiki), deletedRoot, wiki, shouldDelete)
 			}
 		}
+		if r.failed[name] || r.failed[wiki] {
+			pending = append(pending, entries[name])
+		}
 	}
-	return r.summary
+	return r.summary, pending
 }
 
 // checkSubdir rejects a --deleted-dir or --archived-dir that isn't a

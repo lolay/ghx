@@ -462,3 +462,77 @@ func TestRun_AWikiStaysWithItsRepoInAConflict(t *testing.T) {
 	assert.DirExists(t, filepath.Join(w.out, "alpha.wiki", ".git"), "the wiki stays beside the repo left in place")
 	assert.NotContains(t, out, "alpha.wiki: moved")
 }
+
+func TestRun_ARemovalThatFailedIsRetriedByTheNextRun(t *testing.T) {
+	tests := []struct {
+		name     string
+		archived bool
+		at       string
+	}{
+		{"active", false, "alpha"},
+		{"archived", true, "ARCHIVED/alpha"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := newWorld(t)
+			w.addRepo("alpha", func(r *ghapitest.Repo) { r.Archived = tt.archived })
+			w.addRepo("beta")
+			w.mustRun()
+			w.removeRepo("alpha")
+			// A dangling symlink where DELETED/ belongs: the move's MkdirAll
+			// fails, as an unwritable directory or a held file would.
+			squatter := filepath.Join(w.out, "DELETED")
+			if err := os.Symlink(filepath.Join(w.out, "nowhere"), squatter); err != nil {
+				t.Skipf("can't make a symlink here: %v", err)
+			}
+
+			out, _ := w.run()
+
+			assert.Contains(t, out, "alpha: failed")
+			assert.DirExists(t, filepath.Join(w.out, filepath.FromSlash(tt.at), ".git"), "the clone stays where it was")
+			assert.Equal(t, []string{"alpha", "beta"}, manifestNames(readManifest(t, w.out)), "the failed removal is kept for the next run")
+
+			require.NoError(t, os.Remove(squatter))
+			out = w.mustRun()
+
+			assert.Equal(t, []string{"DELETED/alpha", "beta"}, repoDirs(t, w.out), "the next run finishes the move")
+			assert.Contains(t, out, "alpha: moved (deleted)")
+			assert.Equal(t, []string{"beta"}, manifestNames(readManifest(t, w.out)), "done, so no longer kept")
+		})
+	}
+}
+
+func TestRun_AWikiLeftBehindByARemovalFollowsItsRepo(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("alpha", func(r *ghapitest.Repo) { r.HasWiki = true })
+	gittest.NewBareRepo(t, w.upstream, "alpha.wiki", "master")
+	w.mustRun("--clone-wiki")
+	w.removeRepo("alpha")
+	// An earlier run moved the repo and failed on its wiki.
+	require.NoError(t, os.MkdirAll(filepath.Join(w.out, "DELETED"), 0o755))
+	require.NoError(t, os.Rename(filepath.Join(w.out, "alpha"), filepath.Join(w.out, "DELETED", "alpha")))
+
+	out := w.mustRun("--clone-wiki")
+
+	assert.Equal(t, []string{"DELETED/alpha", "DELETED/alpha.wiki"}, repoDirs(t, w.out))
+	assert.Contains(t, out, "alpha.wiki: moved (deleted)")
+}
+
+func TestRun_ARemovedRepoWithAnOriginMismatchIsReportedOnce(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("alpha")
+	w.addRepo("beta")
+	w.mustRun()
+	gittest.Git(t, filepath.Join(w.out, "alpha"), "remote", "set-url", "origin", w.bare("beta"))
+	w.removeRepo("alpha")
+
+	out := w.mustRun()
+
+	assert.Contains(t, out, "alpha: skipped (origin mismatch)")
+	assert.Equal(t, []string{"beta"}, manifestNames(readManifest(t, w.out)), "not ghx's clone, so not retried")
+
+	out = w.mustRun()
+
+	assert.NotContains(t, out, "alpha:")
+	assert.DirExists(t, filepath.Join(w.out, "alpha", ".git"), "left alone")
+}

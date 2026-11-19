@@ -335,7 +335,8 @@ API cost and limits are in
   goes with its repo. A repo is handled on the run that finds it gone, so a later
   `--delete` never deletes what is already in `DELETED/`. An earlier clone there
   is never replaced either: a repo removed, recreated and removed again gets a
-  UTC timestamp suffix the second time (`DELETED/x.20261014T013134Z`).
+  UTC timestamp suffix the second time (`DELETED/x.20261014T013134Z`). A move or
+  delete that fails is kept in `.ghx.json` and tried again on the next run.
 - **Archived repos:** cloned into `ARCHIVED/`. Every run checks where each
   synced repo's clone is: an archived repo's clone found in `PATH` is moved
   into `ARCHIVED/`, and an unarchived repo's clone found in `ARCHIVED/` is moved

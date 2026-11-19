@@ -15,6 +15,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   earlier run (by a ghx older than v0.3.0, or before `--clone-wiki` was on)
   now follows its repo, instead of staying put while a second wiki was cloned
   beside the repo.
+- A removed repo whose move into `DELETED/` (or delete) failed is retried on
+  the next run: `.ghx.json` keeps its entry until it succeeds. It used to be
+  dropped from the manifest, leaving the clone in place for good.
 
 ### Changed
 - The `--delete` help, the README and `specs/repo-layout.md` say what it
