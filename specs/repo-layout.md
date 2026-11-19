@@ -7,7 +7,11 @@ a clone there. Users: the Archived repos bullet in [`README.md`](../README.md). 
 
 `<out>` is the output directory (`PATH`). `x` is the repository's name,
 `<archived-dir>` is `--archived-dir` (`ARCHIVED` by default) and `<deleted-dir>` is
-`--deleted-dir` (`DELETED`). Both must be relative paths inside `<out>`.
+`--deleted-dir` (`DELETED`). Both must be relative paths inside `<out>`, and
+neither may be the other or inside it, compared without case (`checkApart`):
+otherwise the archive pass would move a backup out of `<deleted-dir>` as an
+unarchived clone, and a removal would retire, or under `--delete` delete, a
+backup it found in `<archived-dir>`.
 
 | Repo state | Clone | Wiki (`--clone-wiki`) |
 |---|---|---|
@@ -40,8 +44,15 @@ reach it. For each such repo `x`:
 - The repo is archived and `--delete` is set: `other` is deleted, and then
   `other.wiki` the same way. An archived repo isn't synced under `--delete`.
 - Otherwise `other` is moved to `want`'s parent (`moved (archived)` or
-  `moved (unarchived)`), and then `other.wiki` is moved the same way when it
-  exists and `want.wiki` doesn't. The wiki has the same checks as its repo.
+  `moved (unarchived)`).
+- The wiki, `other.wiki`, then goes through the same rules, with the same
+  checks, whenever the repo is no longer at `other`: moved or deleted with it
+  this run, or moved by an earlier run that left the wiki behind (a ghx older
+  than v0.3.0, or `--clone-wiki` turned on after the move). A repo still at
+  `other` after a conflict or an origin mismatch keeps its wiki beside it. A
+  wiki is never moved when the unfiltered listing has a repo named `x.wiki`
+  (ignoring case): that repo's clone has the same directory name and an origin
+  the check can't tell from the wiki's.
 - `--dry-run` reports each planned action with the detail `dry-run` and touches
   nothing.
 
@@ -55,11 +66,36 @@ belongs), the repo shows as `failed` and the next run retries.
 
 A removed repo goes through the same origin check, then moves to `<deleted-dir>`
 or, under `--delete`, is deleted; its wiki then goes the same way, through the
-same check. A removed directory with no `.git` is reported
-`skipped (origin mismatch)`, not moved.
+same check. Both places a clone can be are looked at, `<out>/x` and
+`<out>/<archived-dir>/x` (a repo archived and then removed), and each clone found
+is retired; when both exist, the second takes a stamped name as below. A removed
+directory with no `.git` is reported `skipped (origin mismatch)`, not moved. A
+wiki whose repo is no longer in that place (it went on an earlier run and the
+wiki failed to follow) is retired on its own, under its own name.
+
+The manifest is the only record of a removal, since a removed repo isn't in the
+listing. So when a removed repo's clone or wiki `failed` to move or delete, the
+new manifest keeps that repo's previous entry, unchanged, after the listing's
+repos, and the next run finds it removed again and retries until it succeeds.
+An origin mismatch isn't kept: that directory isn't a clone of the repo, so it is
+reported on the run that finds the repo gone and left alone after that. If the
+org creates a repo of that name again, the listing's entry replaces the kept one.
+A place that can't be checked (a `stat` error other than not found, such as a
+directory the user can't traverse, or a `<deleted-dir>` that is a file) counts as
+`failed`, so the removal is kept until the path can be checked. A repo counts as
+removed only when no listed repo has its name ignoring case: GitHub names are
+case-insensitive, so a repo renamed only in case is still the org's, and on macOS
+or Windows its old directory is its live clone. The wiki rule above holds here too: a listed repo
+named `x.wiki` is never retired as `x`'s wiki.
+
+`--delete` applies to the repos the run finds removed or archived, nothing
+earlier: the run that retires a removed repo writes a manifest without it, so no
+later run sees it again (a failed retire is kept and retried, as above), and nothing in `<deleted-dir>` is ever deleted. A clone
+already in `<archived-dir>` when `--delete` is first used stays there, unsynced.
 
 Nothing already in `<deleted-dir>` is replaced. When `<deleted-dir>/x` exists
-(the repo was removed before, came back and was removed again), the clone moves
+(a repo was removed, a new one was created with the same name, synced, and
+removed in turn), the clone moves
 to `<deleted-dir>/x.<stamp>`, where `<stamp>` is the run's UTC start time as
 `20261014T013134Z` (no colons, so the name is valid on Windows), with `-2`, `-3`
 and so on appended if that is taken too. The result is `moved (deleted)` with a

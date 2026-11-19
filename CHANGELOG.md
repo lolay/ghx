@@ -7,6 +7,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- A repo that was archived and then removed from the organization is moved
+  from `ARCHIVED/` into `DELETED/` (or deleted under `--delete`) with its
+  wiki, instead of staying in `ARCHIVED/` with no message.
+- A wiki left behind when its repo moved in or out of `ARCHIVED/` on an
+  earlier run (by a ghx older than v0.3.0, or before `--clone-wiki` was on)
+  now follows its repo, instead of staying put while a second wiki was cloned
+  beside the repo.
+- A removed repo whose move into `DELETED/` (or delete) failed is retried on
+  the next run: `.ghx.json` keeps its entry until it succeeds. It used to be
+  dropped from the manifest, leaving the clone in place for good. A place that
+  can't be checked, such as an untraversable `ARCHIVED/`, counts as failed.
+- A repo named `x.wiki` in the organization is no longer moved or deleted as
+  the wiki of a repo `x` that was archived or removed.
+- A repo renamed only in case upstream (`alpha` to `Alpha`) is no longer
+  treated as removed, which under `--delete` deleted its clone on macOS and
+  Windows.
+- A run whose `DELETED` is a file, or can't be traversed, reports the
+  removal as failed instead of hanging.
+
+### Changed
+- `--archived-dir` and `--deleted-dir` must be separate directories, neither
+  inside the other. The same directory for both let the archive pass move a
+  backup out of it and a removal delete one under `--delete`.
+- The `--delete` help, the README and `specs/repo-layout.md` say what it
+  covers: repos the run finds removed or archived. It never deletes what an
+  earlier run already moved into `DELETED/`.
+
 ## [v0.4.1] - 2026-11-10
 
 ### Fixed

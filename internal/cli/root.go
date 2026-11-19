@@ -143,7 +143,7 @@ func newRootCmd() *cobra.Command {
 	pf.BoolVar(&f.ssh, "ssh", false, "Shortcut for --protocol ssh.")
 	pf.StringVar(&f.gitAuthor, "git-author", "", "Set git user.name in each cloned repo.")
 	pf.StringVar(&f.gitEmail, "git-email", "", "Set git user.email in each cloned repo.")
-	pf.BoolVar(&f.shouldDelete, "delete", false, "Permanently delete removed/archived repos.")
+	pf.BoolVar(&f.shouldDelete, "delete", false, "Delete newly removed/archived repos; DELETED/ is never touched.")
 	pf.StringVar(&f.deletedDir, "deleted-dir", "", "Directory for removed repos.")
 	pf.StringVar(&f.archivedDir, "archived-dir", "", "Directory for archived repos.")
 	pf.IntVar(&f.maxSize, "max-size", 0, "Skip repos larger than this size in MB.")

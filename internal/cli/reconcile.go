@@ -61,6 +61,9 @@ type reconciler struct {
 	// run, so a repo and its wiki share it.
 	stamp   string
 	summary cloner.SyncSummary
+	// failed holds the names whose move or delete failed, so a removal that
+	// didn't finish can be kept for the next run to retry.
+	failed map[string]bool
 }
 
 // deletedStampLayout formats the UTC time that tells two clones of the same
@@ -70,6 +73,12 @@ const deletedStampLayout = "20060102T150405Z"
 
 func (r *reconciler) add(name string, action cloner.Action, detail string) {
 	r.summary.Append(cloner.RepoResult{Name: name, Action: action, Detail: detail})
+	if action == cloner.ActionFailed {
+		if r.failed == nil {
+			r.failed = map[string]bool{}
+		}
+		r.failed[name] = true
+	}
 }
 
 // reconcileArchived puts each repo's clone where its archived state says it
@@ -79,11 +88,14 @@ func (r *reconciler) add(name string, action cloner.Action, detail string) {
 // wiki follows it either way. That covers a repo archived since the last
 // run, one unarchived since, a mirror with no manifest, and a move an earlier
 // run failed to make. repos is the filtered list, so a repo the run doesn't
-// sync is never moved somewhere it won't be synced.
+// sync is never moved somewhere it won't be synced. listed is every name in
+// the unfiltered listing, lowercased: a wiki is left alone when a repo of its
+// name is listed, since the origin check can't tell the two apart.
 func reconcileArchived(
 	check *originCheck,
 	outputDir, archivedDir string,
 	repos []ghapi.RepoInfo,
+	listed map[string]bool,
 	shouldDelete, dryRun bool,
 ) cloner.SyncSummary {
 	r := reconciler{check: check, dryRun: dryRun}
@@ -101,10 +113,15 @@ func reconcileArchived(
 			action = cloner.ActionMovedArchived
 		}
 		deleteIt := repo.Archived && shouldDelete
-		if r.place(repo.Name, other, want, action, deleteIt) {
-			// The wiki goes where its repo went, or with it under --delete:
-			// left behind, it would never be synced again.
-			wiki := repo.Name + ".wiki"
+		moved := r.place(repo.Name, other, want, action, deleteIt)
+		// The wiki goes where its repo went, or with it under --delete: left
+		// behind, it would never be synced again, and the sync would clone a
+		// second one. That includes a wiki an earlier move left behind (an
+		// older ghx, or --clone-wiki turned on later), once its repo is no
+		// longer at other; a repo still there after a conflict or an origin
+		// mismatch keeps its wiki beside it.
+		wiki := repo.Name + ".wiki"
+		if (moved || !cloner.HasGitDir(other)) && !listed[strings.ToLower(wiki)] {
 			r.place(wiki, other+".wiki", want+".wiki", action, deleteIt)
 		}
 	}
@@ -163,6 +180,12 @@ func (r *reconciler) place(name, other, want string, action cloner.Action, delet
 // an earlier removal's clone, and any work in it, is kept.
 func (r *reconciler) retire(name, dir, deletedRoot, base string, deleteIt bool) (string, bool) {
 	if _, err := os.Stat(dir); err != nil {
+		// Only a clone that isn't there is done with. Anything else (a
+		// directory that can't be read) is a failure, so the removal is kept
+		// and retried once the path can be checked.
+		if !errors.Is(err, fs.ErrNotExist) {
+			r.add(name, cloner.ActionFailed, err.Error())
+		}
 		return "", false
 	}
 	if detail := r.check.mismatch(dir, name); detail != "" {
@@ -179,7 +202,11 @@ func (r *reconciler) retire(name, dir, deletedRoot, base string, deleteIt bool) 
 		r.add(name, cloner.ActionDeleted, dryRunDetail("", r.dryRun))
 		return "", true
 	}
-	dest, detail := r.freeName(deletedRoot, base)
+	dest, detail, err := r.freeName(deletedRoot, base)
+	if err != nil {
+		r.add(name, cloner.ActionFailed, err.Error())
+		return "", false
+	}
 	if !r.dryRun {
 		if err := cloner.MoveRepoTo(dir, filepath.Join(deletedRoot, dest)); err != nil {
 			r.add(name, cloner.ActionFailed, err.Error())
@@ -191,16 +218,39 @@ func (r *reconciler) retire(name, dir, deletedRoot, base string, deleteIt bool) 
 }
 
 // freeName returns base when nothing in root has that name, and otherwise
-// base.<stamp>, or base.<stamp>-2 and so on, with a detail saying why.
-func (r *reconciler) freeName(root, base string) (name, detail string) {
-	if !exists(filepath.Join(root, base)) {
-		return base, ""
+// base.<stamp>, or base.<stamp>-2 and so on, with a detail saying why. A name
+// that can't be checked (root is a file, or can't be traversed) is an error:
+// counting it as taken would try suffixes forever.
+func (r *reconciler) freeName(root, base string) (name, detail string, err error) {
+	isTaken, err := taken(filepath.Join(root, base))
+	if err != nil || !isTaken {
+		return base, "", err
 	}
 	name = base + "." + r.stamp
-	for n := 2; exists(filepath.Join(root, name)); n++ {
+	for n := 2; ; n++ {
+		if isTaken, err = taken(filepath.Join(root, name)); err != nil {
+			return "", "", err
+		}
+		if !isTaken {
+			break
+		}
 		name = fmt.Sprintf("%s.%s-%d", base, r.stamp, n)
 	}
-	return name, fmt.Sprintf("%s exists; moved to %s", filepath.Join(root, base), filepath.Join(root, name))
+	return name, fmt.Sprintf("%s exists; moved to %s", filepath.Join(root, base), filepath.Join(root, name)), nil
+}
+
+// taken reports whether anything is at path, and an error when that can't
+// be told.
+func taken(path string) (bool, error) {
+	_, err := os.Lstat(path)
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, fs.ErrNotExist):
+		return false, nil
+	default:
+		return false, err
+	}
 }
 
 func dryRunDetail(detail string, dryRun bool) string {

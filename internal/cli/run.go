@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jedib0t/go-pretty/v6/text"
@@ -77,6 +78,9 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 		return err
 	}
 	if err := checkSubdir("archived-dir", archivedDir); err != nil {
+		return err
+	}
+	if err := checkApart(archivedDir, deletedDir); err != nil {
 		return err
 	}
 
@@ -204,10 +208,11 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 	// disk, not at what the last run recorded.
 	check := &originCheck{ctx: ctx, gitPath: gitPath}
 	var removalSummary cloner.SyncSummary
+	var pendingRemovals []manifest.Repo
 	if len(previousRepos) > 0 {
-		removalSummary = handleRemoved(check, outputDir, allRepos, previousRepos, shouldDelete, deletedDir, dryRun)
+		removalSummary, pendingRemovals = handleRemoved(check, outputDir, archivedDir, deletedDir, allRepos, previousRepos, shouldDelete, dryRun)
 	}
-	removalSummary.Extend(reconcileArchived(check, outputDir, archivedDir, repos, shouldDelete, dryRun))
+	removalSummary.Extend(reconcileArchived(check, outputDir, archivedDir, repos, listedNames(allRepos), shouldDelete, dryRun))
 	if len(removalSummary.Results) > 0 {
 		ui.Println()
 		ui.Println(text.Bold.Sprint("Changes for removed, archived and unarchived repos:"))
@@ -304,7 +309,7 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 		}
 	}
 
-	if err := manifest.Write(outputDir, org, allRepos); err != nil {
+	if err := manifest.Write(outputDir, org, allRepos, pendingRemovals); err != nil {
 		return fmt.Errorf("writing manifest: %w", err)
 	}
 	// The table's closing footer already holds the counts, so on a terminal
@@ -319,33 +324,45 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 
 // handleRemoved moves each repo the previous manifest lists and the org no
 // longer has into deletedDir, or deletes it under shouldDelete, once its
-// origin shows it is a clone of that repo; its wiki goes with it. A removed repo is absent from the
-// listing, so the manifest is the only record of it. Archived repos are
-// reconcileArchived's.
+// origin shows it is a clone of that repo; its wiki goes with it. A removed
+// repo is absent from the listing, so the manifest is the only record of it.
+// Its clone may sit in the output directory or, if it was archived, in
+// archivedDir, and both places are retired: the disk decides, as in
+// reconcileArchived. What is already in deletedDir is never touched, so a
+// later --delete leaves earlier removals alone.
+//
+// It also returns the previous manifest's entries for the removed repos whose
+// clone or wiki failed to move or delete, for the next manifest to keep: the
+// manifest is the only record of a removal, so without them the next run
+// would never retry. An origin mismatch isn't kept: that directory isn't a
+// clone of the repo, so it isn't ghx's to retry.
 func handleRemoved(
 	check *originCheck,
-	outputDir string,
+	outputDir, archivedDir, deletedDir string,
 	currentRepos []ghapi.RepoInfo,
 	previousRepos []manifest.Repo,
-	shouldDelete bool,
-	deletedDir string,
-	dryRun bool,
-) cloner.SyncSummary {
+	shouldDelete, dryRun bool,
+) (cloner.SyncSummary, []manifest.Repo) {
 	r := reconciler{check: check, dryRun: dryRun, stamp: time.Now().UTC().Format(deletedStampLayout)}
 	deletedRoot := filepath.Join(outputDir, deletedDir)
+	parents := []string{outputDir, filepath.Join(outputDir, archivedDir)}
+	listed := listedNames(currentRepos)
 
-	currentNames := map[string]struct{}{}
-	for _, repo := range currentRepos {
-		currentNames[repo.Name] = struct{}{}
-	}
 	var removed []string
+	entries := map[string]manifest.Repo{}
 	for _, repo := range previousRepos {
-		if _, ok := currentNames[repo.Name]; !ok {
+		// Without case: a repo renamed only in case is still the org's, and on
+		// a case-insensitive file system its old directory is its live clone.
+		if !listed[strings.ToLower(repo.Name)] {
 			removed = append(removed, repo.Name)
+			if _, seen := entries[repo.Name]; !seen {
+				entries[repo.Name] = repo
+			}
 		}
 	}
 	slices.Sort(removed)
 	removed = slices.Compact(removed)
+	var pending []manifest.Repo
 
 	for _, name := range removed {
 		// The names come from the previous manifest, which anyone who can
@@ -355,16 +372,61 @@ func handleRemoved(
 			r.add(name, cloner.ActionSkippedName, err.Error())
 			continue
 		}
-		repoDir := filepath.Join(outputDir, name)
-		dest, ok := r.retire(name, repoDir, deletedRoot, name, shouldDelete)
-		if ok {
-			// The wiki goes where its repo went, under the same name, so the
-			// pair stays together even when the repo's name was taken.
-			wiki := name + ".wiki"
-			r.retire(wiki, filepath.Join(outputDir, wiki), deletedRoot, dest+".wiki", shouldDelete)
+		wiki := name + ".wiki"
+		// A listed repo named like the wiki has an origin the check can't
+		// tell from the wiki's, and it isn't removed.
+		wikiIsListed := listed[strings.ToLower(wiki)]
+		for _, parent := range parents {
+			repoDir := filepath.Join(parent, name)
+			dest, ok := r.retire(name, repoDir, deletedRoot, name, shouldDelete)
+			switch {
+			case wikiIsListed:
+			case ok:
+				// The wiki goes where its repo went, under the same name, so the
+				// pair stays together even when the repo's name was taken.
+				r.retire(wiki, filepath.Join(parent, wiki), deletedRoot, dest+".wiki", shouldDelete)
+			case !exists(repoDir):
+				// The repo went on an earlier run and its wiki failed to follow,
+				// or never had a clone here: the wiki is retired on its own.
+				r.retire(wiki, filepath.Join(parent, wiki), deletedRoot, wiki, shouldDelete)
+			}
+		}
+		if r.failed[name] || r.failed[wiki] {
+			pending = append(pending, entries[name])
 		}
 	}
-	return r.summary
+	return r.summary, pending
+}
+
+// listedNames is the set of repo names in the listing, lowercased: GitHub
+// names are case-insensitive, and so are the default file systems on macOS
+// and Windows.
+func listedNames(repos []ghapi.RepoInfo) map[string]bool {
+	names := make(map[string]bool, len(repos))
+	for _, r := range repos {
+		names[strings.ToLower(r.Name)] = true
+	}
+	return names
+}
+
+// checkApart rejects an --archived-dir and a --deleted-dir that are the same
+// directory or one inside the other. Each is the other's source: the archive
+// pass would move a backup in the deleted directory out as an unarchived
+// clone, and a removal would retire, or under --delete delete, a backup it
+// finds in the archived one. Compared without case, so a case-insensitive file
+// system's aliases are caught; on a case-sensitive one that only refuses two
+// names that differ by case, the safe way to be wrong.
+func checkApart(archivedDir, deletedDir string) error {
+	if within(archivedDir, deletedDir) || within(deletedDir, archivedDir) {
+		return fmt.Errorf("archived-dir %q and deleted-dir %q must be separate directories, neither inside the other", archivedDir, deletedDir)
+	}
+	return nil
+}
+
+// within reports whether path is root or inside it, ignoring case.
+func within(root, path string) bool {
+	rel, err := filepath.Rel(strings.ToLower(filepath.Clean(root)), strings.ToLower(filepath.Clean(path)))
+	return err == nil && (rel == "." || filepath.IsLocal(rel))
 }
 
 // checkSubdir rejects a --deleted-dir or --archived-dir that isn't a

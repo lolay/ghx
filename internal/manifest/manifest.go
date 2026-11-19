@@ -4,6 +4,8 @@
 // in UTC to the second where Python wrote isoformat() with microseconds and
 // "+00:00". Neither version reads exported_at back, so a manifest from the
 // Python version is interchangeable with this one; testdata/golden pins it.
+// The repos array can also list a repo the organization no longer has, whose
+// removal failed and is retried on the next run; the schema is unchanged.
 package manifest
 
 import (
@@ -60,14 +62,17 @@ func Read(dir string) (*Manifest, string, error) {
 	return &m, msg, nil
 }
 
-// Write serializes a manifest capturing all repos in the given list and
-// writes it to <dir>/.ghx.json with 2-space indentation and a trailing
-// newline, matching the Python layout (see the package comment).
-func Write(dir, org string, repos []ghapi.RepoInfo) error {
+// Write serializes a manifest capturing all repos in the given list, then
+// the pending entries, and writes it to <dir>/.ghx.json with 2-space
+// indentation and a trailing newline, matching the Python layout (see the
+// package comment). pending carries, unchanged, the previous entries of
+// repos the org no longer has whose removal failed, so the next run, which
+// finds removals by comparing the manifest with the listing, retries them.
+func Write(dir, org string, repos []ghapi.RepoInfo, pending []Repo) error {
 	m := Manifest{
 		Org:        org,
 		ExportedAt: time.Now().UTC().Format(time.RFC3339),
-		Repos:      make([]Repo, 0, len(repos)),
+		Repos:      make([]Repo, 0, len(repos)+len(pending)),
 	}
 	for _, r := range repos {
 		m.Repos = append(m.Repos, Repo{
@@ -77,6 +82,7 @@ func Write(dir, org string, repos []ghapi.RepoInfo) error {
 			HasWiki:       r.HasWiki,
 		})
 	}
+	m.Repos = append(m.Repos, pending...)
 	buf, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return err
