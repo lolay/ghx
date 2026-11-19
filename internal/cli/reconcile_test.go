@@ -3,7 +3,10 @@ package cli_test
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -628,4 +631,69 @@ func TestRun_ARemovalWithADeletedDirThatIsAFileFailsAndIsKept(t *testing.T) {
 
 	assert.Equal(t, []string{"DELETED/alpha", "beta"}, repoDirs(t, w.out))
 	assert.Contains(t, out, "alpha: moved (deleted)")
+}
+
+// stampedIn lists the names in dir/ that are name.<stamp>, the shape a
+// removal takes in a shared archived and deleted directory.
+func stampedIn(t *testing.T, dir, name string) []string {
+	t.Helper()
+	matches, err := filepath.Glob(filepath.Join(dir, name+".*"))
+	require.NoError(t, err)
+	var stamped []string
+	for _, m := range matches {
+		base := filepath.Base(m)
+		if regexp.MustCompile(`^` + regexp.QuoteMeta(name) + `\.\d{8}T\d{6}Z(-\d+)?$`).MatchString(base) {
+			stamped = append(stamped, base)
+		}
+	}
+	return stamped
+}
+
+func TestRun_ASharedArchivedAndDeletedDirectoryKeepsBackupsApart(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("alpha")
+	w.addRepo("beta", func(r *ghapitest.Repo) { r.Archived = true })
+	w.addRepo("gamma")
+	alpha := w.repos[0]
+	flags := []string{"--archived-dir", "old", "--deleted-dir", "old"}
+	run := func(extra ...string) string { return w.mustRun(append(slices.Clone(flags), extra...)...) }
+	shared := filepath.Join(w.out, "old")
+
+	run()
+	require.Equal(t, []string{"alpha", "gamma", "old/beta"}, repoDirs(t, w.out))
+
+	// Removed, active and archived alike: both take a stamped name, so a
+	// plain name in old/ is only ever an archived clone.
+	w.removeRepo("alpha")
+	w.removeRepo("beta")
+	out := run()
+	require.Len(t, stampedIn(t, shared, "alpha"), 1, "alpha was moved in under a stamped name")
+	require.Len(t, stampedIn(t, shared, "beta"), 1, "beta was renamed in place to a stamped name")
+	assert.NoDirExists(t, filepath.Join(shared, "alpha"))
+	assert.NoDirExists(t, filepath.Join(shared, "beta"))
+	assert.Contains(t, out, "the archived and deleted directories are the same")
+	backup := filepath.Join(shared, stampedIn(t, shared, "alpha")[0])
+	marker := filepath.Join(backup, "first-life.txt")
+	require.NoError(t, os.WriteFile(marker, []byte("kept\n"), 0o644))
+
+	// The repo comes back and is archived: its clone moves to old/alpha,
+	// beside the backup, which nothing touches.
+	w.repos = append(w.repos, alpha)
+	w.publish()
+	run()
+	w.archiveRepo("alpha")
+	out = run()
+	assert.DirExists(t, filepath.Join(shared, "alpha", ".git"))
+	assert.Contains(t, out, "alpha: moved (archived)")
+	assert.FileExists(t, marker, "the backup was never mistaken for the archived clone")
+
+	// Removed again under --delete: the archived clone goes, the backup stays.
+	w.removeRepo("alpha")
+	out = run("--delete")
+	assert.NoDirExists(t, filepath.Join(shared, "alpha"))
+	assert.Contains(t, out, "alpha: deleted")
+	assert.FileExists(t, marker, "--delete never touches an earlier removal")
+	assert.Equal(t, []string{"gamma"}, slices.DeleteFunc(repoDirs(t, w.out), func(d string) bool {
+		return strings.HasPrefix(d, "old/")
+	}))
 }

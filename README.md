@@ -380,8 +380,10 @@ stops before contacting GitHub, while `--dry-run` works without it.
   dot or a space. The summary lists each one with the reason.
 - **`--deleted-dir` and `--archived-dir`** must be directories inside `PATH`,
   such as `DELETED` or `old/removed`: not `.`, `..` or an absolute path. They
-  must also be separate, neither the same as nor inside the other (ignoring
-  case), since each would otherwise treat the other's clones as its own.
+  can be the same directory, or separate ones, but not one inside the other
+  (ignoring case). When they're the same, every removed repo gets the UTC
+  timestamp suffix (`old/x.20261014T013134Z`), so a plain `old/x` is always an
+  archived clone and a stamped one always a removed repo's backup.
 - **Long paths on Windows.** ghx turns on `core.longpaths` for its own git
   commands and in each clone it makes, so git can check out paths longer than
   260 characters. Other Windows tools may still fail on them, so keep `PATH`

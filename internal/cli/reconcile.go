@@ -59,7 +59,11 @@ type reconciler struct {
 	dryRun bool
 	// stamp suffixes a name already taken in the deleted directory; one per
 	// run, so a repo and its wiki share it.
-	stamp   string
+	stamp string
+	// shared is set when the archived and deleted directories are one: every
+	// removal then takes a stamped name, so a plain x there is always an
+	// archived clone and x.<stamp> always a removal's backup.
+	shared  bool
 	summary cloner.SyncSummary
 	// failed holds the names whose move or delete failed, so a removal that
 	// didn't finish can be kept for the next run to retry.
@@ -176,9 +180,10 @@ func (r *reconciler) place(name, other, want string, action cloner.Action, delet
 // or deletes it under deleteIt, and reports the name it moved to and whether
 // it moved or deleted it (or in a dry run, would). Nothing missing, nothing
 // whose origin doesn't name the repo, and nothing already in deletedRoot is
-// touched: when base is taken, the clone goes to base.<stamp> beside it, so
-// an earlier removal's clone, and any work in it, is kept.
-func (r *reconciler) retire(name, dir, deletedRoot, base string, deleteIt bool) (string, bool) {
+// touched: when base is taken, or always under stamp, the clone goes to
+// base.<stamp> beside it, so an earlier removal's clone, and any work in it,
+// is kept.
+func (r *reconciler) retire(name, dir, deletedRoot, base string, stamp, deleteIt bool) (string, bool) {
 	if _, err := os.Stat(dir); err != nil {
 		// Only a clone that isn't there is done with. Anything else (a
 		// directory that can't be read) is a failure, so the removal is kept
@@ -202,7 +207,7 @@ func (r *reconciler) retire(name, dir, deletedRoot, base string, deleteIt bool) 
 		r.add(name, cloner.ActionDeleted, dryRunDetail("", r.dryRun))
 		return "", true
 	}
-	dest, detail, err := r.freeName(deletedRoot, base)
+	dest, detail, err := r.freeName(deletedRoot, base, stamp)
 	if err != nil {
 		r.add(name, cloner.ActionFailed, err.Error())
 		return "", false
@@ -217,18 +222,24 @@ func (r *reconciler) retire(name, dir, deletedRoot, base string, deleteIt bool) 
 	return dest, true
 }
 
-// freeName returns base when nothing in root has that name, and otherwise
-// base.<stamp>, or base.<stamp>-2 and so on, with a detail saying why. A name
-// that can't be checked (root is a file, or can't be traversed) is an error:
-// counting it as taken would try suffixes forever.
-func (r *reconciler) freeName(root, base string) (name, detail string, err error) {
-	isTaken, err := taken(filepath.Join(root, base))
-	if err != nil || !isTaken {
-		return base, "", err
+// freeName returns base when nothing in root has that name and stamp isn't
+// set, and otherwise base.<stamp>, or base.<stamp>-2 and so on, with a detail
+// saying why. A name that can't be checked (root is a file, or can't be
+// traversed) is an error: counting it as taken would try suffixes forever.
+func (r *reconciler) freeName(root, base string, stamp bool) (name, detail string, err error) {
+	why := filepath.Join(root, base) + " exists"
+	if stamp {
+		why = "the archived and deleted directories are the same"
+	} else {
+		isTaken, err := taken(filepath.Join(root, base))
+		if err != nil || !isTaken {
+			return base, "", err
+		}
 	}
 	name = base + "." + r.stamp
 	for n := 2; ; n++ {
-		if isTaken, err = taken(filepath.Join(root, name)); err != nil {
+		isTaken, err := taken(filepath.Join(root, name))
+		if err != nil {
 			return "", "", err
 		}
 		if !isTaken {
@@ -236,7 +247,7 @@ func (r *reconciler) freeName(root, base string) (name, detail string, err error
 		}
 		name = fmt.Sprintf("%s.%s-%d", base, r.stamp, n)
 	}
-	return name, fmt.Sprintf("%s exists; moved to %s", filepath.Join(root, base), filepath.Join(root, name)), nil
+	return name, fmt.Sprintf("%s; moved to %s", why, filepath.Join(root, name)), nil
 }
 
 // taken reports whether anything is at path, and an error when that can't

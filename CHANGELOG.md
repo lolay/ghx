@@ -7,6 +7,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- `--archived-dir` and `--deleted-dir` can be the same directory again. Every
+  removed repo then gets the timestamp suffix (`old/x.20261014T013134Z`), even
+  when `old/x` is free, and a removed archived repo is renamed in place, so a
+  plain `old/x` is always an archived clone and a stamped one always a backup.
+  One inside the other is still refused.
+
 ## [v0.4.2] - 2026-11-19
 
 ### Fixed

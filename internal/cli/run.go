@@ -343,7 +343,12 @@ func handleRemoved(
 	previousRepos []manifest.Repo,
 	shouldDelete, dryRun bool,
 ) (cloner.SyncSummary, []manifest.Repo) {
-	r := reconciler{check: check, dryRun: dryRun, stamp: time.Now().UTC().Format(deletedStampLayout)}
+	r := reconciler{
+		check:  check,
+		dryRun: dryRun,
+		stamp:  time.Now().UTC().Format(deletedStampLayout),
+		shared: sameDir(archivedDir, deletedDir),
+	}
 	deletedRoot := filepath.Join(outputDir, deletedDir)
 	parents := []string{outputDir, filepath.Join(outputDir, archivedDir)}
 	listed := listedNames(currentRepos)
@@ -376,19 +381,25 @@ func handleRemoved(
 		// A listed repo named like the wiki has an origin the check can't
 		// tell from the wiki's, and it isn't removed.
 		wikiIsListed := listed[strings.ToLower(wiki)]
+		// A wiki retired on its own keeps the shared directory's rule: only a
+		// stamped name there is a backup.
+		wikiBase := wiki
+		if r.shared {
+			wikiBase = name + "." + r.stamp + ".wiki"
+		}
 		for _, parent := range parents {
 			repoDir := filepath.Join(parent, name)
-			dest, ok := r.retire(name, repoDir, deletedRoot, name, shouldDelete)
+			dest, ok := r.retire(name, repoDir, deletedRoot, name, r.shared, shouldDelete)
 			switch {
 			case wikiIsListed:
 			case ok:
 				// The wiki goes where its repo went, under the same name, so the
 				// pair stays together even when the repo's name was taken.
-				r.retire(wiki, filepath.Join(parent, wiki), deletedRoot, dest+".wiki", shouldDelete)
+				r.retire(wiki, filepath.Join(parent, wiki), deletedRoot, dest+".wiki", false, shouldDelete)
 			case !exists(repoDir):
 				// The repo went on an earlier run and its wiki failed to follow,
 				// or never had a clone here: the wiki is retired on its own.
-				r.retire(wiki, filepath.Join(parent, wiki), deletedRoot, wiki, shouldDelete)
+				r.retire(wiki, filepath.Join(parent, wiki), deletedRoot, wikiBase, false, shouldDelete)
 			}
 		}
 		if r.failed[name] || r.failed[wiki] {
@@ -409,18 +420,26 @@ func listedNames(repos []ghapi.RepoInfo) map[string]bool {
 	return names
 }
 
-// checkApart rejects an --archived-dir and a --deleted-dir that are the same
-// directory or one inside the other. Each is the other's source: the archive
-// pass would move a backup in the deleted directory out as an unarchived
-// clone, and a removal would retire, or under --delete delete, a backup it
-// finds in the archived one. Compared without case, so a case-insensitive file
-// system's aliases are caught; on a case-sensitive one that only refuses two
-// names that differ by case, the safe way to be wrong.
+// checkApart rejects an --archived-dir and a --deleted-dir where one is inside
+// the other: a repo named like the inner directory would collide with it.
+// The same directory for both is allowed, and handleRemoved then stamps every
+// removal so a backup can't be taken for an archived clone. Compared without
+// case, so a case-insensitive file system's aliases count; on a case-sensitive
+// one that only treats two names that differ by case as one directory, which
+// at worst stamps removals that didn't need it.
 func checkApart(archivedDir, deletedDir string) error {
+	if sameDir(archivedDir, deletedDir) {
+		return nil
+	}
 	if within(archivedDir, deletedDir) || within(deletedDir, archivedDir) {
-		return fmt.Errorf("archived-dir %q and deleted-dir %q must be separate directories, neither inside the other", archivedDir, deletedDir)
+		return fmt.Errorf("archived-dir %q and deleted-dir %q must be the same directory or separate ones, neither inside the other", archivedDir, deletedDir)
 	}
 	return nil
+}
+
+// sameDir reports whether a and b name the same directory, ignoring case.
+func sameDir(a, b string) bool {
+	return within(a, b) && within(b, a)
 }
 
 // within reports whether path is root or inside it, ignoring case.

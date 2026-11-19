@@ -8,10 +8,18 @@ a clone there. Users: the Archived repos bullet in [`README.md`](../README.md). 
 `<out>` is the output directory (`PATH`). `x` is the repository's name,
 `<archived-dir>` is `--archived-dir` (`ARCHIVED` by default) and `<deleted-dir>` is
 `--deleted-dir` (`DELETED`). Both must be relative paths inside `<out>`, and
-neither may be the other or inside it, compared without case (`checkApart`):
-otherwise the archive pass would move a backup out of `<deleted-dir>` as an
-unarchived clone, and a removal would retire, or under `--delete` delete, a
-backup it found in `<archived-dir>`.
+neither may be inside the other, compared without case (`checkApart`): a repo
+named like the inner directory would collide with it.
+
+They may be the same directory (`sameDir`, also without case). Then every
+removal takes a stamped name, `x.<stamp>`, even when `x` is free, and a removed
+archived repo's clone is renamed in place from `x` to `x.<stamp>`. So in the
+shared directory a plain `x` is only ever an archived clone and `x.<stamp>`
+only ever a removal's backup: the archive pass, which looks at plain names,
+never moves a backup out as an unarchived clone, and a removal, which looks at
+`<archived-dir>/x`, never retires or deletes one. A plain `x` left there by an
+earlier ghx, which didn't stamp, can't be told apart and counts as an
+archived clone.
 
 | Repo state | Clone | Wiki (`--clone-wiki`) |
 |---|---|---|
@@ -100,7 +108,9 @@ to `<deleted-dir>/x.<stamp>`, where `<stamp>` is the run's UTC start time as
 `20261014T013134Z` (no colons, so the name is valid on Windows), with `-2`, `-3`
 and so on appended if that is taken too. The result is `moved (deleted)` with a
 detail naming both paths. The wiki takes its repo's final name plus `.wiki`, so
-the pair stays together.
+the pair stays together. With a shared archived and deleted directory, the stamp
+is always added (see above); a wiki retired on its own there is
+`x.<stamp>.wiki`.
 
 ## Origin check
 

@@ -37,13 +37,11 @@ func TestRun_MoveDirectoriesMustStayInsideTheOutputDirectory(t *testing.T) {
 	}
 }
 
-func TestRun_ArchivedAndDeletedDirectoriesMustNotOverlap(t *testing.T) {
+func TestRun_ArchivedAndDeletedDirectoriesMustNotNest(t *testing.T) {
 	tests := []struct {
 		name string
 		args []string
 	}{
-		{"the same directory", []string{"--archived-dir", "DELETED"}},
-		{"the same directory in another case", []string{"--archived-dir", "deleted"}},
 		{"archived inside deleted", []string{"--archived-dir", filepath.Join("DELETED", "cold")}},
 		{"deleted inside archived", []string{"--deleted-dir", filepath.Join("ARCHIVED", "gone")}},
 	}
@@ -55,7 +53,7 @@ func TestRun_ArchivedAndDeletedDirectoriesMustNotOverlap(t *testing.T) {
 			_, err := w.run(tt.args...)
 
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), "must be separate directories")
+			assert.Contains(t, err.Error(), "must be the same directory or separate ones")
 			assert.Empty(t, repoDirs(t, w.out))
 			assert.Empty(t, w.api.Requests(), "nothing was asked of GitHub")
 		})
