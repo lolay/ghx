@@ -88,11 +88,14 @@ func (r *reconciler) add(name string, action cloner.Action, detail string) {
 // wiki follows it either way. That covers a repo archived since the last
 // run, one unarchived since, a mirror with no manifest, and a move an earlier
 // run failed to make. repos is the filtered list, so a repo the run doesn't
-// sync is never moved somewhere it won't be synced.
+// sync is never moved somewhere it won't be synced. listed is every name in
+// the unfiltered listing, lowercased: a wiki is left alone when a repo of its
+// name is listed, since the origin check can't tell the two apart.
 func reconcileArchived(
 	check *originCheck,
 	outputDir, archivedDir string,
 	repos []ghapi.RepoInfo,
+	listed map[string]bool,
 	shouldDelete, dryRun bool,
 ) cloner.SyncSummary {
 	r := reconciler{check: check, dryRun: dryRun}
@@ -117,8 +120,8 @@ func reconcileArchived(
 		// older ghx, or --clone-wiki turned on later), once its repo is no
 		// longer at other; a repo still there after a conflict or an origin
 		// mismatch keeps its wiki beside it.
-		if moved || !cloner.HasGitDir(other) {
-			wiki := repo.Name + ".wiki"
+		wiki := repo.Name + ".wiki"
+		if (moved || !cloner.HasGitDir(other)) && !listed[strings.ToLower(wiki)] {
 			r.place(wiki, other+".wiki", want+".wiki", action, deleteIt)
 		}
 	}
@@ -177,6 +180,12 @@ func (r *reconciler) place(name, other, want string, action cloner.Action, delet
 // an earlier removal's clone, and any work in it, is kept.
 func (r *reconciler) retire(name, dir, deletedRoot, base string, deleteIt bool) (string, bool) {
 	if _, err := os.Stat(dir); err != nil {
+		// Only a clone that isn't there is done with. Anything else (a
+		// directory that can't be read) is a failure, so the removal is kept
+		// and retried once the path can be checked.
+		if !errors.Is(err, fs.ErrNotExist) {
+			r.add(name, cloner.ActionFailed, err.Error())
+		}
 		return "", false
 	}
 	if detail := r.check.mismatch(dir, name); detail != "" {

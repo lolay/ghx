@@ -3,6 +3,7 @@ package cli_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -535,4 +536,58 @@ func TestRun_ARemovedRepoWithAnOriginMismatchIsReportedOnce(t *testing.T) {
 
 	assert.NotContains(t, out, "alpha:")
 	assert.DirExists(t, filepath.Join(w.out, "alpha", ".git"), "left alone")
+}
+
+func TestRun_AListedRepoNamedLikeAWikiIsNeverMovedAsOne(t *testing.T) {
+	tests := []struct {
+		name   string
+		change func(w *world)
+		want   []string
+	}{
+		{"alpha removed", func(w *world) { w.removeRepo("alpha") }, []string{"DELETED/alpha", "alpha.wiki"}},
+		{"alpha archived", func(w *world) { w.archiveRepo("alpha") }, []string{"ARCHIVED/alpha", "alpha.wiki"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := newWorld(t)
+			w.addRepo("alpha")
+			w.addRepo("alpha.wiki")
+			w.mustRun()
+			require.Equal(t, []string{"alpha", "alpha.wiki"}, repoDirs(t, w.out))
+			marker := filepath.Join(w.out, "alpha.wiki", "mine.txt")
+			require.NoError(t, os.WriteFile(marker, []byte("local work\n"), 0o644))
+			tt.change(w)
+
+			out := w.mustRun()
+
+			assert.Equal(t, tt.want, repoDirs(t, w.out))
+			assert.FileExists(t, marker, "the listed repo's clone stays, with its work")
+			assert.NotContains(t, out, "alpha.wiki: moved")
+		})
+	}
+}
+
+func TestRun_ARemovalWhosePlaceCantBeCheckedIsKept(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs a directory the test user can't traverse")
+	}
+	w := newWorld(t)
+	w.addRepo("alpha", func(r *ghapitest.Repo) { r.Archived = true })
+	w.addRepo("beta")
+	w.mustRun()
+	w.removeRepo("alpha")
+	archived := filepath.Join(w.out, "ARCHIVED")
+	require.NoError(t, os.Chmod(archived, 0o000))
+	t.Cleanup(func() { _ = os.Chmod(archived, 0o755) })
+
+	out, _ := w.run()
+
+	assert.Contains(t, out, "alpha: failed")
+	assert.Equal(t, []string{"alpha", "beta"}, manifestNames(readManifest(t, w.out)), "kept for the next run")
+
+	require.NoError(t, os.Chmod(archived, 0o755))
+	out = w.mustRun()
+
+	assert.Equal(t, []string{"DELETED/alpha", "beta"}, repoDirs(t, w.out))
+	assert.Contains(t, out, "alpha: moved (deleted)")
 }

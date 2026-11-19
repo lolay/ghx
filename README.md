@@ -379,7 +379,9 @@ stops before contacting GitHub, while `--dry-run` works without it.
   `AUX`, `NUL` or `COM1` (with or without an extension), and names ending in a
   dot or a space. The summary lists each one with the reason.
 - **`--deleted-dir` and `--archived-dir`** must be directories inside `PATH`,
-  such as `DELETED` or `old/removed`: not `.`, `..` or an absolute path.
+  such as `DELETED` or `old/removed`: not `.`, `..` or an absolute path. They
+  must also be separate, neither the same as nor inside the other (ignoring
+  case), since each would otherwise treat the other's clones as its own.
 - **Long paths on Windows.** ghx turns on `core.longpaths` for its own git
   commands and in each clone it makes, so git can check out paths longer than
   260 characters. Other Windows tools may still fail on them, so keep `PATH`

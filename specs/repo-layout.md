@@ -7,7 +7,11 @@ a clone there. Users: the Archived repos bullet in [`README.md`](../README.md). 
 
 `<out>` is the output directory (`PATH`). `x` is the repository's name,
 `<archived-dir>` is `--archived-dir` (`ARCHIVED` by default) and `<deleted-dir>` is
-`--deleted-dir` (`DELETED`). Both must be relative paths inside `<out>`.
+`--deleted-dir` (`DELETED`). Both must be relative paths inside `<out>`, and
+neither may be the other or inside it, compared without case (`checkApart`):
+otherwise the archive pass would move a backup out of `<deleted-dir>` as an
+unarchived clone, and a removal would retire, or under `--delete` delete, a
+backup it found in `<archived-dir>`.
 
 | Repo state | Clone | Wiki (`--clone-wiki`) |
 |---|---|---|
@@ -45,7 +49,10 @@ reach it. For each such repo `x`:
   checks, whenever the repo is no longer at `other`: moved or deleted with it
   this run, or moved by an earlier run that left the wiki behind (a ghx older
   than v0.3.0, or `--clone-wiki` turned on after the move). A repo still at
-  `other` after a conflict or an origin mismatch keeps its wiki beside it.
+  `other` after a conflict or an origin mismatch keeps its wiki beside it. A
+  wiki is never moved when the unfiltered listing has a repo named `x.wiki`
+  (ignoring case): that repo's clone has the same directory name and an origin
+  the check can't tell from the wiki's.
 - `--dry-run` reports each planned action with the detail `dry-run` and touches
   nothing.
 
@@ -73,6 +80,10 @@ repos, and the next run finds it removed again and retries until it succeeds.
 An origin mismatch isn't kept: that directory isn't a clone of the repo, so it is
 reported on the run that finds the repo gone and left alone after that. If the
 org creates a repo of that name again, the listing's entry replaces the kept one.
+A place that can't be checked (a `stat` error other than not found, such as a
+directory the user can't traverse) counts as `failed`, so the removal is kept
+until the path can be checked. The wiki rule above holds here too: a listed repo
+named `x.wiki` is never retired as `x`'s wiki.
 
 `--delete` applies to the repos the run finds removed or archived, nothing
 earlier: the run that retires a removed repo writes a manifest without it, so no

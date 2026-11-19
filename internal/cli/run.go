@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jedib0t/go-pretty/v6/text"
@@ -77,6 +78,9 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 		return err
 	}
 	if err := checkSubdir("archived-dir", archivedDir); err != nil {
+		return err
+	}
+	if err := checkApart(archivedDir, deletedDir); err != nil {
 		return err
 	}
 
@@ -208,7 +212,7 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 	if len(previousRepos) > 0 {
 		removalSummary, pendingRemovals = handleRemoved(check, outputDir, archivedDir, deletedDir, allRepos, previousRepos, shouldDelete, dryRun)
 	}
-	removalSummary.Extend(reconcileArchived(check, outputDir, archivedDir, repos, shouldDelete, dryRun))
+	removalSummary.Extend(reconcileArchived(check, outputDir, archivedDir, repos, listedNames(allRepos), shouldDelete, dryRun))
 	if len(removalSummary.Results) > 0 {
 		ui.Println()
 		ui.Println(text.Bold.Sprint("Changes for removed, archived and unarchived repos:"))
@@ -342,6 +346,7 @@ func handleRemoved(
 	r := reconciler{check: check, dryRun: dryRun, stamp: time.Now().UTC().Format(deletedStampLayout)}
 	deletedRoot := filepath.Join(outputDir, deletedDir)
 	parents := []string{outputDir, filepath.Join(outputDir, archivedDir)}
+	listed := listedNames(currentRepos)
 
 	currentNames := map[string]struct{}{}
 	for _, repo := range currentRepos {
@@ -370,10 +375,14 @@ func handleRemoved(
 			continue
 		}
 		wiki := name + ".wiki"
+		// A listed repo named like the wiki has an origin the check can't
+		// tell from the wiki's, and it isn't removed.
+		wikiIsListed := listed[strings.ToLower(wiki)]
 		for _, parent := range parents {
 			repoDir := filepath.Join(parent, name)
 			dest, ok := r.retire(name, repoDir, deletedRoot, name, shouldDelete)
 			switch {
+			case wikiIsListed:
 			case ok:
 				// The wiki goes where its repo went, under the same name, so the
 				// pair stays together even when the repo's name was taken.
@@ -389,6 +398,37 @@ func handleRemoved(
 		}
 	}
 	return r.summary, pending
+}
+
+// listedNames is the set of repo names in the listing, lowercased: GitHub
+// names are case-insensitive, and so are the default file systems on macOS
+// and Windows.
+func listedNames(repos []ghapi.RepoInfo) map[string]bool {
+	names := make(map[string]bool, len(repos))
+	for _, r := range repos {
+		names[strings.ToLower(r.Name)] = true
+	}
+	return names
+}
+
+// checkApart rejects an --archived-dir and a --deleted-dir that are the same
+// directory or one inside the other. Each is the other's source: the archive
+// pass would move a backup in the deleted directory out as an unarchived
+// clone, and a removal would retire, or under --delete delete, a backup it
+// finds in the archived one. Compared without case, so a case-insensitive file
+// system's aliases are caught; on a case-sensitive one that only refuses two
+// names that differ by case, the safe way to be wrong.
+func checkApart(archivedDir, deletedDir string) error {
+	if within(archivedDir, deletedDir) || within(deletedDir, archivedDir) {
+		return fmt.Errorf("archived-dir %q and deleted-dir %q must be separate directories, neither inside the other", archivedDir, deletedDir)
+	}
+	return nil
+}
+
+// within reports whether path is root or inside it, ignoring case.
+func within(root, path string) bool {
+	rel, err := filepath.Rel(strings.ToLower(filepath.Clean(root)), strings.ToLower(filepath.Clean(path)))
+	return err == nil && (rel == "." || filepath.IsLocal(rel))
 }
 
 // checkSubdir rejects a --deleted-dir or --archived-dir that isn't a

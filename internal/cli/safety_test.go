@@ -37,6 +37,31 @@ func TestRun_MoveDirectoriesMustStayInsideTheOutputDirectory(t *testing.T) {
 	}
 }
 
+func TestRun_ArchivedAndDeletedDirectoriesMustNotOverlap(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{"the same directory", []string{"--archived-dir", "DELETED"}},
+		{"the same directory in another case", []string{"--archived-dir", "deleted"}},
+		{"archived inside deleted", []string{"--archived-dir", filepath.Join("DELETED", "cold")}},
+		{"deleted inside archived", []string{"--deleted-dir", filepath.Join("ARCHIVED", "gone")}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := newWorld(t)
+			w.addRepo("alpha")
+
+			_, err := w.run(tt.args...)
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "must be separate directories")
+			assert.Empty(t, repoDirs(t, w.out))
+			assert.Empty(t, w.api.Requests(), "nothing was asked of GitHub")
+		})
+	}
+}
+
 func TestRun_NestedMoveDirectoriesAreAllowed(t *testing.T) {
 	w := newWorld(t)
 	w.addRepo("alpha")
