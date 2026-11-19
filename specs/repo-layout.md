@@ -17,9 +17,19 @@ archived repo's clone is renamed in place from `x` to `x.<stamp>`. So in the
 shared directory a plain `x` is only ever an archived clone and `x.<stamp>`
 only ever a removal's backup: the archive pass, which looks at plain names,
 never moves a backup out as an unarchived clone, and a removal, which looks at
-`<archived-dir>/x`, never retires or deletes one. A plain `x` left there by an
-earlier ghx, which didn't stamp, can't be told apart and counts as an
-archived clone.
+`<archived-dir>/x`, never retires or deletes one.
+
+A ghx before this rule left removals in a shared directory under their plain
+name. So before anything else, a run with a previous manifest renames each
+unstamped clone there that the manifest doesn't list as archived to
+`x.<stamp>` (`x.<stamp>.wiki` for a wiki, kept as is when its repo was
+archived), with the same origin check and the result `moved (deleted)`
+(`stampLegacy`). It is only renamed beside itself, never deleted. Without a
+previous manifest an archived clone can't be told from a backup, so nothing is
+renamed and a plain `x` counts as an archived clone. One cost: if a run moved a
+clone into the shared directory as archived but failed before writing its
+manifest, the next run stamps that clone as a backup and clones the repo
+afresh beside it; nothing is lost.
 
 | Repo state | Clone | Wiki (`--clone-wiki`) |
 |---|---|---|
@@ -98,7 +108,10 @@ named `x.wiki` is never retired as `x`'s wiki.
 
 `--delete` applies to the repos the run finds removed or archived, nothing
 earlier: the run that retires a removed repo writes a manifest without it, so no
-later run sees it again (a failed retire is kept and retried, as above), and nothing in `<deleted-dir>` is ever deleted. A clone
+later run sees it again (a failed retire is kept and retried, as above), and no
+earlier removal's clone in `<deleted-dir>` is ever deleted. With a shared
+directory, a plain `x` there is an archived clone, not a removal, so `--delete`
+deletes it when `x` is removed, as it would in a separate `<archived-dir>`. A clone
 already in `<archived-dir>` when `--delete` is first used stays there, unsynced.
 
 Nothing already in `<deleted-dir>` is replaced. When `<deleted-dir>/x` exists

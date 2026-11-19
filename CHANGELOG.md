@@ -12,7 +12,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   removed repo then gets the timestamp suffix (`old/x.20261014T013134Z`), even
   when `old/x` is free, and a removed archived repo is renamed in place, so a
   plain `old/x` is always an archived clone and a stamped one always a backup.
-  One inside the other is still refused.
+  One inside the other is still refused. A plain clone left there by an
+  earlier ghx that the last run didn't archive is renamed to a stamped name
+  first, so it is kept as a backup rather than synced over or deleted.
+- The `--delete` help says earlier removals are never touched, instead of
+  `DELETED/`, which a shared directory also holds archived clones in.
+
+### Fixed
+- `--dry-run` no longer reports two clones of one removed repo moving to the
+  same name in `DELETED/`.
 
 ## [v0.4.2] - 2026-11-19
 

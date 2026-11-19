@@ -333,7 +333,9 @@ API cost and limits are in
   to `DELETED/`, or permanently deleted with `--delete`, whether the clone was in
   `PATH` or, for a repo archived before it was removed, in `ARCHIVED/`; a wiki
   goes with its repo. A repo is handled on the run that finds it gone, so a later
-  `--delete` never deletes what is already in `DELETED/`. An earlier clone there
+  `--delete` never deletes an earlier removal's clone in `DELETED/`. (With one
+  directory for both flags, `--delete` does delete an archived clone there when
+  its repo is removed, just as it would in `ARCHIVED/`.) An earlier clone there
   is never replaced either: a repo removed, recreated and removed again gets a
   UTC timestamp suffix the second time (`DELETED/x.20261014T013134Z`). A move or
   delete that fails is kept in `.ghx.json` and tried again on the next run.
@@ -436,7 +438,7 @@ styled):
     --archived-dir        Directory for archived repos.
     --clone-wiki          Also clone associated wikis.
     -c --concurrency      Parallel workers.
-    --delete              Delete newly removed/archived repos; DELETED/ is never touched.
+    --delete              Delete newly removed/archived repos; earlier removals are never touched.
     --deleted-dir         Directory for removed repos.
     --dry-run             Preview changes without doing anything.
     --exclude             Regex to exclude matching repo names.

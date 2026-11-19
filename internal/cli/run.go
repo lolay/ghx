@@ -352,6 +352,9 @@ func handleRemoved(
 	deletedRoot := filepath.Join(outputDir, deletedDir)
 	parents := []string{outputDir, filepath.Join(outputDir, archivedDir)}
 	listed := listedNames(currentRepos)
+	if r.shared {
+		r.stampLegacy(deletedRoot, previousRepos)
+	}
 
 	var removed []string
 	entries := map[string]manifest.Repo{}

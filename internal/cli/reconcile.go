@@ -7,10 +7,12 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/lolay/ghx/internal/cloner"
 	"github.com/lolay/ghx/internal/ghapi"
+	"github.com/lolay/ghx/internal/manifest"
 )
 
 // originCheck confirms that a directory is a clone of the repo it is named
@@ -57,14 +59,20 @@ func (c *originCheck) mismatch(dir, name string) string {
 type reconciler struct {
 	check  *originCheck
 	dryRun bool
-	// stamp suffixes a name already taken in the deleted directory; one per
-	// run, so a repo and its wiki share it.
+	// stamp is the run's UTC time, suffixed to a removal's name in the
+	// deleted directory when that name is taken, or always when shared is
+	// set; one per run, so a repo and its wiki share it.
 	stamp string
 	// shared is set when the archived and deleted directories are one: every
 	// removal then takes a stamped name, so a plain x there is always an
 	// archived clone and x.<stamp> always a removal's backup.
-	shared  bool
-	summary cloner.SyncSummary
+	shared bool
+	// note, when set, starts the detail of each move retire reports.
+	note string
+	// reserved holds the destinations already handed out, so a dry run, which
+	// moves nothing, doesn't report two clones moving to one name.
+	reserved map[string]bool
+	summary  cloner.SyncSummary
 	// failed holds the names whose move or delete failed, so a removal that
 	// didn't finish can be kept for the next run to retry.
 	failed map[string]bool
@@ -176,14 +184,61 @@ func (r *reconciler) place(name, other, want string, action cloner.Action, delet
 	return true
 }
 
+// stampedName matches a name a removal gave its clone in the deleted
+// directory: x.<stamp>, x.<stamp>-2, and the wiki beside either.
+var stampedName = regexp.MustCompile(`\.\d{8}T\d{6}Z(-\d+)?(\.wiki)?$`)
+
+// stampLegacy renames each unstamped clone in a shared archived and deleted
+// directory that the previous manifest doesn't list as archived to a stamped
+// name. A ghx that didn't stamp left removals there under their plain name,
+// where both passes would take them for archived clones: the archive pass
+// would move one out and sync a recreated repo into it, and a removal under
+// --delete would delete it. A wiki, x.wiki, is kept when x was archived. The
+// clone is only renamed beside itself, never deleted, and the next run sees
+// it as the backup it is. A previous manifest is required: without one an
+// archived clone can't be told from a backup.
+func (r *reconciler) stampLegacy(sharedRoot string, previousRepos []manifest.Repo) {
+	archived := map[string]bool{}
+	for _, repo := range previousRepos {
+		if repo.Archived {
+			archived[strings.ToLower(repo.Name)] = true
+		}
+	}
+	entries, err := os.ReadDir(sharedRoot)
+	if err != nil {
+		return
+	}
+	note := r.note
+	r.note = "unstamped in the shared directory and not archived on the last run"
+	defer func() { r.note = note }()
+	for _, e := range entries {
+		name := e.Name()
+		lower := strings.ToLower(name)
+		repo, isWiki := strings.CutSuffix(lower, ".wiki")
+		if stampedName.MatchString(name) || archived[lower] || (isWiki && archived[repo]) {
+			continue
+		}
+		dir := filepath.Join(sharedRoot, name)
+		if !e.IsDir() || !cloner.HasGitDir(dir) {
+			continue
+		}
+		if isWiki {
+			base := name[:len(name)-len(".wiki")]
+			r.retire(name, dir, sharedRoot, base+"."+r.stamp+".wiki", false, false)
+			continue
+		}
+		r.retire(name, dir, sharedRoot, name, true, false)
+	}
+}
+
 // retire moves the clone of a removed repo at dir into deletedRoot as base,
 // or deletes it under deleteIt, and reports the name it moved to and whether
 // it moved or deleted it (or in a dry run, would). Nothing missing, nothing
 // whose origin doesn't name the repo, and nothing already in deletedRoot is
-// touched: when base is taken, or always under stamp, the clone goes to
+// touched: when base is taken, or always under alwaysStamp, the clone goes to
 // base.<stamp> beside it, so an earlier removal's clone, and any work in it,
 // is kept.
-func (r *reconciler) retire(name, dir, deletedRoot, base string, stamp, deleteIt bool) (string, bool) {
+func (r *reconciler) retire(name, dir, deletedRoot, base string, alwaysStamp, deleteIt bool) (string, bool) {
 	if _, err := os.Stat(dir); err != nil {
 		// Only a clone that isn't there is done with. Anything else (a
 		// directory that can't be read) is a failure, so the removal is kept
@@ -207,7 +262,7 @@ func (r *reconciler) retire(name, dir, deletedRoot, base string, stamp, deleteIt
 		r.add(name, cloner.ActionDeleted, dryRunDetail("", r.dryRun))
 		return "", true
 	}
-	dest, detail, err := r.freeName(deletedRoot, base, stamp)
+	dest, detail, err := r.freeName(deletedRoot, base, alwaysStamp)
 	if err != nil {
 		r.add(name, cloner.ActionFailed, err.Error())
 		return "", false
@@ -218,27 +273,34 @@ func (r *reconciler) retire(name, dir, deletedRoot, base string, stamp, deleteIt
 			return "", false
 		}
 	}
+	if r.reserved == nil {
+		r.reserved = map[string]bool{}
+	}
+	r.reserved[filepath.Join(deletedRoot, dest)] = true
+	if r.note != "" {
+		detail = strings.TrimSuffix(r.note+"; "+detail, "; ")
+	}
 	r.add(name, cloner.ActionMovedDeleted, dryRunDetail(detail, r.dryRun))
 	return dest, true
 }
 
-// freeName returns base when nothing in root has that name and stamp isn't
-// set, and otherwise base.<stamp>, or base.<stamp>-2 and so on, with a detail
-// saying why. A name that can't be checked (root is a file, or can't be
+// freeName returns base when nothing in root has that name and alwaysStamp
+// isn't set, and otherwise base.<stamp>, or base.<stamp>-2 and so on, with a
+// detail saying why. A name that can't be checked (root is a file, or can't be
 // traversed) is an error: counting it as taken would try suffixes forever.
-func (r *reconciler) freeName(root, base string, stamp bool) (name, detail string, err error) {
+func (r *reconciler) freeName(root, base string, alwaysStamp bool) (name, detail string, err error) {
 	why := filepath.Join(root, base) + " exists"
-	if stamp {
+	if alwaysStamp {
 		why = "the archived and deleted directories are the same"
 	} else {
-		isTaken, err := taken(filepath.Join(root, base))
+		isTaken, err := r.taken(filepath.Join(root, base))
 		if err != nil || !isTaken {
 			return base, "", err
 		}
 	}
 	name = base + "." + r.stamp
 	for n := 2; ; n++ {
-		isTaken, err := taken(filepath.Join(root, name))
+		isTaken, err := r.taken(filepath.Join(root, name))
 		if err != nil {
 			return "", "", err
 		}
@@ -250,9 +312,12 @@ func (r *reconciler) freeName(root, base string, stamp bool) (name, detail strin
 	return name, fmt.Sprintf("%s; moved to %s", why, filepath.Join(root, name)), nil
 }
 
-// taken reports whether anything is at path, and an error when that can't
-// be told.
-func taken(path string) (bool, error) {
+// taken reports whether anything is at path, or this run already handed it
+// out, and an error when that can't be told.
+func (r *reconciler) taken(path string) (bool, error) {
+	if r.reserved[path] {
+		return true, nil
+	}
 	_, err := os.Lstat(path)
 	switch {
 	case err == nil:

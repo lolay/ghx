@@ -697,3 +697,80 @@ func TestRun_ASharedArchivedAndDeletedDirectoryKeepsBackupsApart(t *testing.T) {
 		return strings.HasPrefix(d, "old/")
 	}))
 }
+
+func TestRun_ASharedDirectoryStampsWikisWithTheirRepos(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("alpha", func(r *ghapitest.Repo) { r.Archived = true; r.HasWiki = true })
+	w.addRepo("beta", func(r *ghapitest.Repo) { r.HasWiki = true })
+	w.addRepo("gamma")
+	gittest.NewBareRepo(t, w.upstream, "alpha.wiki", "master")
+	gittest.NewBareRepo(t, w.upstream, "beta.wiki", "master")
+	flags := []string{"--clone-wiki", "--archived-dir", "old", "--deleted-dir", "old"}
+	shared := filepath.Join(w.out, "old")
+	w.mustRun(flags...)
+	require.Equal(t, []string{"beta", "beta.wiki", "gamma", "old/alpha", "old/alpha.wiki"}, repoDirs(t, w.out))
+	// beta's repo went on an earlier run; its wiki was left in PATH.
+	require.NoError(t, os.Rename(filepath.Join(w.out, "beta"), filepath.Join(shared, "beta.20200101T000000Z")))
+
+	w.removeRepo("alpha")
+	w.removeRepo("beta")
+	out := w.mustRun(flags...)
+
+	alpha := stampedIn(t, shared, "alpha")
+	require.Len(t, alpha, 1)
+	assert.DirExists(t, filepath.Join(shared, alpha[0]+".wiki", ".git"), "the wiki takes its repo's stamped name")
+	assert.NoDirExists(t, filepath.Join(shared, "alpha.wiki"))
+	assert.NoDirExists(t, filepath.Join(w.out, "beta.wiki"))
+	wikis, err := filepath.Glob(filepath.Join(shared, "beta.*.wiki"))
+	require.NoError(t, err)
+	assert.Len(t, wikis, 1, "a wiki retired on its own is stamped too: %v", wikis)
+	assert.Contains(t, out, "beta.wiki: moved (deleted)")
+}
+
+func TestRun_ASharedDirectoryStampsAnUnstampedBackupFromAnEarlierGhx(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("alpha")
+	w.addRepo("beta", func(r *ghapitest.Repo) { r.Archived = true })
+	flags := []string{"--archived-dir", "old", "--deleted-dir", "old"}
+	shared := filepath.Join(w.out, "old")
+	w.mustRun(flags...)
+	// An earlier ghx removed alpha into old/ under its plain name, and the
+	// org has since recreated it: alpha is listed and its manifest entry
+	// isn't archived.
+	require.NoError(t, os.Rename(filepath.Join(w.out, "alpha"), filepath.Join(shared, "alpha")))
+	marker := filepath.Join(shared, "alpha", "first-life.txt")
+	require.NoError(t, os.WriteFile(marker, []byte("kept\n"), 0o644))
+
+	out := w.mustRun(flags...)
+
+	stamped := stampedIn(t, shared, "alpha")
+	require.Len(t, stamped, 1, "the old backup took a stamped name")
+	assert.FileExists(t, filepath.Join(shared, stamped[0], "first-life.txt"))
+	assert.Contains(t, out, "not archived on the last run")
+	assert.NotContains(t, out, "alpha: moved (unarchived)", "the backup wasn't taken for an archived clone")
+	assert.DirExists(t, filepath.Join(w.out, "alpha", ".git"), "the recreated repo got a fresh clone")
+	assert.DirExists(t, filepath.Join(shared, "beta", ".git"), "an archived clone the manifest lists is left alone")
+
+	// Removed under --delete: the fresh clone goes, the backup stays.
+	w.removeRepo("alpha")
+	w.mustRun(append(flags, "--delete")...)
+	assert.FileExists(t, filepath.Join(shared, stamped[0], "first-life.txt"))
+}
+
+func TestRun_ADryRunNamesTwoClonesOfOneRemovalApart(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("alpha")
+	w.addRepo("beta")
+	w.mustRun()
+	// A second copy in ARCHIVED/, as a conflict an earlier run left.
+	gittest.Git(t, "", "clone", "--quiet", w.bare("alpha"), filepath.Join(w.out, "ARCHIVED", "alpha"))
+	w.removeRepo("alpha")
+
+	out := w.mustRun("--dry-run")
+
+	// The first copy takes DELETED/alpha; the second needs a stamped name,
+	// as a real run would give it, though the dry run moved nothing.
+	dests := regexp.MustCompile(`moved to (\S+?)[;)]`).FindAllStringSubmatch(out, -1)
+	require.Len(t, dests, 1, "output:\n%s", out)
+	assert.Regexp(t, `alpha\.\d{8}T\d{6}Z$`, dests[0][1])
+}
