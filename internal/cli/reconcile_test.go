@@ -413,3 +413,52 @@ func TestRun_DeleteLeavesEarlierRemovalsInDeleted(t *testing.T) {
 	assert.Contains(t, out, "beta: deleted")
 	assert.NotContains(t, out, "alpha: deleted")
 }
+
+func TestRun_AWikiLeftBehindByAnEarlierMoveFollowsItsRepo(t *testing.T) {
+	tests := []struct {
+		name     string
+		archived bool
+		// from and to are where the repo is moved by hand, as an older ghx
+		// that didn't move wikis would have done, before the state flips.
+		from, to string
+		want     []string
+		says     string
+	}{
+		{"archived", false, "alpha", "ARCHIVED/alpha",
+			[]string{"ARCHIVED/alpha", "ARCHIVED/alpha.wiki"}, "alpha.wiki: moved (archived)"},
+		{"unarchived", true, "ARCHIVED/alpha", "alpha",
+			[]string{"alpha", "alpha.wiki"}, "alpha.wiki: moved (unarchived)"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := newWorld(t)
+			w.addRepo("alpha", func(r *ghapitest.Repo) { r.Archived = tt.archived; r.HasWiki = true })
+			gittest.NewBareRepo(t, w.upstream, "alpha.wiki", "master")
+			w.mustRun("--clone-wiki")
+			to := filepath.Join(w.out, filepath.FromSlash(tt.to))
+			require.NoError(t, os.MkdirAll(filepath.Dir(to), 0o755))
+			require.NoError(t, os.Rename(filepath.Join(w.out, filepath.FromSlash(tt.from)), to))
+			w.setArchived("alpha", !tt.archived)
+
+			out := w.mustRun("--clone-wiki")
+
+			assert.Equal(t, tt.want, repoDirs(t, w.out), "one wiki, beside its repo")
+			assert.Contains(t, out, tt.says)
+		})
+	}
+}
+
+func TestRun_AWikiStaysWithItsRepoInAConflict(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("alpha", func(r *ghapitest.Repo) { r.HasWiki = true })
+	gittest.NewBareRepo(t, w.upstream, "alpha.wiki", "master")
+	w.mustRun("--clone-wiki")
+	gittest.Git(t, "", "clone", "--quiet", w.bare("alpha"), filepath.Join(w.out, "ARCHIVED", "alpha"))
+	w.archiveRepo("alpha")
+
+	out := w.mustRun("--clone-wiki")
+
+	assert.Contains(t, out, "alpha: conflict")
+	assert.DirExists(t, filepath.Join(w.out, "alpha.wiki", ".git"), "the wiki stays beside the repo left in place")
+	assert.NotContains(t, out, "alpha.wiki: moved")
+}

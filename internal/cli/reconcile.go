@@ -101,9 +101,14 @@ func reconcileArchived(
 			action = cloner.ActionMovedArchived
 		}
 		deleteIt := repo.Archived && shouldDelete
-		if r.place(repo.Name, other, want, action, deleteIt) {
-			// The wiki goes where its repo went, or with it under --delete:
-			// left behind, it would never be synced again.
+		moved := r.place(repo.Name, other, want, action, deleteIt)
+		// The wiki goes where its repo went, or with it under --delete: left
+		// behind, it would never be synced again, and the sync would clone a
+		// second one. That includes a wiki an earlier move left behind (an
+		// older ghx, or --clone-wiki turned on later), once its repo is no
+		// longer at other; a repo still there after a conflict or an origin
+		// mismatch keeps its wiki beside it.
+		if moved || !cloner.HasGitDir(other) {
 			wiki := repo.Name + ".wiki"
 			r.place(wiki, other+".wiki", want+".wiki", action, deleteIt)
 		}

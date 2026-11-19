@@ -40,8 +40,12 @@ reach it. For each such repo `x`:
 - The repo is archived and `--delete` is set: `other` is deleted, and then
   `other.wiki` the same way. An archived repo isn't synced under `--delete`.
 - Otherwise `other` is moved to `want`'s parent (`moved (archived)` or
-  `moved (unarchived)`), and then `other.wiki` is moved the same way when it
-  exists and `want.wiki` doesn't. The wiki has the same checks as its repo.
+  `moved (unarchived)`).
+- The wiki, `other.wiki`, then goes through the same rules, with the same
+  checks, whenever the repo is no longer at `other`: moved or deleted with it
+  this run, or moved by an earlier run that left the wiki behind (a ghx older
+  than v0.3.0, or `--clone-wiki` turned on after the move). A repo still at
+  `other` after a conflict or an origin mismatch keeps its wiki beside it.
 - `--dry-run` reports each planned action with the detail `dry-run` and touches
   nothing.
 

@@ -11,6 +11,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A repo that was archived and then removed from the organization is moved
   from `ARCHIVED/` into `DELETED/` (or deleted under `--delete`) with its
   wiki, instead of staying in `ARCHIVED/` with no message.
+- A wiki left behind when its repo moved in or out of `ARCHIVED/` on an
+  earlier run (by a ghx older than v0.3.0, or before `--clone-wiki` was on)
+  now follows its repo, instead of staying put while a second wiki was cloned
+  beside the repo.
 
 ### Changed
 - The `--delete` help, the README and `specs/repo-layout.md` say what it
