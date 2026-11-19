@@ -26,8 +26,10 @@ archived to `x.<stamp>` (`x.<stamp>.wiki` for a wiki, kept as is when its repo
 was archived), with the same origin check and the result `moved (deleted)`
 (`stampLegacy`). It is only renamed beside itself, never deleted. A name shaped
 like `x.<stamp>` counts as a backup unless a repo of that whole name is listed
-or in the manifest and the clone's origin names it. If any rename fails, the
-run stops there with an error: nothing is reconciled or synced and the manifest
+or in the manifest and the clone's origin names it, and a name shaped like
+`x.wiki` is `x`'s wiki unless a repo of that whole name is known, in which case
+it follows its own archived state. If any rename fails, or the directory can't
+be listed (anything but not found), the run stops there with an error: nothing is reconciled or synced and the manifest
 isn't rewritten, since every later step would read the backup as a clone, and
 the next run tries again. Without a previous manifest an archived clone can't
 be told from a backup, so nothing is renamed and a plain `x` counts as an

@@ -868,3 +868,43 @@ func TestRun_ADryRunSeesALegacyBackupAsStamped(t *testing.T) {
 		})
 	}
 }
+
+func TestRun_ASharedDirectoryThatCantBeListedStopsTheRun(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs a directory the test user can enter but not list")
+	}
+	w, flags, legacy := legacyWorld(t, "alpha")
+	shared := filepath.Dir(legacy)
+	require.NoError(t, os.Chmod(shared, 0o311))
+	t.Cleanup(func() { _ = os.Chmod(shared, 0o755) })
+
+	out, err := w.run(flags...)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nothing was synced")
+	assert.Contains(t, out, ": failed")
+	assert.NoDirExists(t, filepath.Join(w.out, "alpha"), "the backup wasn't moved out or synced over")
+}
+
+func TestRun_ALegacyBackupOfARepoNamedLikeAWikiIsStamped(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("alpha", func(r *ghapitest.Repo) { r.Archived = true })
+	w.addRepo("alpha.wiki")
+	flags := []string{"--archived-dir", "old", "--deleted-dir", "old"}
+	shared := filepath.Join(w.out, "old")
+	w.mustRun(flags...)
+	require.Equal(t, []string{"alpha.wiki", "old/alpha"}, repoDirs(t, w.out))
+	// An earlier ghx left the repo alpha.wiki's removal unstamped, and it
+	// has since been recreated.
+	legacy := filepath.Join(shared, "alpha.wiki")
+	require.NoError(t, os.Rename(filepath.Join(w.out, "alpha.wiki"), legacy))
+	require.NoError(t, os.WriteFile(filepath.Join(legacy, "first-life.txt"), []byte("kept\n"), 0o644))
+
+	out := w.mustRun(flags...)
+
+	stamped := stampedIn(t, shared, "alpha.wiki")
+	require.Len(t, stamped, 1, "output:\n%s", out)
+	assert.FileExists(t, filepath.Join(shared, stamped[0], "first-life.txt"))
+	assert.NoFileExists(t, filepath.Join(w.out, "alpha.wiki", "first-life.txt"), "the live clone is fresh")
+	assert.DirExists(t, filepath.Join(shared, "alpha", ".git"), "archived alpha is untouched")
+}

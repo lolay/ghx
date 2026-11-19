@@ -265,13 +265,21 @@ func stampLegacy(
 		}
 	}
 	entries, err := os.ReadDir(sharedRoot)
-	if err != nil {
+	if errors.Is(err, fs.ErrNotExist) {
 		return r.summary, true
+	}
+	if err != nil {
+		// A directory that can be entered but not listed still holds clones
+		// the later steps would reach by name.
+		r.add(sharedRoot, cloner.ActionFailed, err.Error())
+		return r.summary, false
 	}
 	for _, e := range entries {
 		name := e.Name()
 		lower := strings.ToLower(name)
 		repo, isWiki := strings.CutSuffix(lower, ".wiki")
+		// A known repo named x.wiki is a repo of its own, not x's wiki.
+		isWiki = isWiki && !known[lower]
 		if archived[lower] || (isWiki && archived[repo]) {
 			continue
 		}
