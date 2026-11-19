@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/lolay/ghx/internal/cloner"
 	"github.com/lolay/ghx/internal/ghapi"
@@ -69,13 +70,48 @@ type reconciler struct {
 	shared bool
 	// note, when set, starts the detail of each move retire reports.
 	note string
-	// reserved holds the destinations already handed out, so a dry run, which
-	// moves nothing, doesn't report two clones moving to one name.
-	reserved map[string]bool
-	summary  cloner.SyncSummary
+	// plan is shared by every reconcile step of the run.
+	plan    *plan
+	summary cloner.SyncSummary
 	// failed holds the names whose move or delete failed, so a removal that
 	// didn't finish can be kept for the next run to retry.
 	failed map[string]bool
+}
+
+// plan is what the reconcile steps of one run share, so each later step sees
+// the disk as the earlier ones left it, or in a dry run, which moves nothing,
+// as they would have: the destinations already handed out, and the paths a
+// planned move or delete has emptied.
+type plan struct {
+	reserved map[string]bool
+	vacated  map[string]bool
+}
+
+func newPlan() *plan {
+	return &plan{reserved: map[string]bool{}, vacated: map[string]bool{}}
+}
+
+// gone reports whether an earlier step of a dry run planned to empty path.
+func (r *reconciler) gone(path string) bool {
+	return r.plan != nil && r.plan.vacated[path]
+}
+
+// hasClone is cloner.HasGitDir, seen through the plan.
+func (r *reconciler) hasClone(path string) bool {
+	return !r.gone(path) && cloner.HasGitDir(path)
+}
+
+// present is exists, seen through the plan.
+func (r *reconciler) present(path string) bool {
+	return !r.gone(path) && exists(path)
+}
+
+// done records a planned move or delete of path, and in a dry run marks
+// path empty for the steps after it.
+func (r *reconciler) done(path string) {
+	if r.dryRun && r.plan != nil {
+		r.plan.vacated[path] = true
+	}
 }
 
 // deletedStampLayout formats the UTC time that tells two clones of the same
@@ -108,9 +144,10 @@ func reconcileArchived(
 	outputDir, archivedDir string,
 	repos []ghapi.RepoInfo,
 	listed map[string]bool,
+	p *plan,
 	shouldDelete, dryRun bool,
 ) cloner.SyncSummary {
-	r := reconciler{check: check, dryRun: dryRun}
+	r := reconciler{check: check, dryRun: dryRun, plan: p}
 	archivedRoot := filepath.Join(outputDir, archivedDir)
 	for _, repo := range repos {
 		// CloneRepos reports a name that can't be a directory.
@@ -133,7 +170,7 @@ func reconcileArchived(
 		// longer at other; a repo still there after a conflict or an origin
 		// mismatch keeps its wiki beside it.
 		wiki := repo.Name + ".wiki"
-		if (moved || !cloner.HasGitDir(other)) && !listed[strings.ToLower(wiki)] {
+		if (moved || !r.hasClone(other)) && !listed[strings.ToLower(wiki)] {
 			r.place(wiki, other+".wiki", want+".wiki", action, deleteIt)
 		}
 	}
@@ -147,14 +184,14 @@ func reconcileArchived(
 // existing want, which the sync then syncs as usual, since MoveRepo would
 // replace it and lose any work in it.
 func (r *reconciler) place(name, other, want string, action cloner.Action, deleteIt bool) bool {
-	if !cloner.HasGitDir(other) {
+	if !r.hasClone(other) {
 		return false
 	}
 	if detail := r.check.mismatch(other, name); detail != "" {
 		r.add(name, cloner.ActionSkippedOrigin, detail)
 		return false
 	}
-	if exists(want) {
+	if r.present(want) {
 		// Under --delete an archived repo isn't synced, so want only stays.
 		then := "syncing " + want
 		if deleteIt {
@@ -168,6 +205,7 @@ func (r *reconciler) place(name, other, want string, action cloner.Action, delet
 	}
 	if r.dryRun {
 		r.add(name, action, "dry-run")
+		r.done(other)
 		return true
 	}
 	var err error
@@ -190,36 +228,58 @@ var stampedName = regexp.MustCompile(`\.\d{8}T\d{6}Z(-\d+)?(\.wiki)?$`)
 
 // stampLegacy renames each unstamped clone in a shared archived and deleted
 // directory that the previous manifest doesn't list as archived to a stamped
-// name. A ghx that didn't stamp left removals there under their plain name,
-// where both passes would take them for archived clones: the archive pass
-// would move one out and sync a recreated repo into it, and a removal under
-// --delete would delete it. A wiki, x.wiki, is kept when x was archived. The
-// clone is only renamed beside itself, never deleted, and the next run sees
-// it as the backup it is. A previous manifest is required: without one an
-// archived clone can't be told from a backup.
-func (r *reconciler) stampLegacy(sharedRoot string, previousRepos []manifest.Repo) {
+// name, and reports whether every rename it tried worked. A ghx that didn't
+// stamp left removals there under their plain name, where both passes would
+// take them for archived clones: the archive pass would move one out and sync
+// a recreated repo into it, and a removal under --delete would delete it. A
+// wiki, x.wiki, is kept when x was archived. A clone is only renamed beside
+// itself, never deleted. A name shaped like x.<stamp> is a backup unless a
+// repo of that whole name is known (listed now or in the manifest) and the
+// clone's origin names it. It needs a previous manifest: without one an
+// archived clone can't be told from a backup. The caller stops the run when a
+// rename fails, since every later step would read the backup as a clone.
+func stampLegacy(
+	check *originCheck,
+	sharedRoot string,
+	previousRepos []manifest.Repo,
+	listed map[string]bool,
+	p *plan,
+	dryRun bool,
+) (cloner.SyncSummary, bool) {
+	r := reconciler{
+		check:  check,
+		dryRun: dryRun,
+		stamp:  time.Now().UTC().Format(deletedStampLayout),
+		note:   "unstamped in the shared directory and not archived on the last run",
+		plan:   p,
+	}
 	archived := map[string]bool{}
+	known := map[string]bool{}
+	for name := range listed {
+		known[name] = true
+	}
 	for _, repo := range previousRepos {
+		known[strings.ToLower(repo.Name)] = true
 		if repo.Archived {
 			archived[strings.ToLower(repo.Name)] = true
 		}
 	}
 	entries, err := os.ReadDir(sharedRoot)
 	if err != nil {
-		return
+		return r.summary, true
 	}
-	note := r.note
-	r.note = "unstamped in the shared directory and not archived on the last run"
-	defer func() { r.note = note }()
 	for _, e := range entries {
 		name := e.Name()
 		lower := strings.ToLower(name)
 		repo, isWiki := strings.CutSuffix(lower, ".wiki")
-		if stampedName.MatchString(name) || archived[lower] || (isWiki && archived[repo]) {
+		if archived[lower] || (isWiki && archived[repo]) {
 			continue
 		}
 		dir := filepath.Join(sharedRoot, name)
 		if !e.IsDir() || !cloner.HasGitDir(dir) {
+			continue
+		}
+		if stampedName.MatchString(name) && (!known[lower] || r.check.mismatch(dir, name) != "") {
 			continue
 		}
 		if isWiki {
@@ -229,6 +289,7 @@ func (r *reconciler) stampLegacy(sharedRoot string, previousRepos []manifest.Rep
 		}
 		r.retire(name, dir, sharedRoot, name, true, false)
 	}
+	return r.summary, len(r.failed) == 0
 }
 
 // retire moves the clone of a removed repo at dir into deletedRoot as base,
@@ -239,6 +300,9 @@ func (r *reconciler) stampLegacy(sharedRoot string, previousRepos []manifest.Rep
 // base.<stamp> beside it, so an earlier removal's clone, and any work in it,
 // is kept.
 func (r *reconciler) retire(name, dir, deletedRoot, base string, alwaysStamp, deleteIt bool) (string, bool) {
+	if r.gone(dir) {
+		return "", false
+	}
 	if _, err := os.Stat(dir); err != nil {
 		// Only a clone that isn't there is done with. Anything else (a
 		// directory that can't be read) is a failure, so the removal is kept
@@ -260,6 +324,7 @@ func (r *reconciler) retire(name, dir, deletedRoot, base string, alwaysStamp, de
 			}
 		}
 		r.add(name, cloner.ActionDeleted, dryRunDetail("", r.dryRun))
+		r.done(dir)
 		return "", true
 	}
 	dest, detail, err := r.freeName(deletedRoot, base, alwaysStamp)
@@ -273,10 +338,10 @@ func (r *reconciler) retire(name, dir, deletedRoot, base string, alwaysStamp, de
 			return "", false
 		}
 	}
-	if r.reserved == nil {
-		r.reserved = map[string]bool{}
+	if r.plan != nil {
+		r.plan.reserved[filepath.Join(deletedRoot, dest)] = true
 	}
-	r.reserved[filepath.Join(deletedRoot, dest)] = true
+	r.done(dir)
 	if r.note != "" {
 		detail = strings.TrimSuffix(r.note+"; "+detail, "; ")
 	}
@@ -315,7 +380,7 @@ func (r *reconciler) freeName(root, base string, alwaysStamp bool) (name, detail
 // taken reports whether anything is at path, or this run already handed it
 // out, and an error when that can't be told.
 func (r *reconciler) taken(path string) (bool, error) {
-	if r.reserved[path] {
+	if r.plan != nil && r.plan.reserved[path] {
 		return true, nil
 	}
 	_, err := os.Lstat(path)

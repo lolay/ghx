@@ -774,3 +774,97 @@ func TestRun_ADryRunNamesTwoClonesOfOneRemovalApart(t *testing.T) {
 	require.Len(t, dests, 1, "output:\n%s", out)
 	assert.Regexp(t, `alpha\.\d{8}T\d{6}Z$`, dests[0][1])
 }
+
+// legacyWorld syncs alpha and beta with one directory for archived and
+// deleted repos, then moves alpha's clone into it under its plain name, as an
+// earlier ghx that didn't stamp would have left a removal: alpha is still
+// listed, as if the org recreated it.
+func legacyWorld(t *testing.T, name string) (w *world, flags []string, legacy string) {
+	t.Helper()
+	w = newWorld(t)
+	w.addRepo(name)
+	w.addRepo("beta")
+	flags = []string{"--archived-dir", "old", "--deleted-dir", "old"}
+	w.mustRun(flags...)
+	legacy = filepath.Join(w.out, "old", name)
+	require.NoError(t, os.MkdirAll(filepath.Dir(legacy), 0o755))
+	require.NoError(t, os.Rename(filepath.Join(w.out, name), legacy))
+	require.NoError(t, os.WriteFile(filepath.Join(legacy, "first-life.txt"), []byte("kept\n"), 0o644))
+	return w, flags, legacy
+}
+
+func TestRun_ALegacyBackupWithAStampShapedRepoNameIsStamped(t *testing.T) {
+	name := "alpha.20200101T000000Z"
+	w, flags, _ := legacyWorld(t, name)
+
+	out := w.mustRun(flags...)
+
+	stamped := stampedIn(t, filepath.Join(w.out, "old"), name)
+	require.Len(t, stamped, 1, "output:\n%s", out)
+	assert.FileExists(t, filepath.Join(w.out, "old", stamped[0], "first-life.txt"))
+	assert.NotContains(t, out, "moved (unarchived)")
+	assert.NoFileExists(t, filepath.Join(w.out, name, "first-life.txt"), "the live clone is fresh")
+}
+
+func TestRun_ALegacyRenameThatFailsStopsTheRun(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs a directory the test user can't write")
+	}
+	w, flags, legacy := legacyWorld(t, "alpha")
+	shared := filepath.Dir(legacy)
+	manifestPath := filepath.Join(w.out, config.ManifestFilename)
+	before, err := os.ReadFile(manifestPath)
+	require.NoError(t, err)
+	require.NoError(t, os.Chmod(shared, 0o555))
+	t.Cleanup(func() { _ = os.Chmod(shared, 0o755) })
+
+	out, err := w.run(flags...)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nothing was synced")
+	assert.Contains(t, out, "alpha: failed")
+	assert.NoDirExists(t, filepath.Join(w.out, "alpha"), "no fresh clone, no sync")
+	after, err := os.ReadFile(manifestPath)
+	require.NoError(t, err)
+	assert.Equal(t, string(before), string(after), "the manifest isn't rewritten, so the next run retries")
+
+	require.NoError(t, os.Chmod(shared, 0o755))
+	w.mustRun(flags...)
+	assert.Len(t, stampedIn(t, shared, "alpha"), 1)
+}
+
+func TestRun_AnEmptyManifestStillStampsLegacyBackups(t *testing.T) {
+	w, flags, legacy := legacyWorld(t, "alpha")
+	m := `{"org":"acme","exported_at":"2025-01-01T00:00:00+00:00","repos":[]}` + "\n"
+	require.NoError(t, os.WriteFile(filepath.Join(w.out, config.ManifestFilename), []byte(m), 0o644))
+
+	out := w.mustRun(flags...)
+
+	assert.Len(t, stampedIn(t, filepath.Dir(legacy), "alpha"), 1, "output:\n%s", out)
+	assert.NotContains(t, out, "alpha: moved (unarchived)")
+}
+
+func TestRun_ADryRunSeesALegacyBackupAsStamped(t *testing.T) {
+	tests := []struct {
+		name   string
+		change func(w *world)
+		flags  []string
+		never  string
+	}{
+		{"recreated", func(*world) {}, nil, "alpha: moved (unarchived)"},
+		{"removed under --delete", func(w *world) { w.removeRepo("alpha") }, []string{"--delete"}, "alpha: deleted"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w, flags, _ := legacyWorld(t, "alpha")
+			tt.change(w)
+			before := snapshot(t, w.out)
+
+			out := w.mustRun(append(append(flags, "--dry-run"), tt.flags...)...)
+
+			assert.Equal(t, before, snapshot(t, w.out))
+			assert.Contains(t, out, "not archived on the last run")
+			assert.NotContains(t, out, tt.never, "the preview matches what a real run would do")
+		})
+	}
+}

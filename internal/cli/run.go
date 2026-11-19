@@ -207,23 +207,27 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 	// archived check runs on every sync, manifest or not: it looks at the
 	// disk, not at what the last run recorded.
 	check := &originCheck{ctx: ctx, gitPath: gitPath}
+	p := newPlan()
 	var removalSummary cloner.SyncSummary
 	var pendingRemovals []manifest.Repo
-	if len(previousRepos) > 0 {
-		removalSummary, pendingRemovals = handleRemoved(check, outputDir, archivedDir, deletedDir, allRepos, previousRepos, shouldDelete, dryRun)
-	}
-	removalSummary.Extend(reconcileArchived(check, outputDir, archivedDir, repos, listedNames(allRepos), shouldDelete, dryRun))
-	if len(removalSummary.Results) > 0 {
-		ui.Println()
-		ui.Println(text.Bold.Sprint("Changes for removed, archived and unarchived repos:"))
-		for _, r := range removalSummary.Results {
-			if r.Detail != "" {
-				ui.Printf("  %s: %s (%s)\n", r.Name, r.Action, r.Detail)
-			} else {
-				ui.Printf("  %s: %s\n", r.Name, r.Action)
-			}
+	// Any manifest, even one with no repos, says what was archived, which is
+	// what tells an unstamped backup from an archived clone.
+	if m != nil && sameDir(archivedDir, deletedDir) {
+		sharedRoot := filepath.Join(outputDir, deletedDir)
+		legacy, ok := stampLegacy(check, sharedRoot, previousRepos, listedNames(allRepos), p, dryRun)
+		removalSummary.Extend(legacy)
+		if !ok && !dryRun {
+			printReconcileChanges(removalSummary)
+			return fmt.Errorf("couldn't rename every unstamped clone in %s to a stamped name, so nothing was synced; fix the failure above and run again", sharedRoot)
 		}
 	}
+	if len(previousRepos) > 0 {
+		removed, pending := handleRemoved(check, outputDir, archivedDir, deletedDir, allRepos, previousRepos, p, shouldDelete, dryRun)
+		removalSummary.Extend(removed)
+		pendingRemovals = pending
+	}
+	removalSummary.Extend(reconcileArchived(check, outputDir, archivedDir, repos, listedNames(allRepos), p, shouldDelete, dryRun))
+	printReconcileChanges(removalSummary)
 
 	if len(skippedLargeResults) > 0 {
 		ui.Println()
@@ -341,6 +345,7 @@ func handleRemoved(
 	outputDir, archivedDir, deletedDir string,
 	currentRepos []ghapi.RepoInfo,
 	previousRepos []manifest.Repo,
+	p *plan,
 	shouldDelete, dryRun bool,
 ) (cloner.SyncSummary, []manifest.Repo) {
 	r := reconciler{
@@ -348,13 +353,11 @@ func handleRemoved(
 		dryRun: dryRun,
 		stamp:  time.Now().UTC().Format(deletedStampLayout),
 		shared: sameDir(archivedDir, deletedDir),
+		plan:   p,
 	}
 	deletedRoot := filepath.Join(outputDir, deletedDir)
 	parents := []string{outputDir, filepath.Join(outputDir, archivedDir)}
 	listed := listedNames(currentRepos)
-	if r.shared {
-		r.stampLegacy(deletedRoot, previousRepos)
-	}
 
 	var removed []string
 	entries := map[string]manifest.Repo{}
@@ -399,7 +402,7 @@ func handleRemoved(
 				// The wiki goes where its repo went, under the same name, so the
 				// pair stays together even when the repo's name was taken.
 				r.retire(wiki, filepath.Join(parent, wiki), deletedRoot, dest+".wiki", false, shouldDelete)
-			case !exists(repoDir):
+			case !r.present(repoDir):
 				// The repo went on an earlier run and its wiki failed to follow,
 				// or never had a clone here: the wiki is retired on its own.
 				r.retire(wiki, filepath.Join(parent, wiki), deletedRoot, wikiBase, false, shouldDelete)
@@ -410,6 +413,23 @@ func handleRemoved(
 		}
 	}
 	return r.summary, pending
+}
+
+// printReconcileChanges lists what the moves and deletes before the sync did,
+// or in a dry run would do.
+func printReconcileChanges(summary cloner.SyncSummary) {
+	if len(summary.Results) == 0 {
+		return
+	}
+	ui.Println()
+	ui.Println(text.Bold.Sprint("Changes for removed, archived and unarchived repos:"))
+	for _, r := range summary.Results {
+		if r.Detail != "" {
+			ui.Printf("  %s: %s (%s)\n", r.Name, r.Action, r.Detail)
+		} else {
+			ui.Printf("  %s: %s\n", r.Name, r.Action)
+		}
+	}
 }
 
 // listedNames is the set of repo names in the listing, lowercased: GitHub

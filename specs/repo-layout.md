@@ -20,13 +20,22 @@ never moves a backup out as an unarchived clone, and a removal, which looks at
 `<archived-dir>/x`, never retires or deletes one.
 
 A ghx before this rule left removals in a shared directory under their plain
-name. So before anything else, a run with a previous manifest renames each
-unstamped clone there that the manifest doesn't list as archived to
-`x.<stamp>` (`x.<stamp>.wiki` for a wiki, kept as is when its repo was
-archived), with the same origin check and the result `moved (deleted)`
-(`stampLegacy`). It is only renamed beside itself, never deleted. Without a
-previous manifest an archived clone can't be told from a backup, so nothing is
-renamed and a plain `x` counts as an archived clone. One cost: if a run moved a
+name. So before anything else, a run with a previous manifest (even one with no
+repos) renames each unstamped clone there that the manifest doesn't list as
+archived to `x.<stamp>` (`x.<stamp>.wiki` for a wiki, kept as is when its repo
+was archived), with the same origin check and the result `moved (deleted)`
+(`stampLegacy`). It is only renamed beside itself, never deleted. A name shaped
+like `x.<stamp>` counts as a backup unless a repo of that whole name is listed
+or in the manifest and the clone's origin names it. If any rename fails, the
+run stops there with an error: nothing is reconciled or synced and the manifest
+isn't rewritten, since every later step would read the backup as a clone, and
+the next run tries again. Without a previous manifest an archived clone can't
+be told from a backup, so nothing is renamed and a plain `x` counts as an
+archived clone.
+
+A dry run shares one plan across these steps (`plan`): the names handed out,
+and the paths a planned move or delete has emptied, so a later step sees the
+disk as the earlier ones would have left it. One cost: if a run moved a
 clone into the shared directory as archived but failed before writing its
 manifest, the next run stamps that clone as a backup and clones the repo
 afresh beside it; nothing is lost.

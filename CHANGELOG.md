@@ -14,13 +14,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   plain `old/x` is always an archived clone and a stamped one always a backup.
   One inside the other is still refused. A plain clone left there by an
   earlier ghx that the last run didn't archive is renamed to a stamped name
-  first, so it is kept as a backup rather than synced over or deleted.
+  first, so it is kept as a backup rather than synced over or deleted. If
+  that rename fails, the run stops before syncing anything.
 - The `--delete` help says earlier removals are never touched, instead of
   `DELETED/`, which a shared directory also holds archived clones in.
 
 ### Fixed
 - `--dry-run` no longer reports two clones of one removed repo moving to the
-  same name in `DELETED/`.
+  same name in `DELETED/`, and sees the effect of each planned move on the
+  steps after it.
 
 ## [v0.4.2] - 2026-11-19
 
