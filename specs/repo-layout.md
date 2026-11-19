@@ -8,10 +8,48 @@ a clone there. Users: the Archived repos bullet in [`README.md`](../README.md). 
 `<out>` is the output directory (`PATH`). `x` is the repository's name,
 `<archived-dir>` is `--archived-dir` (`ARCHIVED` by default) and `<deleted-dir>` is
 `--deleted-dir` (`DELETED`). Both must be relative paths inside `<out>`, and
-neither may be the other or inside it, compared without case (`checkApart`):
-otherwise the archive pass would move a backup out of `<deleted-dir>` as an
-unarchived clone, and a removal would retire, or under `--delete` delete, a
-backup it found in `<archived-dir>`.
+neither may be inside the other, compared without case (`checkApart`): a repo
+named like the inner directory would collide with it.
+
+They may be the same directory (`sameDir`, also without case). Then every
+removal takes a stamped name, `x.<stamp>`, even when `x` is free, and a removed
+archived repo's clone is renamed in place from `x` to `x.<stamp>`. So in the
+shared directory a plain `x` is only ever an archived clone and `x.<stamp>`
+only ever a removal's backup: the archive pass, which looks at plain names,
+never moves a backup out as an unarchived clone, and a removal, which looks at
+`<archived-dir>/x`, never retires or deletes one.
+
+A ghx before this rule left removals in a shared directory under their plain
+name. So before anything else, a run with a previous manifest (even one with no
+repos) renames each unstamped clone there that the manifest doesn't list as
+archived to `x.<stamp>` (`x.<stamp>.wiki` for a wiki, kept as is when its repo
+was archived), with the same origin check and the result `moved (deleted)`
+(`stampLegacy`). It is only renamed beside itself, never deleted. A name shaped
+like `x.<stamp>` counts as a backup unless a repo of that whole name is listed
+or in the manifest and the clone's origin names it, and a name shaped like
+`x.wiki` is `x`'s wiki unless a repo of that whole name is known, in which case
+it follows its own archived state. If any rename fails, or the directory can't
+be listed (anything but not found), the run stops there with an error: nothing is reconciled or synced and the manifest
+isn't rewritten, since every later step would read the backup as a clone, and
+the next run tries again. Without a previous manifest an archived clone can't
+be told from a backup, so nothing is renamed and a plain `x` counts as an
+archived clone. The scan reads `<archived-dir>`, where the later steps look
+for plain names: since `sameDir` ignores case, `OLD` and `old` count as one
+directory even on a case-sensitive file system, where they are two.
+
+Known limit: a repo whose own name has the stamp's shape (`x.<stamp>`) isn't
+fully protected. Its wiki's unstamped backup is skipped as if it were stamped,
+and a newly listed archived repo of that exact name would be synced into a
+removal's backup of `x` that already has the name. Telling those apart would
+take the backup paths into the sync itself; a repo named like a UTC timestamp
+isn't worth that.
+
+A dry run shares one plan across these steps (`plan`): the names handed out,
+and the paths a planned move or delete has emptied, so a later step sees the
+disk as the earlier ones would have left it. One cost: if a run moved a
+clone into the shared directory as archived but failed before writing its
+manifest, the next run stamps that clone as a backup and clones the repo
+afresh beside it; nothing is lost.
 
 | Repo state | Clone | Wiki (`--clone-wiki`) |
 |---|---|---|
@@ -90,7 +128,10 @@ named `x.wiki` is never retired as `x`'s wiki.
 
 `--delete` applies to the repos the run finds removed or archived, nothing
 earlier: the run that retires a removed repo writes a manifest without it, so no
-later run sees it again (a failed retire is kept and retried, as above), and nothing in `<deleted-dir>` is ever deleted. A clone
+later run sees it again (a failed retire is kept and retried, as above), and no
+earlier removal's clone in `<deleted-dir>` is ever deleted. With a shared
+directory, a plain `x` there is an archived clone, not a removal, so `--delete`
+deletes it when `x` is removed, as it would in a separate `<archived-dir>`. A clone
 already in `<archived-dir>` when `--delete` is first used stays there, unsynced.
 
 Nothing already in `<deleted-dir>` is replaced. When `<deleted-dir>/x` exists
@@ -100,7 +141,9 @@ to `<deleted-dir>/x.<stamp>`, where `<stamp>` is the run's UTC start time as
 `20261014T013134Z` (no colons, so the name is valid on Windows), with `-2`, `-3`
 and so on appended if that is taken too. The result is `moved (deleted)` with a
 detail naming both paths. The wiki takes its repo's final name plus `.wiki`, so
-the pair stays together.
+the pair stays together. With a shared archived and deleted directory, the stamp
+is always added (see above); a wiki retired on its own there is
+`x.<stamp>.wiki`.
 
 ## Origin check
 

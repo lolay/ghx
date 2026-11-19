@@ -207,23 +207,30 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 	// archived check runs on every sync, manifest or not: it looks at the
 	// disk, not at what the last run recorded.
 	check := &originCheck{ctx: ctx, gitPath: gitPath}
+	p := newPlan()
 	var removalSummary cloner.SyncSummary
 	var pendingRemovals []manifest.Repo
-	if len(previousRepos) > 0 {
-		removalSummary, pendingRemovals = handleRemoved(check, outputDir, archivedDir, deletedDir, allRepos, previousRepos, shouldDelete, dryRun)
-	}
-	removalSummary.Extend(reconcileArchived(check, outputDir, archivedDir, repos, listedNames(allRepos), shouldDelete, dryRun))
-	if len(removalSummary.Results) > 0 {
-		ui.Println()
-		ui.Println(text.Bold.Sprint("Changes for removed, archived and unarchived repos:"))
-		for _, r := range removalSummary.Results {
-			if r.Detail != "" {
-				ui.Printf("  %s: %s (%s)\n", r.Name, r.Action, r.Detail)
-			} else {
-				ui.Printf("  %s: %s\n", r.Name, r.Action)
-			}
+	// Any manifest, even one with no repos, says what was archived, which is
+	// what tells an unstamped backup from an archived clone.
+	if m != nil && sameDir(archivedDir, deletedDir) {
+		// The archived directory, not the deleted one: sameDir ignores case,
+		// so on a case-sensitive file system OLD and old pass as one, and the
+		// later steps look for plain names under the archived one.
+		sharedRoot := filepath.Join(outputDir, archivedDir)
+		legacy, ok := stampLegacy(check, sharedRoot, previousRepos, listedNames(allRepos), p, dryRun)
+		removalSummary.Extend(legacy)
+		if !ok && !dryRun {
+			printReconcileChanges(removalSummary)
+			return fmt.Errorf("couldn't rename every unstamped clone in %s to a stamped name, so nothing was synced; fix the failure above and run again", sharedRoot)
 		}
 	}
+	if len(previousRepos) > 0 {
+		removed, pending := handleRemoved(check, outputDir, archivedDir, deletedDir, allRepos, previousRepos, p, shouldDelete, dryRun)
+		removalSummary.Extend(removed)
+		pendingRemovals = pending
+	}
+	removalSummary.Extend(reconcileArchived(check, outputDir, archivedDir, repos, listedNames(allRepos), p, shouldDelete, dryRun))
+	printReconcileChanges(removalSummary)
 
 	if len(skippedLargeResults) > 0 {
 		ui.Println()
@@ -341,9 +348,16 @@ func handleRemoved(
 	outputDir, archivedDir, deletedDir string,
 	currentRepos []ghapi.RepoInfo,
 	previousRepos []manifest.Repo,
+	p *plan,
 	shouldDelete, dryRun bool,
 ) (cloner.SyncSummary, []manifest.Repo) {
-	r := reconciler{check: check, dryRun: dryRun, stamp: time.Now().UTC().Format(deletedStampLayout)}
+	r := reconciler{
+		check:  check,
+		dryRun: dryRun,
+		stamp:  time.Now().UTC().Format(deletedStampLayout),
+		shared: sameDir(archivedDir, deletedDir),
+		plan:   p,
+	}
 	deletedRoot := filepath.Join(outputDir, deletedDir)
 	parents := []string{outputDir, filepath.Join(outputDir, archivedDir)}
 	listed := listedNames(currentRepos)
@@ -376,19 +390,25 @@ func handleRemoved(
 		// A listed repo named like the wiki has an origin the check can't
 		// tell from the wiki's, and it isn't removed.
 		wikiIsListed := listed[strings.ToLower(wiki)]
+		// A wiki retired on its own keeps the shared directory's rule: only a
+		// stamped name there is a backup.
+		wikiBase := wiki
+		if r.shared {
+			wikiBase = name + "." + r.stamp + ".wiki"
+		}
 		for _, parent := range parents {
 			repoDir := filepath.Join(parent, name)
-			dest, ok := r.retire(name, repoDir, deletedRoot, name, shouldDelete)
+			dest, ok := r.retire(name, repoDir, deletedRoot, name, r.shared, shouldDelete)
 			switch {
 			case wikiIsListed:
 			case ok:
 				// The wiki goes where its repo went, under the same name, so the
 				// pair stays together even when the repo's name was taken.
-				r.retire(wiki, filepath.Join(parent, wiki), deletedRoot, dest+".wiki", shouldDelete)
-			case !exists(repoDir):
+				r.retire(wiki, filepath.Join(parent, wiki), deletedRoot, dest+".wiki", false, shouldDelete)
+			case !r.present(repoDir):
 				// The repo went on an earlier run and its wiki failed to follow,
 				// or never had a clone here: the wiki is retired on its own.
-				r.retire(wiki, filepath.Join(parent, wiki), deletedRoot, wiki, shouldDelete)
+				r.retire(wiki, filepath.Join(parent, wiki), deletedRoot, wikiBase, false, shouldDelete)
 			}
 		}
 		if r.failed[name] || r.failed[wiki] {
@@ -396,6 +416,23 @@ func handleRemoved(
 		}
 	}
 	return r.summary, pending
+}
+
+// printReconcileChanges lists what the moves and deletes before the sync did,
+// or in a dry run would do.
+func printReconcileChanges(summary cloner.SyncSummary) {
+	if len(summary.Results) == 0 {
+		return
+	}
+	ui.Println()
+	ui.Println(text.Bold.Sprint("Changes for removed, archived and unarchived repos:"))
+	for _, r := range summary.Results {
+		if r.Detail != "" {
+			ui.Printf("  %s: %s (%s)\n", r.Name, r.Action, r.Detail)
+		} else {
+			ui.Printf("  %s: %s\n", r.Name, r.Action)
+		}
+	}
 }
 
 // listedNames is the set of repo names in the listing, lowercased: GitHub
@@ -409,18 +446,26 @@ func listedNames(repos []ghapi.RepoInfo) map[string]bool {
 	return names
 }
 
-// checkApart rejects an --archived-dir and a --deleted-dir that are the same
-// directory or one inside the other. Each is the other's source: the archive
-// pass would move a backup in the deleted directory out as an unarchived
-// clone, and a removal would retire, or under --delete delete, a backup it
-// finds in the archived one. Compared without case, so a case-insensitive file
-// system's aliases are caught; on a case-sensitive one that only refuses two
-// names that differ by case, the safe way to be wrong.
+// checkApart rejects an --archived-dir and a --deleted-dir where one is inside
+// the other: a repo named like the inner directory would collide with it.
+// The same directory for both is allowed, and handleRemoved then stamps every
+// removal so a backup can't be taken for an archived clone. Compared without
+// case, so a case-insensitive file system's aliases count; on a case-sensitive
+// one that only treats two names that differ by case as one directory, which
+// at worst stamps removals that didn't need it.
 func checkApart(archivedDir, deletedDir string) error {
+	if sameDir(archivedDir, deletedDir) {
+		return nil
+	}
 	if within(archivedDir, deletedDir) || within(deletedDir, archivedDir) {
-		return fmt.Errorf("archived-dir %q and deleted-dir %q must be separate directories, neither inside the other", archivedDir, deletedDir)
+		return fmt.Errorf("archived-dir %q and deleted-dir %q must be the same directory or separate ones, neither inside the other", archivedDir, deletedDir)
 	}
 	return nil
+}
+
+// sameDir reports whether a and b name the same directory, ignoring case.
+func sameDir(a, b string) bool {
+	return within(a, b) && within(b, a)
 }
 
 // within reports whether path is root or inside it, ignoring case.

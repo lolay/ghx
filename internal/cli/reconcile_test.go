@@ -3,7 +3,10 @@ package cli_test
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -628,4 +631,303 @@ func TestRun_ARemovalWithADeletedDirThatIsAFileFailsAndIsKept(t *testing.T) {
 
 	assert.Equal(t, []string{"DELETED/alpha", "beta"}, repoDirs(t, w.out))
 	assert.Contains(t, out, "alpha: moved (deleted)")
+}
+
+// stampedIn lists the names in dir/ that are name.<stamp>, the shape a
+// removal takes in a shared archived and deleted directory.
+func stampedIn(t *testing.T, dir, name string) []string {
+	t.Helper()
+	matches, err := filepath.Glob(filepath.Join(dir, name+".*"))
+	require.NoError(t, err)
+	var stamped []string
+	for _, m := range matches {
+		base := filepath.Base(m)
+		if regexp.MustCompile(`^` + regexp.QuoteMeta(name) + `\.\d{8}T\d{6}Z(-\d+)?$`).MatchString(base) {
+			stamped = append(stamped, base)
+		}
+	}
+	return stamped
+}
+
+func TestRun_ASharedArchivedAndDeletedDirectoryKeepsBackupsApart(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("alpha")
+	w.addRepo("beta", func(r *ghapitest.Repo) { r.Archived = true })
+	w.addRepo("gamma")
+	alpha := w.repos[0]
+	flags := []string{"--archived-dir", "old", "--deleted-dir", "old"}
+	run := func(extra ...string) string { return w.mustRun(append(slices.Clone(flags), extra...)...) }
+	shared := filepath.Join(w.out, "old")
+
+	run()
+	require.Equal(t, []string{"alpha", "gamma", "old/beta"}, repoDirs(t, w.out))
+
+	// Removed, active and archived alike: both take a stamped name, so a
+	// plain name in old/ is only ever an archived clone.
+	w.removeRepo("alpha")
+	w.removeRepo("beta")
+	out := run()
+	require.Len(t, stampedIn(t, shared, "alpha"), 1, "alpha was moved in under a stamped name")
+	require.Len(t, stampedIn(t, shared, "beta"), 1, "beta was renamed in place to a stamped name")
+	assert.NoDirExists(t, filepath.Join(shared, "alpha"))
+	assert.NoDirExists(t, filepath.Join(shared, "beta"))
+	assert.Contains(t, out, "the archived and deleted directories are the same")
+	backup := filepath.Join(shared, stampedIn(t, shared, "alpha")[0])
+	marker := filepath.Join(backup, "first-life.txt")
+	require.NoError(t, os.WriteFile(marker, []byte("kept\n"), 0o644))
+
+	// The repo comes back and is archived: its clone moves to old/alpha,
+	// beside the backup, which nothing touches.
+	w.repos = append(w.repos, alpha)
+	w.publish()
+	run()
+	w.archiveRepo("alpha")
+	out = run()
+	assert.DirExists(t, filepath.Join(shared, "alpha", ".git"))
+	assert.Contains(t, out, "alpha: moved (archived)")
+	assert.FileExists(t, marker, "the backup was never mistaken for the archived clone")
+
+	// Removed again under --delete: the archived clone goes, the backup stays.
+	w.removeRepo("alpha")
+	out = run("--delete")
+	assert.NoDirExists(t, filepath.Join(shared, "alpha"))
+	assert.Contains(t, out, "alpha: deleted")
+	assert.FileExists(t, marker, "--delete never touches an earlier removal")
+	assert.Equal(t, []string{"gamma"}, slices.DeleteFunc(repoDirs(t, w.out), func(d string) bool {
+		return strings.HasPrefix(d, "old/")
+	}))
+}
+
+func TestRun_ASharedDirectoryStampsWikisWithTheirRepos(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("alpha", func(r *ghapitest.Repo) { r.Archived = true; r.HasWiki = true })
+	w.addRepo("beta", func(r *ghapitest.Repo) { r.HasWiki = true })
+	w.addRepo("gamma")
+	gittest.NewBareRepo(t, w.upstream, "alpha.wiki", "master")
+	gittest.NewBareRepo(t, w.upstream, "beta.wiki", "master")
+	flags := []string{"--clone-wiki", "--archived-dir", "old", "--deleted-dir", "old"}
+	shared := filepath.Join(w.out, "old")
+	w.mustRun(flags...)
+	require.Equal(t, []string{"beta", "beta.wiki", "gamma", "old/alpha", "old/alpha.wiki"}, repoDirs(t, w.out))
+	// beta's repo went on an earlier run; its wiki was left in PATH.
+	require.NoError(t, os.Rename(filepath.Join(w.out, "beta"), filepath.Join(shared, "beta.20200101T000000Z")))
+
+	w.removeRepo("alpha")
+	w.removeRepo("beta")
+	out := w.mustRun(flags...)
+
+	alpha := stampedIn(t, shared, "alpha")
+	require.Len(t, alpha, 1)
+	assert.DirExists(t, filepath.Join(shared, alpha[0]+".wiki", ".git"), "the wiki takes its repo's stamped name")
+	assert.NoDirExists(t, filepath.Join(shared, "alpha.wiki"))
+	assert.NoDirExists(t, filepath.Join(w.out, "beta.wiki"))
+	wikis, err := filepath.Glob(filepath.Join(shared, "beta.*.wiki"))
+	require.NoError(t, err)
+	assert.Len(t, wikis, 1, "a wiki retired on its own is stamped too: %v", wikis)
+	assert.Contains(t, out, "beta.wiki: moved (deleted)")
+}
+
+func TestRun_ASharedDirectoryStampsAnUnstampedBackupFromAnEarlierGhx(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("alpha")
+	w.addRepo("beta", func(r *ghapitest.Repo) { r.Archived = true })
+	flags := []string{"--archived-dir", "old", "--deleted-dir", "old"}
+	shared := filepath.Join(w.out, "old")
+	w.mustRun(flags...)
+	// An earlier ghx removed alpha into old/ under its plain name, and the
+	// org has since recreated it: alpha is listed and its manifest entry
+	// isn't archived.
+	require.NoError(t, os.Rename(filepath.Join(w.out, "alpha"), filepath.Join(shared, "alpha")))
+	marker := filepath.Join(shared, "alpha", "first-life.txt")
+	require.NoError(t, os.WriteFile(marker, []byte("kept\n"), 0o644))
+
+	out := w.mustRun(flags...)
+
+	stamped := stampedIn(t, shared, "alpha")
+	require.Len(t, stamped, 1, "the old backup took a stamped name")
+	assert.FileExists(t, filepath.Join(shared, stamped[0], "first-life.txt"))
+	assert.Contains(t, out, "not archived on the last run")
+	assert.NotContains(t, out, "alpha: moved (unarchived)", "the backup wasn't taken for an archived clone")
+	assert.DirExists(t, filepath.Join(w.out, "alpha", ".git"), "the recreated repo got a fresh clone")
+	assert.DirExists(t, filepath.Join(shared, "beta", ".git"), "an archived clone the manifest lists is left alone")
+
+	// Removed under --delete: the fresh clone goes, the backup stays.
+	w.removeRepo("alpha")
+	w.mustRun(append(flags, "--delete")...)
+	assert.FileExists(t, filepath.Join(shared, stamped[0], "first-life.txt"))
+}
+
+func TestRun_ADryRunNamesTwoClonesOfOneRemovalApart(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("alpha")
+	w.addRepo("beta")
+	w.mustRun()
+	// A second copy in ARCHIVED/, as a conflict an earlier run left.
+	gittest.Git(t, "", "clone", "--quiet", w.bare("alpha"), filepath.Join(w.out, "ARCHIVED", "alpha"))
+	w.removeRepo("alpha")
+
+	out := w.mustRun("--dry-run")
+
+	// The first copy takes DELETED/alpha; the second needs a stamped name,
+	// as a real run would give it, though the dry run moved nothing.
+	dests := regexp.MustCompile(`moved to (\S+?)[;)]`).FindAllStringSubmatch(out, -1)
+	require.Len(t, dests, 1, "output:\n%s", out)
+	assert.Regexp(t, `alpha\.\d{8}T\d{6}Z$`, dests[0][1])
+}
+
+// legacyWorld syncs alpha and beta with one directory for archived and
+// deleted repos, then moves alpha's clone into it under its plain name, as an
+// earlier ghx that didn't stamp would have left a removal: alpha is still
+// listed, as if the org recreated it.
+func legacyWorld(t *testing.T, name string) (w *world, flags []string, legacy string) {
+	t.Helper()
+	w = newWorld(t)
+	w.addRepo(name)
+	w.addRepo("beta")
+	flags = []string{"--archived-dir", "old", "--deleted-dir", "old"}
+	w.mustRun(flags...)
+	legacy = filepath.Join(w.out, "old", name)
+	require.NoError(t, os.MkdirAll(filepath.Dir(legacy), 0o755))
+	require.NoError(t, os.Rename(filepath.Join(w.out, name), legacy))
+	require.NoError(t, os.WriteFile(filepath.Join(legacy, "first-life.txt"), []byte("kept\n"), 0o644))
+	return w, flags, legacy
+}
+
+func TestRun_ALegacyBackupWithAStampShapedRepoNameIsStamped(t *testing.T) {
+	name := "alpha.20200101T000000Z"
+	w, flags, _ := legacyWorld(t, name)
+
+	out := w.mustRun(flags...)
+
+	stamped := stampedIn(t, filepath.Join(w.out, "old"), name)
+	require.Len(t, stamped, 1, "output:\n%s", out)
+	assert.FileExists(t, filepath.Join(w.out, "old", stamped[0], "first-life.txt"))
+	assert.NotContains(t, out, "moved (unarchived)")
+	assert.NoFileExists(t, filepath.Join(w.out, name, "first-life.txt"), "the live clone is fresh")
+}
+
+func TestRun_ALegacyRenameThatFailsStopsTheRun(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs a directory the test user can't write")
+	}
+	w, flags, legacy := legacyWorld(t, "alpha")
+	shared := filepath.Dir(legacy)
+	manifestPath := filepath.Join(w.out, config.ManifestFilename)
+	before, err := os.ReadFile(manifestPath)
+	require.NoError(t, err)
+	require.NoError(t, os.Chmod(shared, 0o555))
+	t.Cleanup(func() { _ = os.Chmod(shared, 0o755) })
+
+	out, err := w.run(flags...)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nothing was synced")
+	assert.Contains(t, out, "alpha: failed")
+	assert.NoDirExists(t, filepath.Join(w.out, "alpha"), "no fresh clone, no sync")
+	after, err := os.ReadFile(manifestPath)
+	require.NoError(t, err)
+	assert.Equal(t, string(before), string(after), "the manifest isn't rewritten, so the next run retries")
+
+	require.NoError(t, os.Chmod(shared, 0o755))
+	w.mustRun(flags...)
+	assert.Len(t, stampedIn(t, shared, "alpha"), 1)
+}
+
+func TestRun_AnEmptyManifestStillStampsLegacyBackups(t *testing.T) {
+	w, flags, legacy := legacyWorld(t, "alpha")
+	m := `{"org":"acme","exported_at":"2025-01-01T00:00:00+00:00","repos":[]}` + "\n"
+	require.NoError(t, os.WriteFile(filepath.Join(w.out, config.ManifestFilename), []byte(m), 0o644))
+
+	out := w.mustRun(flags...)
+
+	assert.Len(t, stampedIn(t, filepath.Dir(legacy), "alpha"), 1, "output:\n%s", out)
+	assert.NotContains(t, out, "alpha: moved (unarchived)")
+}
+
+func TestRun_ADryRunSeesALegacyBackupAsStamped(t *testing.T) {
+	tests := []struct {
+		name   string
+		change func(w *world)
+		flags  []string
+		never  string
+	}{
+		{"recreated", func(*world) {}, nil, "alpha: moved (unarchived)"},
+		{"removed under --delete", func(w *world) { w.removeRepo("alpha") }, []string{"--delete"}, "alpha: deleted"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w, flags, _ := legacyWorld(t, "alpha")
+			tt.change(w)
+			before := snapshot(t, w.out)
+
+			out := w.mustRun(append(append(flags, "--dry-run"), tt.flags...)...)
+
+			assert.Equal(t, before, snapshot(t, w.out))
+			assert.Contains(t, out, "not archived on the last run")
+			assert.NotContains(t, out, tt.never, "the preview matches what a real run would do")
+		})
+	}
+}
+
+func TestRun_ASharedDirectoryThatCantBeListedStopsTheRun(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs a directory the test user can enter but not list")
+	}
+	w, flags, legacy := legacyWorld(t, "alpha")
+	shared := filepath.Dir(legacy)
+	require.NoError(t, os.Chmod(shared, 0o311))
+	t.Cleanup(func() { _ = os.Chmod(shared, 0o755) })
+
+	out, err := w.run(flags...)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nothing was synced")
+	assert.Contains(t, out, ": failed")
+	assert.NoDirExists(t, filepath.Join(w.out, "alpha"), "the backup wasn't moved out or synced over")
+}
+
+func TestRun_ALegacyBackupOfARepoNamedLikeAWikiIsStamped(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("alpha", func(r *ghapitest.Repo) { r.Archived = true })
+	w.addRepo("alpha.wiki")
+	flags := []string{"--archived-dir", "old", "--deleted-dir", "old"}
+	shared := filepath.Join(w.out, "old")
+	w.mustRun(flags...)
+	require.Equal(t, []string{"alpha.wiki", "old/alpha"}, repoDirs(t, w.out))
+	// An earlier ghx left the repo alpha.wiki's removal unstamped, and it
+	// has since been recreated.
+	legacy := filepath.Join(shared, "alpha.wiki")
+	require.NoError(t, os.Rename(filepath.Join(w.out, "alpha.wiki"), legacy))
+	require.NoError(t, os.WriteFile(filepath.Join(legacy, "first-life.txt"), []byte("kept\n"), 0o644))
+
+	out := w.mustRun(flags...)
+
+	stamped := stampedIn(t, shared, "alpha.wiki")
+	require.Len(t, stamped, 1, "output:\n%s", out)
+	assert.FileExists(t, filepath.Join(shared, stamped[0], "first-life.txt"))
+	assert.NoFileExists(t, filepath.Join(w.out, "alpha.wiki", "first-life.txt"), "the live clone is fresh")
+	assert.DirExists(t, filepath.Join(shared, "alpha", ".git"), "archived alpha is untouched")
+}
+
+func TestRun_LegacyStampingScansTheArchivedDirWhenNamesDifferByCase(t *testing.T) {
+	probe := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(probe, "case"), nil, 0o644))
+	if _, err := os.Stat(filepath.Join(probe, "CASE")); err == nil {
+		t.Skip("needs a case-sensitive file system, where OLD and old are two directories")
+	}
+	w := newWorld(t)
+	w.addRepo("alpha")
+	w.addRepo("beta")
+	flags := []string{"--archived-dir", "OLD", "--deleted-dir", "old"}
+	w.mustRun(flags...)
+	// An earlier setup pointed both flags at OLD and left alpha's removal
+	// there unstamped; alpha has since been recreated.
+	archived := filepath.Join(w.out, "OLD")
+	require.NoError(t, os.MkdirAll(archived, 0o755))
+	require.NoError(t, os.Rename(filepath.Join(w.out, "alpha"), filepath.Join(archived, "alpha")))
+
+	out := w.mustRun(flags...)
+
+	assert.Len(t, stampedIn(t, archived, "alpha"), 1, "output:\n%s", out)
+	assert.NotContains(t, out, "alpha: moved (unarchived)")
 }
