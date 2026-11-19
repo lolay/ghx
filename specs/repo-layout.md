@@ -81,8 +81,11 @@ An origin mismatch isn't kept: that directory isn't a clone of the repo, so it i
 reported on the run that finds the repo gone and left alone after that. If the
 org creates a repo of that name again, the listing's entry replaces the kept one.
 A place that can't be checked (a `stat` error other than not found, such as a
-directory the user can't traverse) counts as `failed`, so the removal is kept
-until the path can be checked. The wiki rule above holds here too: a listed repo
+directory the user can't traverse, or a `<deleted-dir>` that is a file) counts as
+`failed`, so the removal is kept until the path can be checked. A repo counts as
+removed only when no listed repo has its name ignoring case: GitHub names are
+case-insensitive, so a repo renamed only in case is still the org's, and on macOS
+or Windows its old directory is its live clone. The wiki rule above holds here too: a listed repo
 named `x.wiki` is never retired as `x`'s wiki.
 
 `--delete` applies to the repos the run finds removed or archived, nothing

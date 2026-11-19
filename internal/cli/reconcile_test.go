@@ -591,3 +591,41 @@ func TestRun_ARemovalWhosePlaceCantBeCheckedIsKept(t *testing.T) {
 	assert.Equal(t, []string{"DELETED/alpha", "beta"}, repoDirs(t, w.out))
 	assert.Contains(t, out, "alpha: moved (deleted)")
 }
+
+func TestRun_ARepoRenamedOnlyInCaseIsNotRemoved(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("alpha", func(r *ghapitest.Repo) { r.Archived = true })
+	w.addRepo("beta")
+	w.mustRun()
+	require.Equal(t, []string{"ARCHIVED/alpha", "beta"}, repoDirs(t, w.out))
+	w.repos[0].Name = "Alpha"
+	w.publish()
+
+	out := w.mustRun("--delete")
+
+	assert.DirExists(t, filepath.Join(w.out, "ARCHIVED", "alpha", ".git"), "still the org's repo, so its clone stays")
+	assert.NotContains(t, out, "alpha: deleted")
+	assert.NotContains(t, out, "alpha: moved (deleted)")
+}
+
+func TestRun_ARemovalWithADeletedDirThatIsAFileFailsAndIsKept(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("alpha")
+	w.addRepo("beta")
+	w.mustRun()
+	w.removeRepo("alpha")
+	squatter := filepath.Join(w.out, "DELETED")
+	require.NoError(t, os.WriteFile(squatter, []byte("not a directory\n"), 0o644))
+
+	out, _ := w.run()
+
+	assert.Contains(t, out, "alpha: failed", "reported, not retried under endless suffixes")
+	assert.DirExists(t, filepath.Join(w.out, "alpha", ".git"))
+	assert.Equal(t, []string{"alpha", "beta"}, manifestNames(readManifest(t, w.out)), "kept for the next run")
+
+	require.NoError(t, os.Remove(squatter))
+	out = w.mustRun()
+
+	assert.Equal(t, []string{"DELETED/alpha", "beta"}, repoDirs(t, w.out))
+	assert.Contains(t, out, "alpha: moved (deleted)")
+}

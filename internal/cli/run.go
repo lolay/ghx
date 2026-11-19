@@ -348,14 +348,12 @@ func handleRemoved(
 	parents := []string{outputDir, filepath.Join(outputDir, archivedDir)}
 	listed := listedNames(currentRepos)
 
-	currentNames := map[string]struct{}{}
-	for _, repo := range currentRepos {
-		currentNames[repo.Name] = struct{}{}
-	}
 	var removed []string
 	entries := map[string]manifest.Repo{}
 	for _, repo := range previousRepos {
-		if _, ok := currentNames[repo.Name]; !ok {
+		// Without case: a repo renamed only in case is still the org's, and on
+		// a case-insensitive file system its old directory is its live clone.
+		if !listed[strings.ToLower(repo.Name)] {
 			removed = append(removed, repo.Name)
 			if _, seen := entries[repo.Name]; !seen {
 				entries[repo.Name] = repo

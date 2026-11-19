@@ -21,6 +21,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   can't be checked, such as an untraversable `ARCHIVED/`, counts as failed.
 - A repo named `x.wiki` in the organization is no longer moved or deleted as
   the wiki of a repo `x` that was archived or removed.
+- A repo renamed only in case upstream (`alpha` to `Alpha`) is no longer
+  treated as removed, which under `--delete` deleted its clone on macOS and
+  Windows.
+- A run whose `DELETED` is a file, or can't be traversed, reports the
+  removal as failed instead of hanging.
 
 ### Changed
 - `--archived-dir` and `--deleted-dir` must be separate directories, neither

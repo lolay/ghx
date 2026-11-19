@@ -202,7 +202,11 @@ func (r *reconciler) retire(name, dir, deletedRoot, base string, deleteIt bool) 
 		r.add(name, cloner.ActionDeleted, dryRunDetail("", r.dryRun))
 		return "", true
 	}
-	dest, detail := r.freeName(deletedRoot, base)
+	dest, detail, err := r.freeName(deletedRoot, base)
+	if err != nil {
+		r.add(name, cloner.ActionFailed, err.Error())
+		return "", false
+	}
 	if !r.dryRun {
 		if err := cloner.MoveRepoTo(dir, filepath.Join(deletedRoot, dest)); err != nil {
 			r.add(name, cloner.ActionFailed, err.Error())
@@ -214,16 +218,39 @@ func (r *reconciler) retire(name, dir, deletedRoot, base string, deleteIt bool) 
 }
 
 // freeName returns base when nothing in root has that name, and otherwise
-// base.<stamp>, or base.<stamp>-2 and so on, with a detail saying why.
-func (r *reconciler) freeName(root, base string) (name, detail string) {
-	if !exists(filepath.Join(root, base)) {
-		return base, ""
+// base.<stamp>, or base.<stamp>-2 and so on, with a detail saying why. A name
+// that can't be checked (root is a file, or can't be traversed) is an error:
+// counting it as taken would try suffixes forever.
+func (r *reconciler) freeName(root, base string) (name, detail string, err error) {
+	isTaken, err := taken(filepath.Join(root, base))
+	if err != nil || !isTaken {
+		return base, "", err
 	}
 	name = base + "." + r.stamp
-	for n := 2; exists(filepath.Join(root, name)); n++ {
+	for n := 2; ; n++ {
+		if isTaken, err = taken(filepath.Join(root, name)); err != nil {
+			return "", "", err
+		}
+		if !isTaken {
+			break
+		}
 		name = fmt.Sprintf("%s.%s-%d", base, r.stamp, n)
 	}
-	return name, fmt.Sprintf("%s exists; moved to %s", filepath.Join(root, base), filepath.Join(root, name))
+	return name, fmt.Sprintf("%s exists; moved to %s", filepath.Join(root, base), filepath.Join(root, name)), nil
+}
+
+// taken reports whether anything is at path, and an error when that can't
+// be told.
+func taken(path string) (bool, error) {
+	_, err := os.Lstat(path)
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, fs.ErrNotExist):
+		return false, nil
+	default:
+		return false, err
+	}
 }
 
 func dryRunDetail(detail string, dryRun bool) string {
