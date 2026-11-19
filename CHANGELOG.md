@@ -35,6 +35,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   covers: repos the run finds removed or archived. It never deletes what an
   earlier run already moved into `DELETED/`.
 
+### Security
+- Release binaries are built with Go 1.27.4, which fixes GO-2026-6859 in the
+  standard library's `net/http`, used for every GitHub API call.
+
 ## [v0.4.1] - 2026-11-10
 
 ### Fixed
