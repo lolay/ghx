@@ -7,6 +7,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [v0.4.3] - 2026-11-19
+
 ### Changed
 - `--archived-dir` and `--deleted-dir` can be the same directory again. Every
   removed repo then gets the timestamp suffix (`old/x.20261014T013134Z`), even
