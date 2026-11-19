@@ -352,3 +352,64 @@ func TestRun_ARepoRemovedTwiceKeepsBothClonesInDeleted(t *testing.T) {
 	assert.Contains(t, out, "beta: moved (deleted)")
 	assert.Contains(t, out, "exists; moved to")
 }
+
+func TestRun_AnArchivedRepoRemovedUpstreamLeavesArchived(t *testing.T) {
+	tests := []struct {
+		name  string
+		flags []string
+		want  []string
+		says  []string
+	}{
+		{"moved to DELETED", nil, []string{"DELETED/alpha", "DELETED/alpha.wiki"},
+			[]string{"alpha: moved (deleted)", "alpha.wiki: moved (deleted)"}},
+		{"deleted under --delete", []string{"--delete"}, nil,
+			[]string{"alpha: deleted", "alpha.wiki: deleted"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := newWorld(t)
+			w.addRepo("alpha", func(r *ghapitest.Repo) { r.Archived = true; r.HasWiki = true })
+			gittest.NewBareRepo(t, w.upstream, "alpha.wiki", "master")
+			w.mustRun("--clone-wiki")
+			require.Equal(t, []string{"ARCHIVED/alpha", "ARCHIVED/alpha.wiki"}, repoDirs(t, w.out))
+
+			w.removeRepo("alpha")
+			out := w.mustRun(append([]string{"--clone-wiki"}, tt.flags...)...)
+
+			assert.Equal(t, tt.want, repoDirs(t, w.out))
+			for _, s := range tt.says {
+				assert.Contains(t, out, s)
+			}
+		})
+	}
+}
+
+func TestRun_ADryRunReportsARemovedArchivedRepoAndMovesNothing(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("alpha", func(r *ghapitest.Repo) { r.Archived = true })
+	w.mustRun()
+	w.removeRepo("alpha")
+	before := snapshot(t, w.out)
+
+	out := w.mustRun("--dry-run")
+
+	assert.Equal(t, before, snapshot(t, w.out))
+	assert.Contains(t, out, "alpha: moved (deleted) (dry-run)")
+}
+
+func TestRun_DeleteLeavesEarlierRemovalsInDeleted(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("alpha")
+	w.addRepo("beta")
+	w.mustRun()
+	w.removeRepo("alpha")
+	w.mustRun()
+	require.Equal(t, []string{"DELETED/alpha", "beta"}, repoDirs(t, w.out))
+
+	w.removeRepo("beta")
+	out := w.mustRun("--delete")
+
+	assert.Equal(t, []string{"DELETED/alpha"}, repoDirs(t, w.out), "only the repo removed since the last run is deleted")
+	assert.Contains(t, out, "beta: deleted")
+	assert.NotContains(t, out, "alpha: deleted")
+}

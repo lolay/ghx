@@ -205,7 +205,7 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 	check := &originCheck{ctx: ctx, gitPath: gitPath}
 	var removalSummary cloner.SyncSummary
 	if len(previousRepos) > 0 {
-		removalSummary = handleRemoved(check, outputDir, allRepos, previousRepos, shouldDelete, deletedDir, dryRun)
+		removalSummary = handleRemoved(check, outputDir, archivedDir, deletedDir, allRepos, previousRepos, shouldDelete, dryRun)
 	}
 	removalSummary.Extend(reconcileArchived(check, outputDir, archivedDir, repos, shouldDelete, dryRun))
 	if len(removalSummary.Results) > 0 {
@@ -319,20 +319,22 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 
 // handleRemoved moves each repo the previous manifest lists and the org no
 // longer has into deletedDir, or deletes it under shouldDelete, once its
-// origin shows it is a clone of that repo; its wiki goes with it. A removed repo is absent from the
-// listing, so the manifest is the only record of it. Archived repos are
-// reconcileArchived's.
+// origin shows it is a clone of that repo; its wiki goes with it. A removed
+// repo is absent from the listing, so the manifest is the only record of it.
+// Its clone may sit in the output directory or, if it was archived, in
+// archivedDir, and both places are retired: the disk decides, as in
+// reconcileArchived. What is already in deletedDir is never touched, so a
+// later --delete leaves earlier removals alone.
 func handleRemoved(
 	check *originCheck,
-	outputDir string,
+	outputDir, archivedDir, deletedDir string,
 	currentRepos []ghapi.RepoInfo,
 	previousRepos []manifest.Repo,
-	shouldDelete bool,
-	deletedDir string,
-	dryRun bool,
+	shouldDelete, dryRun bool,
 ) cloner.SyncSummary {
 	r := reconciler{check: check, dryRun: dryRun, stamp: time.Now().UTC().Format(deletedStampLayout)}
 	deletedRoot := filepath.Join(outputDir, deletedDir)
+	parents := []string{outputDir, filepath.Join(outputDir, archivedDir)}
 
 	currentNames := map[string]struct{}{}
 	for _, repo := range currentRepos {
@@ -355,13 +357,14 @@ func handleRemoved(
 			r.add(name, cloner.ActionSkippedName, err.Error())
 			continue
 		}
-		repoDir := filepath.Join(outputDir, name)
-		dest, ok := r.retire(name, repoDir, deletedRoot, name, shouldDelete)
-		if ok {
-			// The wiki goes where its repo went, under the same name, so the
-			// pair stays together even when the repo's name was taken.
-			wiki := name + ".wiki"
-			r.retire(wiki, filepath.Join(outputDir, wiki), deletedRoot, dest+".wiki", shouldDelete)
+		for _, parent := range parents {
+			dest, ok := r.retire(name, filepath.Join(parent, name), deletedRoot, name, shouldDelete)
+			if ok {
+				// The wiki goes where its repo went, under the same name, so the
+				// pair stays together even when the repo's name was taken.
+				wiki := name + ".wiki"
+				r.retire(wiki, filepath.Join(parent, wiki), deletedRoot, dest+".wiki", shouldDelete)
+			}
 		}
 	}
 	return r.summary

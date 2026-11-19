@@ -7,6 +7,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- A repo that was archived and then removed from the organization is moved
+  from `ARCHIVED/` into `DELETED/` (or deleted under `--delete`) with its
+  wiki, instead of staying in `ARCHIVED/` with no message.
+
+### Changed
+- The `--delete` help, the README and `specs/repo-layout.md` say what it
+  covers: repos the run finds removed or archived. It never deletes what an
+  earlier run already moved into `DELETED/`.
+
 ## [v0.4.1] - 2026-11-10
 
 ### Fixed

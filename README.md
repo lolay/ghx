@@ -247,7 +247,8 @@ ghx acme ./acme --type private --exclude "^test-"
 # Also clone wikis, over SSH
 ghx acme ./acme --clone-wiki --ssh
 
-# Permanently delete removed and archived repos instead of moving them
+# Delete repos removed or archived since the last run instead of moving them
+# (what is already in DELETED/ stays)
 ghx acme ./acme --delete
 
 # Custom directory names for moved repos
@@ -329,15 +330,19 @@ API cost and limits are in
     exist is reported as not found; any other wiki failure is `failed wiki`
     with git's message.
 - **Removed repos** (in the previous manifest, gone from the organization): moved
-  to `DELETED/`, or permanently deleted with `--delete`; a wiki goes with its
-  repo. An earlier clone already in `DELETED/` is never replaced: a second one
-  of the same name gets a UTC timestamp suffix (`DELETED/x.20261014T013134Z`).
+  to `DELETED/`, or permanently deleted with `--delete`, whether the clone was in
+  `PATH` or, for a repo archived before it was removed, in `ARCHIVED/`; a wiki
+  goes with its repo. A repo is handled on the run that finds it gone, so a later
+  `--delete` never deletes what is already in `DELETED/`. An earlier clone there
+  is never replaced either: a repo removed, recreated and removed again gets a
+  UTC timestamp suffix the second time (`DELETED/x.20261014T013134Z`).
 - **Archived repos:** cloned into `ARCHIVED/`. Every run checks where each
   synced repo's clone is: an archived repo's clone found in `PATH` is moved
   into `ARCHIVED/`, and an unarchived repo's clone found in `ARCHIVED/` is moved
   back, then synced there; a wiki moves with its repo. That holds with no
   manifest, and a move that failed is tried again next run. With `--delete`,
-  archived repos, and their wikis, are deleted or skipped rather than moved. A repo left out by
+  a clone of an archived repo found in `PATH` is deleted with its wiki rather
+  than moved, and one already in `ARCHIVED/` is left there and not synced. A repo left out by
   `--include`, `--exclude` or `--type` stays where it is. Where every repo lives,
   and the rules above in full, are in [`specs/repo-layout.md`](./specs/repo-layout.md).
 - **Moves and deletes are checked.** ghx moves or deletes a clone only when its
@@ -426,7 +431,7 @@ styled):
     --archived-dir        Directory for archived repos.
     --clone-wiki          Also clone associated wikis.
     -c --concurrency      Parallel workers.
-    --delete              Permanently delete removed/archived repos.
+    --delete              Delete newly removed/archived repos; DELETED/ is never touched.
     --deleted-dir         Directory for removed repos.
     --dry-run             Preview changes without doing anything.
     --exclude             Regex to exclude matching repo names.

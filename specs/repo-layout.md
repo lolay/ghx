@@ -55,11 +55,19 @@ belongs), the repo shows as `failed` and the next run retries.
 
 A removed repo goes through the same origin check, then moves to `<deleted-dir>`
 or, under `--delete`, is deleted; its wiki then goes the same way, through the
-same check. A removed directory with no `.git` is reported
-`skipped (origin mismatch)`, not moved.
+same check. Both places a clone can be are looked at, `<out>/x` and
+`<out>/<archived-dir>/x` (a repo archived and then removed), and each clone found
+is retired; when both exist, the second takes a stamped name as below. A removed
+directory with no `.git` is reported `skipped (origin mismatch)`, not moved.
+
+`--delete` applies to the repos the run finds removed or archived, nothing
+earlier: the run that retires a removed repo writes a manifest without it, so no
+later run sees it again, and nothing in `<deleted-dir>` is ever deleted. A clone
+already in `<archived-dir>` when `--delete` is first used stays there, unsynced.
 
 Nothing already in `<deleted-dir>` is replaced. When `<deleted-dir>/x` exists
-(the repo was removed before, came back and was removed again), the clone moves
+(a repo was removed, a new one was created with the same name, synced, and
+removed in turn), the clone moves
 to `<deleted-dir>/x.<stamp>`, where `<stamp>` is the run's UTC start time as
 `20261014T013134Z` (no colons, so the name is valid on Windows), with `-2`, `-3`
 and so on appended if that is taken too. The result is `moved (deleted)` with a
