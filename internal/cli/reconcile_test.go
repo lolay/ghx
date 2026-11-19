@@ -908,3 +908,26 @@ func TestRun_ALegacyBackupOfARepoNamedLikeAWikiIsStamped(t *testing.T) {
 	assert.NoFileExists(t, filepath.Join(w.out, "alpha.wiki", "first-life.txt"), "the live clone is fresh")
 	assert.DirExists(t, filepath.Join(shared, "alpha", ".git"), "archived alpha is untouched")
 }
+
+func TestRun_LegacyStampingScansTheArchivedDirWhenNamesDifferByCase(t *testing.T) {
+	probe := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(probe, "case"), nil, 0o644))
+	if _, err := os.Stat(filepath.Join(probe, "CASE")); err == nil {
+		t.Skip("needs a case-sensitive file system, where OLD and old are two directories")
+	}
+	w := newWorld(t)
+	w.addRepo("alpha")
+	w.addRepo("beta")
+	flags := []string{"--archived-dir", "OLD", "--deleted-dir", "old"}
+	w.mustRun(flags...)
+	// An earlier setup pointed both flags at OLD and left alpha's removal
+	// there unstamped; alpha has since been recreated.
+	archived := filepath.Join(w.out, "OLD")
+	require.NoError(t, os.MkdirAll(archived, 0o755))
+	require.NoError(t, os.Rename(filepath.Join(w.out, "alpha"), filepath.Join(archived, "alpha")))
+
+	out := w.mustRun(flags...)
+
+	assert.Len(t, stampedIn(t, archived, "alpha"), 1, "output:\n%s", out)
+	assert.NotContains(t, out, "alpha: moved (unarchived)")
+}

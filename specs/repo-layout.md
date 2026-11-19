@@ -33,7 +33,16 @@ be listed (anything but not found), the run stops there with an error: nothing i
 isn't rewritten, since every later step would read the backup as a clone, and
 the next run tries again. Without a previous manifest an archived clone can't
 be told from a backup, so nothing is renamed and a plain `x` counts as an
-archived clone.
+archived clone. The scan reads `<archived-dir>`, where the later steps look
+for plain names: since `sameDir` ignores case, `OLD` and `old` count as one
+directory even on a case-sensitive file system, where they are two.
+
+Known limit: a repo whose own name has the stamp's shape (`x.<stamp>`) isn't
+fully protected. Its wiki's unstamped backup is skipped as if it were stamped,
+and a newly listed archived repo of that exact name would be synced into a
+removal's backup of `x` that already has the name. Telling those apart would
+take the backup paths into the sync itself; a repo named like a UTC timestamp
+isn't worth that.
 
 A dry run shares one plan across these steps (`plan`): the names handed out,
 and the paths a planned move or delete has emptied, so a later step sees the

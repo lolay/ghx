@@ -213,7 +213,10 @@ func run(cmd *cobra.Command, args []string, f *flags) error {
 	// Any manifest, even one with no repos, says what was archived, which is
 	// what tells an unstamped backup from an archived clone.
 	if m != nil && sameDir(archivedDir, deletedDir) {
-		sharedRoot := filepath.Join(outputDir, deletedDir)
+		// The archived directory, not the deleted one: sameDir ignores case,
+		// so on a case-sensitive file system OLD and old pass as one, and the
+		// later steps look for plain names under the archived one.
+		sharedRoot := filepath.Join(outputDir, archivedDir)
 		legacy, ok := stampLegacy(check, sharedRoot, previousRepos, listedNames(allRepos), p, dryRun)
 		removalSummary.Extend(legacy)
 		if !ok && !dryRun {
