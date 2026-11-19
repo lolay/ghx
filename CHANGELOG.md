@@ -7,6 +7,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [v0.4.2] - 2026-11-19
+
 ### Fixed
 - A repo that was archived and then removed from the organization is moved
   from `ARCHIVED/` into `DELETED/` (or deleted under `--delete`) with its
